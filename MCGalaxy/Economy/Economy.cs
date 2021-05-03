@@ -35,7 +35,7 @@ namespace MCGalaxy.Eco {
             using (StreamReader r = new StreamReader(Paths.EconomyPropsFile)) {
                 string line;
                 while ((line = r.ReadLine()) != null) {
-                    line = line.ToLower().Trim();
+                    line = line.Trim();
                     try {
                         ParseLine(line);
                     } catch (Exception ex) {
@@ -63,11 +63,22 @@ namespace MCGalaxy.Eco {
             }
         }
 
+        static readonly object saveLock = new object();
         public static void Save() {
+            try {
+                lock (saveLock) SaveCore();
+            } catch (Exception e) {
+                Logger.LogError("Error saving " + Paths.EconomyPropsFile, e);
+            }
+        }
+        
+        static void SaveCore() {
             using (StreamWriter w = new StreamWriter(Paths.EconomyPropsFile, false)) {
                 w.WriteLine("enabled:" + Enabled);
                 foreach (Item item in Items) {
                     w.WriteLine();
+                    w.WriteLine(item.Name + ":enabled:" + item.Enabled);
+                    w.WriteLine(item.Name + ":purchaserank:" + (int)item.PurchaseRank);
                     item.Serialise(w);
                 }
             }
@@ -78,7 +89,7 @@ namespace MCGalaxy.Eco {
             new TitleItem(), new RankItem(), new LevelItem(), new LoginMessageItem(),
             new LogoutMessageItem(), new BlocksItem(), new QueueLevelItem(),
             new InfectMessageItem(), new NickItem(), new ReviveItem(),
-            new HumanInvisibilityItem(), new ZombieInvisibilityItem() };
+            new InvisibilityItem(), new SnackItem() };
         
         /// <summary> Finds the item whose name or one of its aliases caselessly matches the input. </summary>
         public static Item GetItem(string name) {
@@ -98,9 +109,6 @@ namespace MCGalaxy.Eco {
             return items.Length == 0 ? "(no enabled items)" : items;
         }
         
-        public static SimpleItem Color { get { return (SimpleItem)Items[0]; } }
-        public static SimpleItem TitleColor { get { return (SimpleItem)Items[1]; } }
-        public static SimpleItem Title { get { return (SimpleItem)Items[2]; } }
         public static RankItem Ranks { get { return (RankItem)Items[3]; } }
         public static LevelItem Levels { get { return (LevelItem)Items[4]; } }
         

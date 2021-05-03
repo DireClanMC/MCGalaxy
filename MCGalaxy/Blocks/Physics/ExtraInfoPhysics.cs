@@ -58,6 +58,10 @@ namespace MCGalaxy.Blocks.Physics {
             return false;
         }
         
+        // cache to avoid allocation each time accessed
+        internal static ExtraInfoHandler doorsHandler = DoDoorsOnly;
+        internal static ExtraInfoHandler normalHandler = DoNormal;
+        
         static void ParseType(byte type, ref ExtraInfoArgs args, byte value) {
             switch (type) {
                 case PhysicsArgs.Wait:

@@ -16,194 +16,105 @@
     permissions and limitations under the Licenses.
  */
 using System;
-using System.Collections.Generic;
-using System.IO;
 using MCGalaxy.Games;
 using MCGalaxy.Maths;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Fun {
-    public sealed class CmdCTF : Command {
+    public sealed class CmdCTF : RoundsGameCmd {
         public override string name { get { return "CTF"; } }
         public override string shortcut { get { return "CTFSetup"; } }
-        public override string type { get { return CommandTypes.Games; } }
-        public override bool museumUsable { get { return false; } }
-        public override bool SuperUseable { get { return false; } }
+        protected override RoundsGame Game { get { return CTFGame.Instance; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Operator, "+ can manage CTF") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can manage CTF") }; }
         }
         
-        public override void Use(Player p, string message) {
-            if (message.CaselessEq("go")) {
-                HandleGo(p);
-            } else if (message.CaselessEq("start")) {
-                HandleStart(p);
-            } else if (message.CaselessEq("stop")) {
-                HandleStop(p);
-            } else if (message.CaselessEq("add")) {
-                HandleAdd(p);
-            } else if (message.CaselessEq("remove")) {
-                HandleRemove(p);
-            } else if (message.CaselessStarts("set ")) {
-                string[] args = message.SplitSpaces(2);
-                HandleSet(p, args[1]);
-            } else {
-                Help(p);
-            }
-        }
-        
-        static void HandleGo(Player p) {
-            if (Server.ctf == null || !Server.ctf.Running)  {
-                Player.Message(p, "CTF is not running."); return;
-            }
-            PlayerActions.ChangeMap(p, Server.ctf.Map.name);
-        }
-        
-        void HandleStart(Player p) {
-            if (!CheckExtraPerm(p, 1)) return;
-            if (Server.ctf == null)  {
-                Player.Message(p, "Initialising CTF..");
-                Server.ctf = new CTFGame();
-            }
+        protected override void HandleSet(Player p, RoundsGame game, string[] args) {
+            string prop = args[1];
+            CTFMapConfig cfg = new CTFMapConfig();
+            LoadMapConfig(p, cfg);
             
-            if (!Server.ctf.Start(p)) return;
-            Chat.MessageGlobal("A CTF GAME IS STARTING! TYPE %T/CTF go %Sto join!");
-        }
-        
-        void HandleStop(Player p) {
-            if (!CheckExtraPerm(p, 1)) return;
-            if (Server.ctf == null || !Server.ctf.started) {
-                Player.Message(p, "No CTF game is active."); return;
-            }
-            Server.ctf.Stop();
-        }
-        
-        
-        void HandleAdd(Player p) {
-            if (!CheckExtraPerm(p, 1)) return;
-            if (!Directory.Exists("CTF")) Directory.CreateDirectory("CTF");
-            List<string> maps = GetCtfMaps();
-            
-            if (maps.CaselessContains(p.level.name)) {
-                Player.Message(p, "{0} %Sis already in the list of CTF maps.", p.level.ColoredName);
-            } else {
-                Player.Message(p, "Added {0} %Sto the list of CTF maps.", p.level.ColoredName);
-                maps.Add(p.level.name);
-                File.WriteAllLines("CTF/maps.config", maps.ToArray());
-            }
-        }
-        
-        void HandleRemove(Player p) {
-            if (!CheckExtraPerm(p, 1)) return;
-            if (!Directory.Exists("CTF")) Directory.CreateDirectory("CTF");
-            List<string> maps = GetCtfMaps();
-            
-            if (!maps.CaselessRemove(p.level.name)) {
-                Player.Message(p, "{0} %Swas not in the list of CTF maps.", p.level.ColoredName);
-            } else {
-                Player.Message(p, "Removed {0} %Sfrom the list of CTF maps.", p.level.ColoredName);
-                File.WriteAllLines("CTF/maps.config", maps.ToArray());
-            }
-        }
-        
-        static List<string> GetCtfMaps() {
-            if (!File.Exists("CTF/maps.config")) return new List<string>();
-            string[] lines = File.ReadAllLines("CTF/maps.config");
-            return new List<string>(lines);
-        }
-
-        
-        void HandleSet(Player p, string property) {
-            if (!CheckExtraPerm(p, 1)) return;
-            CTFConfig cfg = RetrieveConfig(p);
-            
-            if (property.CaselessEq("bluespawn")) {
-                cfg.BlueSpawnX = p.Pos.X; cfg.BlueSpawnY = p.Pos.Y; cfg.BlueSpawnZ = p.Pos.Z;
-                Player.Message(p, "Set spawn of blue team to your position.");
-                UpdateConfig(p, cfg);
-            } else if (property.CaselessEq("redspawn")) {
-                cfg.RedSpawnX = p.Pos.X; cfg.RedSpawnY = p.Pos.Y; cfg.RedSpawnZ = p.Pos.Z;
-                Player.Message(p, "Set spawn of red team to your position.");
-                UpdateConfig(p, cfg);
-            } else if (property.CaselessEq("blueflag")) {
-                Player.Message(p, "Place or delete a block to set blue team's flag.");
-                p.MakeSelection(1, null, BlueFlagCallback);
-            } else if (property.CaselessEq("redflag")) {
-                Player.Message(p, "Place or delete a block to set red team's flag.");
-                p.MakeSelection(1, null, RedFlagCallback);
-            } else if (property.CaselessEq("divider")) {
+            if (prop.CaselessEq("bluespawn")) {
+                cfg.BlueSpawn = (Vec3U16)p.Pos.FeetBlockCoords;
+                p.Message("Set spawn of blue team to &b" + cfg.BlueSpawn);
+                SaveMapConfig(p, cfg);
+            } else if (prop.CaselessEq("redspawn")) {
+                cfg.RedSpawn = (Vec3U16)p.Pos.FeetBlockCoords;
+                p.Message("Set spawn of red team to &b" + cfg.RedSpawn);
+                SaveMapConfig(p, cfg);
+            } else if (prop.CaselessEq("blueflag")) {
+                p.Message("Place or delete a block to set blue team's flag.");
+                p.MakeSelection(1, cfg, BlueFlagCallback);
+            } else if (prop.CaselessEq("redflag")) {
+                p.Message("Place or delete a block to set red team's flag.");
+                p.MakeSelection(1, cfg, RedFlagCallback);
+            } else if (prop.CaselessEq("divider")) {
                 cfg.ZDivider = p.Pos.BlockZ;
-                Player.Message(p, "Set Z line divider to {0}.", cfg.ZDivider);
-                UpdateConfig(p, cfg);
-            }  else {
+                p.Message("Set Z line divider to {0}.", cfg.ZDivider);
+                SaveMapConfig(p, cfg);
+            } else {
                 Help(p, "set");
             }
         }
         
-        static bool BlueFlagCallback(Player p, Vec3S32[] marks, object state, BlockID block) {
-            CTFConfig cfg = RetrieveConfig(p);
-            Vec3S32 P = marks[0];           
-            cfg.BlueFlagX = P.X; cfg.BlueFlagY = P.Y; cfg.BlueFlagZ = P.Z;
-            Player.Message(p, "Set flag position of blue team to ({0}, {1}, {2})", P.X, P.Y, P.Z);
+        bool BlueFlagCallback(Player p, Vec3S32[] marks, object state, BlockID block) {
+            CTFMapConfig cfg = (CTFMapConfig)state;
+            Vec3U16 P = (Vec3U16)marks[0];
+            cfg.BlueFlagPos = P;
+            p.Message("Set flag position of blue team to ({0})", P);
             
-            block = p.level.GetBlock((ushort)P.X, (ushort)P.Y, (ushort)P.Z);
+            block = p.level.GetBlock(P.X, P.Y, P.Z);
             if (block == Block.Air) block = Block.Blue;
             cfg.BlueFlagBlock = block;
-            Player.Message(p, "Set flag block of blue team to {0}", Block.GetName(p, block));
+            p.Message("Set flag block of blue team to {0}", Block.GetName(p, block));
             
-            UpdateConfig(p, cfg);
+            SaveMapConfig(p, cfg);
             return false;
         }
         
-        static bool RedFlagCallback(Player p, Vec3S32[] marks, object state, BlockID block) {
-            CTFConfig cfg = RetrieveConfig(p);
-            Vec3S32 P = marks[0];            
-            cfg.RedFlagX = P.X; cfg.RedFlagY = P.Y; cfg.RedFlagZ = P.Z;
-            Player.Message(p, "Set flag position of red team to ({0}, {1}, {2})", P.X, P.Y, P.Z);
+        bool RedFlagCallback(Player p, Vec3S32[] marks, object state, BlockID block) {
+            CTFMapConfig cfg = (CTFMapConfig)state;
+            Vec3U16 P = (Vec3U16)marks[0];         
+            cfg.RedFlagPos = P;
+            p.Message("Set flag position of red team to ({0})", P);
             
-            block = p.level.GetBlock((ushort)P.X, (ushort)P.Y, (ushort)P.Z);
+            block = p.level.GetBlock(P.X, P.Y, P.Z);
             if (block == Block.Air) block = Block.Red;
             cfg.RedFlagBlock = block;
-            Player.Message(p, "Set flag block of red team to {0}", Block.GetName(p, block));
+            p.Message("Set flag block of red team to {0}", Block.GetName(p, block));
             
-            UpdateConfig(p, cfg);
+            SaveMapConfig(p, cfg);
             return false;
         }
         
-        static CTFConfig RetrieveConfig(Player p) {
-            CTFConfig cfg = new CTFConfig();
-            cfg.SetDefaults(p.level);
-            cfg.Retrieve(p.level.name);
-            return cfg;
-        }
-        
-        static void UpdateConfig(Player p, CTFConfig cfg) {
-            if (!Directory.Exists("CTF")) Directory.CreateDirectory("CTF");
+        static void UpdateConfig(Player p, CTFMapConfig cfg) {
             cfg.Save(p.level.name);
-            if (Server.ctf != null && p.level == Server.ctf.Map) Server.ctf.UpdateConfig();
-        }
-        
-        public override void Help(Player p) {
-            Player.Message(p, "%T/CTF start/stop %H- Starts/stops the CTF game");
-            Player.Message(p, "%T/CTF add/remove %H- Adds/removes current map from CTF map list");
-            Player.Message(p, "%T/CTF set [property]");
-            Player.Message(p, "%HSets a CTF game property, see %T/Help CTF set");
-            Player.Message(p, "%T/CTF go %H- Moves you to the current CTF map");
+            if (p.level == CTFGame.Instance.Map) CTFGame.Instance.UpdateMapConfig();
         }
         
         public override void Help(Player p, string message) {
             if (message.CaselessEq("set")) {
-                Player.Message(p, "%T/CTF set redspawn/bluespawn");
-                Player.Message(p, "%HSets spawn of red/blue team to your position.");
-                Player.Message(p, "%T/CTF set redflag/blueflag");
-                Player.Message(p, "%HSets flag position and block of red/blue team to the next block you place or delete.");
-                Player.Message(p, "%T/CTF set divider");
-                Player.Message(p, "%HSets the divider line to your current Z position.");
-                Player.Message(p, "   %HRed team tags blue team when the Z position is less than the divider, " +
+                p.Message("&T/CTF set redspawn/bluespawn");
+                p.Message("&HSets spawn of red/blue team to your position.");
+                p.Message("&T/CTF set redflag/blueflag");
+                p.Message("&HSets flag position and block of red/blue team to the next block you place or delete.");
+                p.Message("&T/CTF set divider");
+                p.Message("&HSets the divider line to your current Z position.");
+                p.Message("   &HRed team tags blue team when the Z position is less than the divider, " +
                                "blue teams tags when Z position is more.");
             } else {
                 Help(p);
             }
+        }
+                
+        public override void Help(Player p) {
+            p.Message("&T/CTF start <map> &H- Starts CTF game");
+            p.Message("&T/CTF stop &H- Stops CTF game");
+            p.Message("&T/CTF end &H- Ends current round of CTF");
+            p.Message("&T/CTF add/remove &H- Adds/removes current map from map list");
+            p.Message("&T/CTF set [property] &H- Sets a property. See &T/Help CTF set");
+            p.Message("&T/CTF status &H- View stats of both teams");
+            p.Message("&T/CTF go &H- Moves you to the current CTF map");
         }
     }
 }

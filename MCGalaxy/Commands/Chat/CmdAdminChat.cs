@@ -13,30 +13,29 @@ or implied. See the Licenses for the specific language governing
 permissions and limitations under the Licenses.
 */
 namespace MCGalaxy.Commands.Chatting {
-    public sealed class CmdAdminChat : Command {
+    public sealed class CmdAdminChat : Command2 {
         public override string name { get { return "AdminChat"; } }
         public override string shortcut { get { return "Admin"; } }
         public override string type { get { return CommandTypes.Chat; } }
         public override bool UseableWhenFrozen { get { return true; } }
+        public override bool UpdatesLastCmd { get { return false; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Admin, "+ can read adminchat messages") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Admin, "can read adminchat messages") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length > 0) { ChatModes.MessageAdmins(p, message); return; }
             
             p.adminchat = !p.adminchat;
-            if (p.adminchat) Player.Message(p, "All messages will now be sent to Admins only");
-            else Player.Message(p, "Admin chat turned off");
+            if (p.adminchat) p.Message("All messages will now be sent to Admins only");
+            else p.Message("Admin chat turned off");
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/AdminChat [message]");
-            Player.Message(p, "%HSends a message to online Admins");
-            Player.Message(p, "%T/AdminChat");
-            Player.Message(p, "%HMakes all messages sent go to Admins by default");
+            p.Message("&T/AdminChat [message]");
+            p.Message("&HSends a message to online Admins");
+            p.Message("&T/AdminChat");
+            p.Message("&HMakes all messages sent go to Admins by default");
         }
     }
 }
-
-

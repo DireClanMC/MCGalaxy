@@ -17,38 +17,32 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
 */
-namespace MCGalaxy.Commands.Moderation
-{
-    public sealed class CmdOHide : Command
-    {
+namespace MCGalaxy.Commands.Moderation {
+    public sealed class CmdOHide : Command2 {
         public override string name { get { return "OHide"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             
-            string[] args = message.SplitSpaces();           
-            Player who = PlayerInfo.FindMatches(p, args[0]);
-            if (who == null) return;
-            if (p != null && who.Rank >= p.Rank) {
-                MessageTooHighRank(p, "hide", false); return;
-            }
+            string[] args = message.SplitSpaces();
+            Player target = PlayerInfo.FindMatches(p, args[0]);
+            if (target == null) return;
+            if (!CheckRank(p, data, target, "hide", false)) return;
             
-            if (args.Length >= 2 && args[1].CaselessEq("myrank")) {
-                who.oHideRank = p == null ? LevelPermission.Admin : p.Rank;
-                Command.all.FindByName("Hide").Use(who, "myrank");
-                Player.Message(p, "Used /hide myrank on " + who.ColoredName + "%S.");
-            } else {
-                Command.all.FindByName("Hide").Use(who, "");
-                Player.Message(p, "Used /hide on " + who.ColoredName + "%S.");
-            }
+            bool own = args.Length >= 2 && args[1].CaselessEq("myrank");
+            if (!own) data.Rank = target.Rank;
+            
+            Command.Find("Hide").Use(target, "", data);
+            p.Message("Hidden {0} &Sfrom players ranked below {1}",
+                      p.FormatNick(target), Group.GetColoredName(data.Rank));
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/OHide [player] %H- Hides/unhides the player specified.");
-            Player.Message(p, "%T/OHide [player] myrank %H- Hides/unhides the player specified to players below your rank.");
-            Player.Message(p, "%HOnly works on players of lower rank.");
+            p.Message("&T/OHide [player] &H- Hides/unhides the player specified.");
+            p.Message("&T/OHide [player] myrank &H- Hides/unhides the player specified to players below your rank.");
+            p.Message("&HOnly works on players of lower rank.");
         }
     }
 }

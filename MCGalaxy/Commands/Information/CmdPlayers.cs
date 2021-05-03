@@ -20,122 +20,98 @@ using System.Collections.Generic;
 using System.Text;
 
 namespace MCGalaxy.Commands.Info {
-    public sealed class CmdPlayers : Command {
+    public sealed class CmdPlayers : Command2 {
         public override string name { get { return "Players"; } }
         public override string shortcut { get { return "Who"; } }
         public override string type { get { return CommandTypes.Information; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
+            int totalPlayers = 0;
             if (message.Length > 0) {
                 Group grp = Matcher.FindRanks(p, message);
                 if (grp == null) return;
-                string title = ":" + grp.Color + GetPlural(grp.Name) + ":";
-                Section rankSec = MakeSection(grp, title);
                 
-                Player[] players = PlayerInfo.Online.Items;
-                foreach (Player pl in players) {
-                    if (pl.group != grp) continue;
-                    if (p == pl || Entities.CanSee(p, pl)) {
-                        string name = Colors.Strip(pl.DisplayName);
-                        AddStates(pl, ref name);
-                        rankSec.Append(pl, name);
-                    }
-                }
-                
-                if (rankSec.Empty) {
-                    Player.Message(p, "There are no players of that rank online.");
+                GroupPlayers rankPlayers = Make(p, data, grp, ref totalPlayers);
+                if (totalPlayers == 0) {
+                    p.Message("There are no players of that rank online.");
                 } else {
-                    rankSec.Print(p, false);
+                    Output(rankPlayers, p, false);
                 }
                 return;
             }
             
-            List<Section> playerList = new List<Section>();
+            List<GroupPlayers> allPlayers = new List<GroupPlayers>();
             foreach (Group grp in Group.GroupList) {
-                string title = ":" + grp.Color + GetPlural(grp.Name) + ":";
-                playerList.Add(MakeSection(grp, title));
-            }
-
-            int totalPlayers = 0;
-            Player[] online = PlayerInfo.Online.Items;
-            foreach (Player pl in online) {
-                if (p == pl || Entities.CanSee(p, pl)) {
-                    string name = Colors.Strip(pl.DisplayName);
-                    AddStates(pl, ref name);
-                    totalPlayers++;
-                    playerList.Find(grp => grp.group == pl.group).Append(pl, name);
-                }
+                allPlayers.Add(Make(p, data, grp, ref totalPlayers));
             }
             
             if (totalPlayers == 1) {
-                Player.Message(p, "There is &a1 %Splayer online.");
+                p.Message("There is &a1 &Splayer online.");
             } else {
-                Player.Message(p, "There are &a" + totalPlayers + " %Splayers online.");
+                p.Message("There are &a" + totalPlayers + " &Splayers online.");
             }
             
-            for (int i = playerList.Count - 1; i >= 0; i--) {
-                playerList[i].Print(p, ServerConfig.ListEmptyRanks);
+            for (int i = allPlayers.Count - 1; i >= 0; i--) {
+                Output(allPlayers[i], p, Server.Config.ListEmptyRanks);
             }
         }
         
-        static void AddStates(Player pl, ref string name) {
-            if (pl.hidden) name += "-hidden";
-            if (pl.muted) name += "-muted";
-            if (pl.frozen) name += "-frozen";
-            if (pl.Game.Referee) name += "-ref";
-            if (pl.IsAfk) name += "-afk";
-        }
-        
-        struct Section {
-            public Group group;
-            public StringBuilder builder;
-            public string title;
+        struct GroupPlayers { public Group group; public StringBuilder builder; }      
+        static GroupPlayers Make(Player p, CommandData data, Group group, ref int totalPlayers) {
+            GroupPlayers list;
+            list.group = group;
+            list.builder = new StringBuilder();
             
-            public bool Empty { get { return builder.Length == 0; } }
-            
-            public void Print(Player p, bool showEmpty) {
-                if (builder.Length == 0 && !showEmpty) return;
+            Player[] online = PlayerInfo.Online.Items;
+            foreach (Player pl in online) {
+                if (pl.group != group || !p.CanSee(pl, data.Rank)) continue;
                 
-                if (builder.Length > 0)
-                    builder.Remove(builder.Length - 1, 1);
-                string message = title + builder.ToString();
-                Player.Message(p, message);
+                totalPlayers++;
+                Append(p, list, pl);
             }
+            return list;
+        }
+        
+        static void Append(Player target, GroupPlayers list, Player p) {
+            StringBuilder data = list.builder;
+            data.Append(' ');
+            if (p.voice) { data.Append("&f+").Append(list.group.Color); }
+            data.Append(Colors.StripUsed(target.FormatNick(p)));
             
-            public void Append(Player pl, string name) {
-                builder.Append(' ');
-                if (pl.voice) {
-                    builder.Append("&f+").Append(group.Color);
-                }
-                
-                builder.Append(name);
-                string lvlName = Colors.Strip(pl.level.name); // for museums
-                builder.Append(" (").Append(lvlName).Append("),");
-            }
+            if (p.hidden)       data.Append("-hidden");
+            if (p.muted)        data.Append("-muted");
+            if (p.frozen)       data.Append("-frozen");
+            if (p.Game.Referee) data.Append("-ref");
+            if (p.IsAfk)        data.Append("-afk");
+            if (p.Unverified)   data.Append("-unverified");
+            
+            string lvlName = Colors.Strip(p.level.name); // for museums
+            data.Append(" (").Append(lvlName).Append("),");
         }
         
-        static Section MakeSection(Group group, string title) {
-            Section sec;
-            sec.group = group;
-            sec.builder = new StringBuilder();
-            sec.title = title;
-            return sec;
+        static string GetPlural(string name) {
+            if (name.Length < 2) return name;
+            
+            string last2 = name.Substring(name.Length - 2).ToLower();
+            if ((last2 != "ed" || name.Length <= 3) && last2[1] != 's')
+                return name + "s";
+            return name;
         }
         
-        static string GetPlural(string groupName) {
-            if (groupName.Length < 2)
-                return groupName;
-            string last2 = groupName.Substring(groupName.Length - 2).ToLower();
-            if ((last2 != "ed" || groupName.Length <= 3) && last2[1] != 's')
-                return groupName + "s";
-            return groupName;
+        static void Output(GroupPlayers list, Player p, bool showWhenEmpty) {
+            StringBuilder data = list.builder;
+            if (data.Length == 0 && !showWhenEmpty) return;
+            if (data.Length > 0) data.Remove(data.Length - 1, 1);
+            
+            string title = ":" + list.group.Color + GetPlural(list.group.Name) + ":";
+            p.Message(title + data.ToString());
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Players");
-            Player.Message(p, "%HLists name and rank of all online players");
-            Player.Message(p, "%T/Players [rank]");
-            Player.Message(p, "%HLists all online players who have that rank");
+            p.Message("&T/Players");
+            p.Message("&HLists name and rank of all online players");
+            p.Message("&T/Players [rank]");
+            p.Message("&HLists all online players who have that rank");
         }
     }
 }

@@ -26,7 +26,7 @@ using MCGalaxy.Util;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Building {
-    public sealed class CmdMessageBlock : Command {
+    public sealed class CmdMessageBlock : Command2 {
         public override string name { get { return "MB"; } }
         public override string shortcut { get { return "MessageBlock"; } }
         public override string type { get { return CommandTypes.Building; } }
@@ -34,33 +34,34 @@ namespace MCGalaxy.Commands.Building {
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool SuperUseable { get { return false; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Nobody, "+ can use moderation commands in MBs") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Admin, "can use moderation commands in MBs") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
 
             bool allMessage = false;
-            MBArgs data = new MBArgs();
+            MBArgs mbArgs = new MBArgs();
             string[] args = message.SplitSpaces(2);
             string block = args[0].ToLower();
-            data.Block = GetBlock(p, block, ref allMessage);
-            if (data.Block == Block.Invalid) return;
-            if (!CommandParser.IsBlockAllowed(p, "place a message block of", data.Block)) return;
+            
+            mbArgs.Block = GetBlock(p, block, ref allMessage);
+            if (mbArgs.Block == Block.Invalid) return;
+            if (!CommandParser.IsBlockAllowed(p, "place a message block of", mbArgs.Block)) return;
             
             if (allMessage) {
-                data.Message = message;
+                mbArgs.Message = message;
             } else if (args.Length == 1) {
-                Player.Message(p, "You need to provide text to put in the messageblock."); return;
+                p.Message("You need to provide text to put in the messageblock."); return;
             } else {
-                data.Message = args[1];
+                mbArgs.Message = args[1];
             }
             
-            bool allCmds = HasExtraPerm(p, 1);
-            if (!MessageBlock.Validate(p, data.Message, allCmds)) return;
+            bool allCmds = HasExtraPerm(p, data.Rank, 1);
+            if (!MessageBlock.Validate(p, mbArgs.Message, allCmds)) return;
 
-            Player.Message(p, "Place where you wish the message block to go.");
-            p.MakeSelection(1, data, PlacedMark);
+            p.Message("Place where you wish the message block to go.");
+            p.MakeSelection(1, mbArgs, PlacedMark);
         }
         
         BlockID GetBlock(Player p, string name, ref bool allMessage) {
@@ -88,40 +89,22 @@ namespace MCGalaxy.Commands.Building {
             MBArgs args = (MBArgs)state;
             
             BlockID old = p.level.GetBlock(x, y, z);
-            if (p.level.CheckAffectPermissions(p, x, y, z, old, args.Block)) {
+            if (p.level.CheckAffect(p, x, y, z, old, args.Block)) {
                 p.level.UpdateBlock(p, x, y, z, args.Block);
                 UpdateDatabase(p, args, x, y, z);
-                Player.Message(p, "Message block created.");
+                p.Message("Message block created.");
             } else {
-                Player.Message(p, "Failed to create a message block.");
+                p.Message("Failed to create a message block.");
             }
             return true;
         }
         
         void UpdateDatabase(Player p, MBArgs args, ushort x, ushort y, ushort z) {
-            args.Message = args.Message.Replace("'", "\\'");
-            args.Message = Colors.Escape(args.Message);
-            args.Message = args.Message.UnicodeToCp437();
-            
-            string lvlName = p.level.name;
-            object locker = ThreadSafeCache.DBCache.GetLocker(lvlName);
+            string map = p.level.name;
+            object locker = ThreadSafeCache.DBCache.GetLocker(map);
             
             lock (locker) {
-                Database.Backend.CreateTable("Messages" + lvlName, LevelDB.createMessages);
-                p.level.hasMessageBlocks = true;
-                
-                int count = 0;
-                using (DataTable Messages = Database.Backend.GetRows("Messages" + lvlName, "*",
-                                                                     "WHERE X=@0 AND Y=@1 AND Z=@2", x, y, z)) {
-                    count = Messages.Rows.Count;
-                }
-                
-                if (count == 0) {
-                    Database.Backend.AddRow("Messages" + lvlName, "X, Y, Z, Message", x, y, z, args.Message);
-                } else {
-                    Database.Backend.UpdateRows("Messages" + lvlName, "Message=@3",
-                                                "WHERE X=@0 AND Y=@1 AND Z=@2", x, y, z, args.Message);
-                }
+                MessageBlock.Set(map, x, y, z, args.Message);
             }
         }
 
@@ -130,32 +113,19 @@ namespace MCGalaxy.Commands.Building {
         
         void ShowMessageBlocks(Player p) {
             p.showMBs = !p.showMBs;
-            int count = 0;
+            List<Vec3U16> coords = MessageBlock.GetAllCoords(p.level.MapName);
             
-            if (p.level.hasMessageBlocks) {
-                using (DataTable table = Database.Backend.GetRows("Messages" + p.level.name, "*")) {
-                    count = table.Rows.Count;
-                    if (p.showMBs) { ShowMessageBlocks(p, table); }
-                    else { HideMessageBlocks(p, table); }
+            foreach (Vec3U16 pos in coords) {
+                if (p.showMBs) {
+                    p.SendBlockchange(pos.X, pos.Y, pos.Z, Block.Green);
+                } else {
+                    p.RevertBlock(pos.X, pos.Y, pos.Z);
                 }
             }
-            Player.Message(p, "Now {0} %SMBs.", p.showMBs ? "showing &a" + count : "hiding");
-        }
-        
-        static void ShowMessageBlocks(Player p, DataTable table) {
-            foreach (DataRow row in table.Rows) {
-                p.SendBlockchange(U16(row["X"]), U16(row["Y"]), U16(row["Z"]), Block.Green);
-            }
-        }
-        
-        static void HideMessageBlocks(Player p, DataTable table) {
-            foreach (DataRow row in table.Rows) {
-                p.RevertBlock(U16(row["X"]), U16(row["Y"]), U16(row["Z"]));
-            }
-        }
-        
-        static ushort U16(object x) { return Convert.ToUInt16(x); }
 
+            p.Message("Now {0} &SMBs.", 
+                           p.showMBs ? "showing &a" + coords.Count : "hiding");
+        }
         
         static string Format(BlockID block, Player p, BlockProps[] props) {
             if (!props[block].IsMessageBlock) return null;
@@ -171,7 +141,7 @@ namespace MCGalaxy.Commands.Building {
         
         static List<string> SupportedBlocks(Player p) {
             List<string> names = new List<string>();
-            BlockProps[] props = Player.IsSuper(p) ? Block.Props : p.level.Props;
+            BlockProps[] props = p.IsSuper ? Block.Props : p.level.Props;
             
             for (int i = 0; i < props.Length; i++) {
                 string name = Format((BlockID)i, p, props);
@@ -181,13 +151,13 @@ namespace MCGalaxy.Commands.Building {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/MB [block] [message]");
-            Player.Message(p, "%HPlaces a message in your next block.");
+            p.Message("&T/MB [block] [message]");
+            p.Message("&HPlaces a message in your next block.");
             List<string> names = SupportedBlocks(p);            
-            Player.Message(p, "%H  Supported blocks: %S{0}", names.Join());
-            Player.Message(p, "%H  Use | to separate commands, e.g. /say 1 |/say 2");
-            Player.Message(p, "%H  Note: \"@p\" is a placeholder for player who clicked.");
-            Player.Message(p, "%T/MB show %H- Shows or hides message blocks");
+            p.Message("&H  Supported blocks: &S{0}", names.Join());
+            p.Message("&H  Use | to separate commands, e.g. /say 1 |/say 2");
+            p.Message("&H  Note: \"@p\" is a placeholder for player who clicked.");
+            p.Message("&T/MB show &H- Shows or hides message blocks");
         }
     }
 }

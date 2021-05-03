@@ -64,15 +64,8 @@ namespace MCGalaxy.Maths {
         public static bool operator != (Vec3U16 a, Vec3U16 b) {
             return a.X != b.X || a.Y != b.Y || a.Z != b.Z;
         }
-        
-        
-        public override string ToString() {
-            return X + "," + Y + "," + Z;
-        }
-        
-        public string ToString(string separator) {
-            return String.Format("{1}{0}{2}{0}{3}", separator, X, Y, Z);
-        }
+                
+        public override string ToString() { return X + ", " + Y + ", " + Z; }
     }
     
     public struct Vec3S32 : IEquatable<Vec3S32> {        
@@ -90,9 +83,7 @@ namespace MCGalaxy.Maths {
         
         public int LengthSquared { get { return X * X + Y * Y + Z * Z; } }
         
-        public float Length { get { return (float)Math.Sqrt( X * X + Y * Y + Z * Z ); } }
-        
-        public float Dot(Vec3S32 b) { return X * b.X + Y * b.Y + Z * b.Z; }        
+        public float Length { get { return (float)Math.Sqrt( X * X + Y * Y + Z * Z ); } }    
         
         
         public int this[int index] {
@@ -166,14 +157,9 @@ namespace MCGalaxy.Maths {
         public static bool operator != (Vec3S32 a, Vec3S32 b) {
             return a.X != b.X || a.Y != b.Y || a.Z != b.Z;
         }
-
         
         public override string ToString() {
-            return X + "," + Y + "," + Z;
-        }
-        
-        public string ToString(string separator) {
-            return String.Format("{1}{0}{2}{0}{3}", separator, X, Y, Z);
+            return X + ", " + Y + ", " + Z;
         }
     }
     
@@ -253,15 +239,10 @@ namespace MCGalaxy.Maths {
         
         public static bool operator != (Vec3F32 a, Vec3F32 b) {
             return a.X != b.X || a.Y != b.Y || a.Z != b.Z;
-        }
-        
+        }      
         
         public override string ToString() {
             return X + "," + Y + "," + Z;
-        }
-        
-        public string ToString(string separator) {
-            return String.Format("{1}{0}{2}{0}{3}", separator, X, Y, Z);
         }
     }
 }

@@ -24,27 +24,27 @@ using MCGalaxy.Maths;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Moderation {
-    public class CmdUndoPlayer : Command {
+    public class CmdUndoPlayer : Command2 {
         public override string name { get { return "UndoPlayer"; } }
         public override string shortcut { get { return "up"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override CommandAlias[] Aliases {
-            get { return new[] { new CommandAlias("XUndo", null, "all"),
+            get { return new[] { new CommandAlias("XUndo","{args} all"),
                     new CommandAlias("UndoArea", "-area"), new CommandAlias("ua", "-area") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             bool area = message.CaselessStarts("-area");
             if (area) {
                 message = message.Substring("-area".Length).TrimStart();
             }
 
             if (CheckSuper(p, message, "player name")) return;
-            if (message.Length == 0) { Player.Message(p, "You need to provide a player name."); return; }
+            if (message.Length == 0) { p.Message("You need to provide a player name."); return; }
             
             string[] parts = message.SplitSpaces(), names = null;
-            int[] ids = GetIds(p, parts, out names);
+            int[] ids = GetIds(p, parts, data, out names);
             if (ids == null) return;
             
             TimeSpan delta = CmdUndo.GetDelta(p, parts[0], parts, 1);
@@ -54,10 +54,10 @@ namespace MCGalaxy.Commands.Moderation {
                 Vec3S32[] marks = new Vec3S32[] { Vec3U16.MinVal, Vec3U16.MaxVal };
                 UndoPlayer(p, delta, names, ids, marks);
             } else {
-                Player.Message(p, "Place or break two blocks to determine the edges.");
+                p.Message("Place or break two blocks to determine the edges.");
                 UndoAreaArgs args = new UndoAreaArgs();
                 args.ids = ids; args.names = names; args.delta = delta;
-                p.MakeSelection(2, "Selecting region for %SUndo player", args, DoUndoArea);
+                p.MakeSelection(2, "Selecting region for &SUndo player", args, DoUndoArea);
             }
         }
         
@@ -74,71 +74,52 @@ namespace MCGalaxy.Commands.Moderation {
             UndoDrawOp op = new UndoDrawOp();
             op.Start = DateTime.UtcNow.Subtract(delta);
             op.who = names[0]; op.ids = ids;
+            op.AlwaysUsable = true;
             
-            if (Player.IsSuper(p)) {
+            if (p.IsSuper) {
                 // undo them across all loaded levels
                 Level[] levels = LevelInfo.Loaded.Items;
-                if (p == null) p = new ConsolePlayer();
                 
                 foreach (Level lvl in levels) {
-                    op.SetMarks(marks);
-                    op.SetLevel(lvl);
-                    op.Player = p; p.level = lvl;
-                    DrawOpPerformer.DoQueuedDrawOp(p, op, null, marks);
+                    op.Setup(p, lvl, marks);
+                    DrawOpPerformer.Execute(p, op, null, marks);
                 }
+                p.level = null;
             } else {
                 DrawOpPerformer.Do(op, null, p, marks);
             }
 
-            string namesStr = names.Join(name => PlayerInfo.GetColoredName(p, name));
+            string namesStr = names.Join(name => p.FormatNick(name));
             if (op.found) {
-                Chat.MessageGlobal("Undid {1}%S's changes for the past &b{0}", delta.Shorten(true), namesStr);
+                Chat.MessageGlobal("Undid {1}&S's changes for the past &b{0}", delta.Shorten(true), namesStr);
                 Logger.Log(LogType.UserActivity, "Actions of {0} for the past {1} were undone.", names.Join(), delta.Shorten(true));
             } else {
-                Player.Message(p, "No changes found by {1} %Sin the past &b{0}", delta.Shorten(true), namesStr);
+                p.Message("No changes found by {1} &Sin the past &b{0}", delta.Shorten(true), namesStr);
             }
         }
         
-        // TODO: nasty hack, need to find a better way of doing this
-        sealed class ConsolePlayer : Player {
-            public ConsolePlayer() : base("(console)") {
-                group = Group.NobodyRank;
-                DatabaseID = NameConverter.InvalidNameID("(console)");
-            }
-            
-            public override void SendMessage(byte id, string message) {
-                Logger.Log(LogType.ConsoleMessage, message);
-            }
-        }
-        
-        int[] GetIds(Player p, string[] parts, out string[] names) {
+        int[] GetIds(Player p, string[] parts, CommandData data, out string[] names) {
             int count = Math.Max(1, parts.Length - 1);
             List<int> ids = new List<int>();
             names = new string[count];
             
             for (int i = 0; i < names.Length; i++) {
-                names[i] = PlayerInfo.FindOfflineNameMatches(p, parts[i]);
+                names[i] = PlayerDB.MatchNames(p, parts[i]);
                 if (names[i] == null) return null;
                 
-                Group grp = Group.GroupIn(names[i]);
-                bool canUndo = p == null || grp.Permission < p.Rank || p.name.CaselessEq(names[i]);
-                if (!canUndo) {
-                    MessageTooHighRank(p, "undo", false); return null;
-                }
-
+                Group grp = PlayerInfo.GetGroup(names[i]);
+                if (!CheckRank(p, data, names[i], grp.Permission, "undo", false)) return null;
                 ids.AddRange(NameConverter.FindIds(names[i]));
             }
             return ids.ToArray();
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/UndoPlayer [player1] <player2..> <timespan>");
-            Player.Message(p, "%HUndoes the block changes of [players] in the past <timespan>");
-            Player.Message(p, "%T/UndoPlayer -area [player1] <player2..> <timespan>");
-            Player.Message(p, "%HOnly undoes block changes in the specified region.");
-            Player.Message(p, "%H  If <timespan> is not given, undoes 30 minutes.");
-            if (p == null || p.group.MaxUndo == -1 || p.group.MaxUndo == int.MaxValue)
-                Player.Message(p, "%H  if <timespan> is all, &cundoes for 68 years");
+            p.Message("&T/UndoPlayer [player1] <player2..> <timespan>");
+            p.Message("&HUndoes the block changes of [players] in the past <timespan>");
+            p.Message("&T/UndoPlayer -area [player1] <player2..> <timespan>");
+            p.Message("&HOnly undoes block changes in the specified region.");
+            p.Message("&H  If <timespan> is not given, undoes 30 minutes.");
         }
     }
 }

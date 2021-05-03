@@ -28,38 +28,38 @@ namespace MCGalaxy.DB {
         // NOTE: this restriction is due to BlockDBCacheEntry
         public const int MaxPlayerID = 0x00FFFFFF;
         
+        /// <summary> Returns the name associated with the given ID, or ID#[id] if not found </summary>
         public static string FindName(int id) {
-            List<string> invalid = Server.invalidIds.All();
-            if (id > MaxPlayerID - invalid.Count)
-                return invalid[MaxPlayerID - id];
+            // Only returns non-null if id > MaxPlayerID - invalid.Count
+            string name = Server.invalidIds.GetAt(MaxPlayerID - id);
+            if (name != null) return name;
             
-            using (DataTable ids = Database.Backend.GetRows("Players", "Name", "WHERE ID=@0", id)) {
-                if (ids.Rows.Count == 0) return "ID#" + id;
-                return ids.Rows[0]["Name"].ToString();
-            }
+            name = Database.ReadString("Players", "Name", "WHERE ID=@0", id);
+            return name != null ? name : "ID#" + id;
         }
         
+        static object ListIds(IDataRecord record, object arg) {
+            ((List<int>)arg).Add(record.GetInt32(0));
+            return arg;
+        }
+        
+        /// <summary> Finds all the IDs associated with the given name. </summary>
         public static int[] FindIds(string name) {
-            List<string> invalid = Server.invalidIds.All();
             List<int> ids = new List<int>();
             
-            int index = invalid.CaselessIndexOf(name);
-            if (index >= 0) ids.Add(MaxPlayerID - index);
+            int i = Server.invalidIds.IndexOf(name);
+            if (i >= 0) ids.Add(MaxPlayerID - i);
             
-            using (DataTable names = Database.Backend.GetRows("Players", "ID", "WHERE Name=@0", name)) {
-                foreach (DataRow row in names.Rows) {
-                    string raw = row["ID"].ToString();
-                    ids.Add(PlayerData.ParseInt(raw));
-                }
-            }
+            Database.ReadRows("Players", "ID", ids, ListIds, "WHERE Name=@0", name);
             return ids.ToArray();
         }
         
+        /// <summary> Returns a non-database ID for the given name </summary>
         public static int InvalidNameID(string name) {
-            bool added = Server.invalidIds.AddIfNotExists(name);
+            bool added = Server.invalidIds.Add(name);
             if (added) Server.invalidIds.Save();
             
-            int index = Server.invalidIds.All().CaselessIndexOf(name);
+            int index = Server.invalidIds.IndexOf(name);
             return MaxPlayerID - index;
         }
     }

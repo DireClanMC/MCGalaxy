@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2010 MCSharp team (Modified for use with MCZall/MCLawl/MCGalaxy)
     
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -19,25 +19,39 @@ using System;
 namespace MCGalaxy.Commands.Chatting {    
     public sealed class CmdRoll : MessageCmd {
         public override string name { get { return "Roll"; } }
+        static volatile Random rng;
+        static readonly object rngLock = new object();
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
-            Random rand = new Random();
-            int min, max;
+            int min = 1, max = 6;
             
-            if (!int.TryParse(args[0], out min)) min = 1;
-            if (args.Length == 1 || !int.TryParse(args[1], out max)) max = 6;
-            if (min > max) { int a = min; min = max; max = a; }
+            if (args.Length > 1) {
+                if (!CommandParser.GetInt(p, args[0], "Min", ref min)) return;
+                if (!CommandParser.GetInt(p, args[1], "Max", ref max)) return;
+            } else if (message.Length > 0) {
+                if (!CommandParser.GetInt(p, args[0], "Max", ref max)) return;
+            }
             
+            if (min > max) { int tmp = min; min = max; max = tmp; }            
             // rand.Next(min, max) is exclusive of max, so we need to use (max + 1)
             int adjMax = max == int.MaxValue ? int.MaxValue : max + 1;
-            string msg = p.ColoredName + " %Srolled a &a" + rand.Next(min, adjMax) + " %S(" + min + "|" + max + ")";
+            
+            // Don't want RNG to get seeded the same if /roll is called in quick succession
+            // (since it uses Environment.TickCount, which only has 10-15 millisecond accuracy)
+            int number;
+            lock (rngLock) {
+                if (rng == null) rng = new Random();
+                number = rng.Next(min, adjMax);
+            }
+            
+            string msg = "λNICK &Srolled a &a" + number + " &S(" + min + "|" + max + ")";
             TryMessage(p, msg);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Roll [min] [max]");
-            Player.Message(p, "%HRolls a random number between [min] and [max].");
+            p.Message("&T/Roll [min] [max]");
+            p.Message("&HRolls a random number between [min] and [max].");
         }
     }
 }

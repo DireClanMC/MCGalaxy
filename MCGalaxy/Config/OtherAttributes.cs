@@ -16,53 +16,52 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using MCGalaxy.Maths;
 
 namespace MCGalaxy.Config {
     
     public sealed class ConfigBoolAttribute : ConfigAttribute {
+        bool defValue;
         
-        public ConfigBoolAttribute(string name, string section, bool defValue)
-            : base(name, section, defValue) {
-        }
+        public ConfigBoolAttribute() : this(null, null, false) { }
+        public ConfigBoolAttribute(string name, string section, bool def)
+            : base(name, section) { defValue = def; }
         
         public override object Parse(string value) {
             bool boolValue;
             if (!bool.TryParse(value, out boolValue)) {
-                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid boolean, using default of {1}", Name, DefaultValue);
-                return DefaultValue;
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid boolean, using default of {1}", Name, defValue);
+                return defValue;
             }
             return boolValue;
+        }
+        
+        public override string Serialise(object value) {
+            bool boolValue = (bool)value;
+            return boolValue ? "true" : "false";
         }
     }
     
     public sealed class ConfigPermAttribute : ConfigAttribute {
+        LevelPermission defPerm;
         
-        public ConfigPermAttribute(string name, string section, LevelPermission defValue)
-            : base(name, section, defValue) {
-        }
+        public ConfigPermAttribute(string name, string section, LevelPermission def)
+            : base(name, section) { defPerm = def; }
         
-        public override object Parse(string value) {
-            sbyte permNum;
-            LevelPermission perm;
-            if (!sbyte.TryParse(value, out permNum)) {
-                // Try parse the permission as name for backwards compatibility
-                Group grp = Group.Find(value);
-                if (grp == null) {
-                    Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid permission, using default of {1}", Name, DefaultValue);
-                    return DefaultValue;
-                }
-                perm = grp.Permission;
-            } else {
-                perm = (LevelPermission)permNum;
+        public override object Parse(string raw) {
+            LevelPermission perm = Group.ParsePermOrName(raw, LevelPermission.Null);
+            if (perm == LevelPermission.Null) {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid permission, using default of {1}", Name, defPerm);
+                perm = defPerm;
             }
             
             if (perm < LevelPermission.Banned) {
                 Logger.Log(LogType.Warning, "Config key \"{0}\" cannot be below banned rank.", Name);
-                return LevelPermission.Banned;
+                perm = LevelPermission.Banned;
             }
             if (perm > LevelPermission.Nobody) {
                 Logger.Log(LogType.Warning, "Config key \"{0}\" cannot be above nobody rank.", Name);
-                return LevelPermission.Nobody;
+                perm = LevelPermission.Nobody;
             }
             return perm;
         }
@@ -74,25 +73,69 @@ namespace MCGalaxy.Config {
     }
     
     public sealed class ConfigEnumAttribute : ConfigAttribute {
+        object defValue;
+        Type enumType;
         
-        /// <summary> The type of members of this enumeration. </summary>
-        public Type EnumType;
+        public ConfigEnumAttribute(string name, string section, object def, Type type)
+            : base(name, section) { defValue = def; enumType = type; }
         
-        public ConfigEnumAttribute(string name, string section, object defValue, Type enumType)
-            : base(name, section, defValue) {
-            EnumType = enumType;
+        public override object Parse(string raw) {
+            object value;
+            try {
+                value = Enum.Parse(enumType, raw, true);
+                if (!Enum.IsDefined(enumType, value)) throw new ArgumentException("value not member of enumeration");
+            } catch {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid enum member, using default of {1}", Name, defValue);
+                return defValue;
+            }
+            return value;
         }
+    }
+    
+    public sealed class ConfigVec3Attribute : ConfigAttribute {
+        public ConfigVec3Attribute(string name, string section) : base(name, section) { }
+        
+        public override object Parse(string raw) {
+            Vec3U16 value;
+            try {
+                string[] p = raw.SplitComma();
+                value = new Vec3U16(ushort.Parse(p[0]), ushort.Parse(p[1]), ushort.Parse(p[2]));
+            } catch {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid vec3, using default", Name);
+                value = default(Vec3U16);
+            }
+            return value;
+        }
+    }
+    
+    public sealed class ConfigBoolArrayAttribute : ConfigAttribute {
+        bool defValue;
+        int minCount;
+        
+        public ConfigBoolArrayAttribute() : this(null, null, false, 0) { }
+        public ConfigBoolArrayAttribute(string name, string section, bool def, int min)
+            : base(name, section) { defValue = def; minCount = min; }
         
         public override object Parse(string value) {
-            object result;
-            try {
-                result = Enum.Parse(EnumType, value, true);
-                if (!Enum.IsDefined(EnumType, result)) throw new ArgumentException("value not member of enumeration");
-            } catch {
-                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid enum member, using default of {1}", Name, DefaultValue);
-                return DefaultValue;
+            string[] parts = value.SplitComma();
+            bool[] values  = new bool[minCount];
+            int i;
+            
+            for (i = 0; i < parts.Length; i++) {
+                if (bool.TryParse(parts[i], out values[i])) continue;
+                
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid boolean, using default of {1}", Name, defValue);
+                values[i] = defValue;
             }
-            return result;
+            
+            // shouldn't usually happen, but handle anyways
+            for (; i < values.Length; i++) values[i] = defValue;
+            return values;
+        }
+        
+        public override string Serialise(object value) {
+            bool[] values = (bool[])value;
+            return values.Join(b => b.ToString(), ", ");
         }
     }
 }

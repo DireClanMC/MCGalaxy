@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2011 MCForge
         
     Dual-licensed under the    Educational Community License, Version 2.0 and
@@ -19,325 +19,76 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using MCGalaxy.Commands.World;
+using MCGalaxy.Events;
+using MCGalaxy.Events.LevelEvents;
+using MCGalaxy.Events.PlayerEvents;
+using MCGalaxy.Network;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Games {
-    public sealed class CountdownGame : IGame {
+
+    public sealed class CountdownConfig : RoundsGameConfig {
+        public override bool AllowAutoload { get { return true; } }
+        protected override string GameName { get { return "Countdown"; } }
+        protected override string PropsPath { get { return "properties/countdown.properties"; } }
         
+        public override void Load() {
+            base.Load();
+            if (Maps.Count == 0) Maps.Add("countdown");
+        }
+    }
+    
+    public sealed partial class CountdownGame : RoundsGame {
         public VolatileArray<Player> Players = new VolatileArray<Player>();
         public VolatileArray<Player> Remaining = new VolatileArray<Player>();
-        public CountdownGameStatus Status = CountdownGameStatus.Disabled;        
-        public override bool Running { get { return Status != CountdownGameStatus.Disabled; } }
         
-        public bool FreezeMode = false;
+        public static CountdownConfig Config = new CountdownConfig();
+        public override string GameName { get { return "Countdown"; } }
+        public override RoundsGameConfig GetConfig() { return Config; }
+        
+        public bool FreezeMode;
         public int Interval;
         public string SpeedType;
         
-        CountdownPlugin plugin = new CountdownPlugin();
-        List<SquarePos> squaresLeft = new List<SquarePos>();
+        public static CountdownGame Instance = new CountdownGame();
+        public CountdownGame() { Picker = new LevelPicker(); }
         
-        public override void EndRound() { EndRound(null); }
+        public override void UpdateMapConfig() { }
         
-        
-        #region Round
-
-        public void BeginRound(Player p) {
-            Status = CountdownGameStatus.RoundCountdown;
-            ResetMap();
-            SetGlassTube(Block.Glass, Block.Glass);
-            Map.ChatLevel("Countdown is about to start!");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            int midX = Map.Width / 2, midY = Map.Height / 2, midZ = Map.Length / 2;
-            int xSpawn = (midX * 32 + 16);
-            int ySpawn = ((Map.Height - 2) * 32);
-            int zSpawn = (midZ * 32 + 16);
-            
-            squaresLeft.Clear();
-            for (int zz = 6; zz < Map.Length - 6; zz += 3)
-                for (int xx = 6; xx < Map.Width - 6; xx += 3)
-                    squaresLeft.Add(new SquarePos(xx, zz));
-            
-            if (FreezeMode)
-                Map.ChatLevel("Countdown starting with difficulty " + SpeedType + " and mode freeze in:");
-            else
-                Map.ChatLevel("Countdown starting with difficulty " + SpeedType + " and mode normal in:");
-            
-            Thread.Sleep(2000);
-            SpawnPlayers(xSpawn, ySpawn, zSpawn);
-            Map.ChatLevel("-----&b5%S-----");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Cuboid(midX - 1, midY, midZ - 1, midX, midY, midZ, Block.Air, Map);
-            Thread.Sleep(1000);
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Map.ChatLevel("-----&b4%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b3%S-----"); Thread.Sleep(1000);
-            Cuboid(midX, Map.Height - 5, midZ, midX + 1, Map.Height - 5, midZ + 1, Block.Air, Map);
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Map.ChatLevel("-----&b2%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b1%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("GO!!!!!!!");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Player[] players = Players.Items;
-            Remaining.Clear();
-            foreach (Player pl in players) { Remaining.Add(pl); }
-
-            DoRound();
+        protected override List<Player> GetPlayers() {
+            List<Player> playing = new List<Player>();
+            playing.AddRange(Players.Items);
+            return playing;
         }
         
-        void SpawnPlayers(int x, int y, int z) {
-            Position pos = new Position(x, y, z);
-            Player[] players = Players.Items;
+        public override void OutputStatus(Player p) {
+            Player[] players = Players.Items;            
+            p.Message("Players in countdown:");
             
-            foreach (Player pl in players) {
-                if (pl.level != Map) {
-                    pl.SendMessage("Sending you to the correct map.");
-                    PlayerActions.ChangeMap(pl, Map.name);
-                }
-                
-                Entities.Spawn(pl, pl, pos, pl.Rot);
-                pl.SendPos(Entities.SelfID, pos, pl.Rot);
-            }
-        }
-        
-        
-        #region Do a round
-        
-        void DoRound() {
-            if (FreezeMode) {
-                MessageFreezeCountdown();
-                Map.ChatLevel("&bPlayers Frozen");
-                
-                Player[] players = Players.Items;
-                foreach (Player pl in players) {
-                    Position pos = pl.Pos;
-                    pl.CountdownFreezeX = pos.X;
-                    pl.CountdownFreezeZ = pos.Z;
-                }
-                RemoveAllSquareBorders();
-            }
-            
-            CloseOffBoard();
-            Status = CountdownGameStatus.RoundInProgress;
-            RemoveSquares();
-        }
-
-        void MessageFreezeCountdown() {
-            Thread.Sleep(500);
-            Map.ChatLevel("Welcome to Freeze Mode of countdown");
-            Map.ChatLevel("You have 15 seconds to stand on a square");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Thread.Sleep(500);
-            Map.ChatLevel("-----&b15%S-----"); Thread.Sleep(500);
-            Map.ChatLevel("Once the countdown is up, you are stuck on your square");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Thread.Sleep(500);
-            Map.ChatLevel("-----&b14%S-----"); Thread.Sleep(500);
-            Map.ChatLevel("The squares then start to dissapear");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Thread.Sleep(500);
-            Map.ChatLevel("-----&b13%S-----"); Thread.Sleep(500);
-            Map.ChatLevel("Whoever is last out wins!");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Thread.Sleep(500);
-            Map.ChatLevel("-----&b12%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b11%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b10%S-----");
-            Map.ChatLevel("Only 10 Seconds left to pick your places!");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Thread.Sleep(1000);
-            Map.ChatLevel("-----&b9%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b8%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b7%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b6%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b5%S-----");
-            Map.ChatLevel("5 Seconds left to pick your places!");
-            if (Status != CountdownGameStatus.RoundCountdown) return;
-            
-            Thread.Sleep(1000);
-            Map.ChatLevel("-----&b4%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b3%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b2%S-----"); Thread.Sleep(1000);
-            Map.ChatLevel("-----&b1%S-----"); Thread.Sleep(1000);
-        }
-
-        void CloseOffBoard() {
-            SetGlassTube(Block.Air, Block.Glass);
-            int maxX = Map.Width - 1, maxZ = Map.Length - 1;
-            
-            // Cuboid the borders around game board with air
-            Cuboid(4, 4, 4, maxX - 4, 4, 4, Block.Air, Map);
-            Cuboid(4, 4, maxZ - 4, maxX - 4, 4, maxZ - 4, Block.Air, Map);
-            Cuboid(4, 4, 4, 4, 4, maxZ - 4, Block.Air, Map);
-            Cuboid(maxX - 4, 4, 4, maxX - 4, 4, maxZ - 4, Block.Air, Map);
-        }
-        
-        
-        void RemoveAllSquareBorders() {
-            int maxX = Map.Width - 1, maxZ = Map.Length - 1;
-            for (int xx = 6 - 1; xx <= Map.Width - 6; xx += 3) {
-                Cuboid(xx, 4, 4, xx, 4, maxZ - 4, Block.Air, Map);
-            }
-            for (int zz = 6 - 1; zz <= Map.Length - 6; zz += 3) {
-                Cuboid(4, 4, zz, maxX - 4, 4, zz, Block.Air, Map);
-            }
-        }
-        
-        void RemoveSquares() {
-            Random rng = new Random();
-            while (Status == CountdownGameStatus.RoundInProgress && squaresLeft.Count > 0 && Remaining.Count != 0) {
-                int i = rng.Next(squaresLeft.Count);
-                SquarePos nextSquare = squaresLeft[i];
-                squaresLeft.RemoveAt(i);
-                RemoveSquare(nextSquare);
-
-                if (squaresLeft.Count % 10 == 0) {
-                    if (Status != CountdownGameStatus.RoundInProgress) return;
-                    Map.ChatLevel(squaresLeft.Count + " squares left and " + Remaining.Count + " players remaining!");
-                }
-            }
-        }
-        
-        void RemoveSquare(SquarePos pos) {
-            ushort x1 = pos.X, x2 = (ushort)(pos.X + 1), y = 4, z1 = pos.Z, z2 = (ushort)(pos.Z + 1);
-            Cuboid(x1, y, z1, x2, y, z2, Block.Yellow, Map);
-            Thread.Sleep(Interval);
-            Cuboid(x1, y, z1, x2, y, z2, Block.Orange, Map);
-            Thread.Sleep(Interval);
-            Cuboid(x1, y, z1, x2, y, z2, Block.Red, Map);
-            Thread.Sleep(Interval);
-            Cuboid(x1, y, z1, x2, y, z2, Block.Air, Map);
-            // Remove glass borders if neighbouring squared were previously removed.
-            
-            bool airMaxX = false, airMinZ = false, airMaxZ = false, airMinX = false;
-            if (Map.IsAirAt(x1, y, (ushort)(z2 + 2))) {
-                Map.Blockchange(x1, y, (ushort)(z2 + 1), Block.Air);
-                Map.Blockchange(x2, y, (ushort)(z2 + 1), Block.Air);
-                airMaxZ = true;
-            }
-            if (Map.IsAirAt(x1, y, (ushort)(z1 - 2))) {
-                Map.Blockchange(x1, y, (ushort)(z1 - 1), Block.Air);
-                Map.Blockchange(x2, y, (ushort)(z1 - 1), Block.Air);
-                airMinZ = true;
-            }
-            if (Map.IsAirAt((ushort)(x2 + 2), y, z1)) {
-                Map.Blockchange((ushort)(x2 + 1), y, z1, Block.Air);
-                Map.Blockchange((ushort)(x2 + 1), y, z2, Block.Air);
-                airMaxX = true;
-            }
-            if (Map.IsAirAt((ushort)(x1 - 2), y, z1)) {
-                Map.Blockchange((ushort)(x1 - 1), y, z1, Block.Air);
-                Map.Blockchange((ushort)(x1 - 1), y, z2, Block.Air);
-                airMinX = true;
-            }
-            
-            // Remove glass borders for diagonals too.
-            if (Map.IsAirAt((ushort)(x1 - 2), y, (ushort)(z1 - 2)) && airMinX && airMinZ) {
-                Map.Blockchange((ushort)(x1 - 1), y, (ushort)(z1 - 1), Block.Air);
-            }
-            if (Map.IsAirAt((ushort)(x1 - 2), y, (ushort)(z2 + 2)) && airMinX && airMaxZ) {
-                Map.Blockchange((ushort)(x1 - 1), y, (ushort)(z2 + 1), Block.Air);
-            }
-            if (Map.IsAirAt((ushort)(x2 + 2), y, (ushort)(z1 - 2)) && airMaxX && airMinZ) {
-                Map.Blockchange((ushort)(x2 + 1), y, (ushort)(z1 - 1), Block.Air);
-            }
-            if (Map.IsAirAt((ushort)(x2 + 2), y, (ushort)(z2 + 2)) && airMaxX && airMaxZ) {
-                Map.Blockchange((ushort)(x2 + 1), y, (ushort)(z2 + 1), Block.Air);
-            }
-        }
-
-        #endregion
-        
-
-        public void PlayerDied(Player p) {
-            Map.ChatLevel(p.ColoredName + " %Sis out of countdown!");
-            Remaining.Remove(p);
-            UpdatePlayersLeft();
-        }
-
-        public void UpdatePlayersLeft() {
-            if (Status != CountdownGameStatus.RoundInProgress) return;
-            Player[] players = Remaining.Items;
-            
-            switch (players.Length) {
-                case 1:
-                    Map.ChatLevel(players[0].ColoredName + " %Sis the winner!");
-                    EndRound(players[0]);
-                    break;
-                case 2:
-                    Map.ChatLevel("Only 2 Players left:");
-                    Map.ChatLevel(players[0].ColoredName + " %Sand " + players[1].ColoredName);
-                    break;
-                case 5:
-                    Map.ChatLevel("Only 5 Players left:");
-                    Map.ChatLevel(players.Join(pl => pl.ColoredName));
-                    break;
-                default:
-                    Map.ChatLevel(players.Length + " players left!");
-                    break;
-            }
-        }
-        
-        public void EndRound(Player winner) {
-            squaresLeft.Clear();
-            Status = CountdownGameStatus.Enabled;
-            Remaining.Clear();
-            squaresLeft.Clear();
-            
-            if (winner != null) {
-                winner.SendMessage("Congratulations, you won this round of countdown!");
-                Command.all.FindByName("Spawn").Use(winner, "");
+            if (RoundInProgress) {               
+                p.Message(players.Join(pl => FormatPlayer(pl)));
             } else {
-                Player[] players = Players.Items;
-                foreach (Player pl in players) {
-                    Command.all.FindByName("Spawn").Use(pl, "");
-                }
-                Map.ChatLevel("Current round was force ended!");
+                p.Message(players.Join(pl => pl.ColoredName));
             }
+            
+            p.Message(squaresLeft.Count + " squares left");
         }
         
-        #endregion
+        string FormatPlayer(Player pl) {
+            string suffix = Remaining.Contains(pl) ? " &a[IN]" : " &c[OUT]";
+            return pl.ColoredName + suffix;
+        }
         
-        
-        public void Enable(Player p) {
-            plugin.Game = this;
-            plugin.Load(false);
-            
-            MapName = "countdown";
-            CmdLoad.LoadLevel(null, "countdown");
-            Map = LevelInfo.FindExact("countdown");
-            
-            if (Map == null) {
-                Player.Message(p, "Countdown level not found, generating..");
+        protected override string GetStartMap(Player p, string forcedMap) {
+            if (!LevelInfo.MapExists("countdown")) {
+                p.Message("Countdown level not found, generating..");
                 GenerateMap(p, 32, 32, 32);
-                Map = LevelInfo.FindExact("countdown");
             }
-            
-            Map.Config.Deletable = false;
-            Map.Config.Buildable = false;
-            Map.BuildAccess.Min = LevelPermission.Nobody;
-            Map.Config.MOTD = "Welcome to the Countdown map! -hax";
-            
-            Status = CountdownGameStatus.Enabled;
-            Chat.MessageGlobal("Countdown has been enabled!");
+            return "countdown";
         }
 
-        public void Disable() {
-            if (Status == CountdownGameStatus.RoundInProgress) EndRound(null);
-            
-            Status = CountdownGameStatus.Disabled;
-            plugin.Unload(false);
-            
-            Map.ChatLevel("Countdown was disabled.");
+        protected override void StartGame() { }
+        protected override void EndGame() {
             Players.Clear();
             Remaining.Clear();
             squaresLeft.Clear();
@@ -353,80 +104,37 @@ namespace MCGalaxy.Games {
             Map = lvl;
             
             const string format = "Generated map ({0}x{1}x{2}), sending you to it..";
-            Player.Message(p, format, width, height, length);
+            p.Message(format, width, height, length);
             PlayerActions.ChangeMap(p, "countdown");
-            
-            Position pos = new Position(16 + 8 * 32, 32 + 23 * 32, 16 + 17 * 32);
-            p.SendPos(Entities.SelfID, pos, p.Rot);
         }
-        
-        public void ResetMap() {
-            SetGlassTube(Block.Air, Block.Air);
-
-            int maxX = Map.Width - 1, maxZ = Map.Length - 1;
-            Cuboid(4, 4, 4, maxX - 4, 4, maxZ - 4, Block.Glass, Map);
-            for(int zz = 6; zz < maxZ - 6; zz += 3)
-                for (int xx = 6; xx < maxX - 6; xx += 3)
-                    Cuboid(xx, 4, zz, xx + 1, 4, zz + 1, Block.Green, Map);
-            
-            Map.ChatLevel("Countdown map has been reset");
-        }
-        
-        
-        void SetGlassTube(BlockID block, BlockID floorBlock) {
-            int midX = Map.Width / 2, midY = Map.Height / 2, midZ = Map.Length / 2;
-            Cuboid(midX - 1, midY + 1, midZ - 2, midX, midY + 2, midZ - 2, block, Map);
-            Cuboid(midX - 1, midY + 1, midZ + 1, midX, midY + 2, midZ + 1, block, Map);
-            Cuboid(midX - 2, midY + 1, midZ - 1, midX - 2, midY + 2, midZ, block, Map);
-            Cuboid(midX + 1, midY + 1, midZ - 1, midX + 1, midY + 2, midZ, block, Map);
-            Cuboid(midX - 1, midY, midZ - 1, midX, midY, midZ, floorBlock, Map);
-        }
-        
-        static void Cuboid(int x1, int y1, int z1, int x2, int y2, int z2, BlockID block, Level lvl) {
-            for (int y = y1; y <= y2; y++)
-                for (int z = z1; z <= z2; z++)
-                    for (int x = x1; x <= x2; x++)
-            {
-                lvl.Blockchange((ushort)x, (ushort)y, (ushort)z, block);
-            }
-        }
-        
-        struct SquarePos {
-            public ushort X, Z;
-            public SquarePos(int x, int z) { X = (ushort)x; Z = (ushort)z; }
-        }
-        
         
         public override void PlayerJoinedGame(Player p) {
             if (!Players.Contains(p)) {
+                if (p.level != Map && !PlayerActions.ChangeMap(p, "countdown")) return;
                 Players.Add(p);
-                Player.Message(p, "You've joined countdown!");
-                Chat.MessageGlobal("{0} %Sjoined countdown!", p.ColoredName);
-                if (p.level != Map) PlayerActions.ChangeMap(p, "countdown");
+                p.Message("You've joined countdown!");
+                Chat.MessageFrom(p, "λNICK &Sjoined countdown!");              
             } else {
-                Player.Message(p, "You've already joined countdown. To leave type /countdown leave");
+                p.Message("You've already joined countdown. To leave, go to another map.");
             }
         }
         
         public override void PlayerLeftGame(Player p) {
-            Player.Message(p, "You've left countdown.");
             Players.Remove(p);
-            Remaining.Remove(p);
-            UpdatePlayersLeft();
+            OnPlayerDied(p);
         }
-    }
-
-    public enum CountdownGameStatus {
-        /// <summary> Countdown is not running. </summary>
-        Disabled,
         
-        /// <summary> Countdown is running, but no round has begun yet. </summary>
-        Enabled,
+        protected override string FormatStatus1(Player p) {
+            return RoundInProgress ? squaresLeft.Count + " squares left" : "";
+        }
         
-        /// <summary> Timer is counting down to start of round. </summary>
-        RoundCountdown,
-        
-        /// <summary> Round is in progress. </summary>
-        RoundInProgress,
+        protected override string FormatStatus2(Player p) {
+            return RoundInProgress ? Remaining.Count + " players left" : "";
+        }
+                
+        struct SquarePos {
+            public ushort X, Z;
+            public SquarePos(int x, int z) { X = (ushort)x; Z = (ushort)z; }
+        }
     }
 }

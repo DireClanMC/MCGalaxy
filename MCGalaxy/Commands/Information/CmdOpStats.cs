@@ -23,19 +23,18 @@ using MCGalaxy.DB;
 using MCGalaxy.SQL;
 
 namespace MCGalaxy.Commands.Info { 
-    public sealed class CmdOpStats : Command {
+    public sealed class CmdOpStats : Command2 {
         public override string name { get { return "OpStats"; } }
         public override string type { get { return CommandTypes.Information; } }
         public override bool UseableWhenFrozen { get { return true; } }
         
-        public override void Use(Player p, string message) {
-            string end = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        public override void Use(Player p, string message, CommandData data) {
+            string end = DateTime.Now.ToString(Database.DateFormat);
             string start = "thismonth", name = null;
             string[] args = message.SplitSpaces();
             
             if (message.Length == 0 || ValidTimespan(message.ToLower())) {
-                if (p == null) { Help(p); return; }
-                
+                if (p.IsSuper) { SuperRequiresArgs(p, "player name"); return; }
                 name = p.name;
                 if (message.Length > 0) start = message.ToLower();
             } else {
@@ -61,32 +60,31 @@ namespace MCGalaxy.Commands.Info {
                 Help(p); return;
             }
 
-            Player.Message(p, "OpStats for {0} %Ssince {1}",
-                           PlayerInfo.GetColoredName(p, name), start);
+            p.Message("OpStats for {0} &Ssince {1}", p.FormatNick(name), start);
             
-            int reviews = Query(start, end, name, "review", "LIKE 'next'");
-            int ranks = Query(start, end, name, "setrank", "!=''");
-            int promotes = Query(start, end, name, "setrank", "LIKE '+up%'");
-            int demotes = Query(start, end, name, "setrank", "LIKE '-down%'");
-            int promotesOld = Query(start, end, name, "promote");
-            int demotesOld = Query(start, end, name, "demote");
+            int reviews = Count(start, end, name, "review", "LIKE 'next'");
+            int ranks = Count(start, end, name, "setrank", "!=''");
+            int promotes = Count(start, end, name, "setrank", "LIKE '+up%'");
+            int demotes = Count(start, end, name, "setrank", "LIKE '-down%'");
+            int promotesOld = Count(start, end, name, "promote");
+            int demotesOld = Count(start, end, name, "demote");
             
-            int mutes = Query(start, end, name, "mute");
-            int freezes = Query(start, end, name, "freeze");
-            int warns = Query(start, end, name, "warn");
-            int kicks = Query(start, end, name, "kick");
+            int mutes = Count(start, end, name, "mute");
+            int freezes = Count(start, end, name, "freeze");
+            int warns = Count(start, end, name, "warn");
+            int kicks = Count(start, end, name, "kick");
             
-            int bans = Query(start, end, name, "ban");
-            int kickbans = Query(start, end, name, "kickban");
-            int ipbans = Query(start, end, name, "banip");
-            int xbans = Query(start, end, name, "xban");
-            int tempbans = Query(start, end, name, "tempban");
+            int bans = Count(start, end, name, "ban");
+            int kickbans = Count(start, end, name, "kickban");
+            int ipbans = Count(start, end, name, "banip");
+            int xbans = Count(start, end, name, "xban");
+            int tempbans = Count(start, end, name, "tempban");
 
-            Player.Message(p, "  &a{0}%S bans, &a{1}%S IP-bans, &a{2}%S tempbans",
+            p.Message("  &a{0}&S bans, &a{1}&S IP-bans, &a{2}&S tempbans",
                            bans + kickbans + xbans, ipbans + xbans, tempbans);
-            Player.Message(p, "  &a{0}%S mutes, &a{1}%S warns, &a{2}%S freezes, &a{3}%S kicks",
+            p.Message("  &a{0}&S mutes, &a{1}&S warns, &a{2}&S freezes, &a{3}&S kicks",
                            mutes, warns, freezes, kicks + kickbans + xbans);
-            Player.Message(p, "  &a{0}%S reviews, &a{1}%S ranks (&a{2}%S promotes, &a{3}%S demotes)",
+            p.Message("  &a{0}&S reviews, &a{1}&S ranks (&a{2}&S promotes, &a{3}&S demotes)",
                            reviews, ranks + promotesOld + demotesOld,
                            promotes + promotesOld, demotes + demotesOld);
         }
@@ -94,19 +92,15 @@ namespace MCGalaxy.Commands.Info {
         static bool ValidTimespan(string value) {
             return value == "today" || value == "yesterday" || value == "thismonth" || value == "lastmonth" || value == "all";
         }
-        
-        static int Query(string start, string end, string name, string cmd, string msg = "!=''") {
-            using (DataTable table = Database.Backend.GetRows(
-                "Opstats", "COUNT(ID)" ,"WHERE Time >= @0 AND Time < @1 AND " +
-                "Name LIKE @2 AND Cmd LIKE @3 AND Cmdmsg " + msg, start, end, name, cmd)) {
-                string count = table.Rows[0]["COUNT(id)"].ToString();
-                return PlayerData.ParseInt(count);
-            }
+ 
+        static int Count(string start, string end, string name, string cmd, string msg = "!=''") {
+            const string whereSQL = "WHERE Time >= @0 AND Time < @1 AND Name LIKE @2 AND Cmd LIKE @3 AND Cmdmsg ";
+            return Database.CountRows("Opstats", whereSQL + msg, start, end, name, cmd);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/OpStats [player] today/yesterday/thismonth/lastmonth/all");
-            Player.Message(p, "%HDisplays information about operator command usage.");
+            p.Message("&T/OpStats [player] today/yesterday/thismonth/lastmonth/all");
+            p.Message("&HDisplays information about operator command usage.");
         }
     }
 }

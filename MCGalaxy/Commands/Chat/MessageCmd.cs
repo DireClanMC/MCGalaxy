@@ -16,62 +16,49 @@
     permissions and limitations under the Licenses.
  */
 namespace MCGalaxy.Commands.Chatting {  
-    public abstract class MessageCmd : Command {
+    public abstract class MessageCmd : Command2 {
         public override string type { get { return CommandTypes.Chat; } }
         
-        protected bool TryMessageAction(Player p, string name, string message, bool messageWho) {
+        protected bool TryMessageAction(Player p, string name, string msg, bool messageWho) {
             if (name.Length == 0) { Help(p); return false; }
             Player target = PlayerInfo.FindMatches(p, name);
             if (target == null) return false;
 
-            string giver = (p == null) ? "(console)" : p.ColoredName;
             string reciever = p == target ? "themselves" : target.ColoredName;
-            if (!TryMessage(p, string.Format(message, giver, reciever))) return false;
+            if (!TryMessage(p, msg.Replace("λTARGET", reciever))) return false;
 
-            if (messageWho && p != target && Chat.NotIgnoring(target, p)) {
-                Player.Message(target, string.Format(message, giver, "you"));
+            if (messageWho && p != target && !Chat.Ignoring(target, p)) {
+                msg = msg.Replace("λNICK", target.FormatNick(p));
+                target.Message(msg.Replace("λTARGET", "you"));
             }
             return true;
         }
         
-        protected bool TryMessage(Player p, string message) { return TryMessage(p, message, name); }
+        protected bool TryMessage(Player p, string msg) { return TryMessage(p, msg, false); }
         
-        protected static bool TryMessage(Player p, string message, string cmd) {
-            if (!CanSpeak(p, cmd)) return false;
-            
-            if (p.level.SeesServerWideChat) {
-                Player.SendChatFrom(p, message, false);
-            } else {
-                Chat.MessageLevel(p, "<Level>" + message, false, p.level);
-            }
+        protected bool TryMessage(Player p, string msg, bool relay) {
+            if (!CanSpeak(p, name)) return false;
+            Chat.MessageFrom(p, msg, null, relay);
             
             p.CheckForMessageSpam();
             return true;
         }
         
-        internal static bool CanSpeak(Player p, string cmd) {
-            if (p == null) return true;
-            
-            if (p.muted) { 
-                Player.Message(p, "Cannot use %T/{0} %Swhile muted.", cmd); return false; 
-            }
-            if (Server.chatmod && !p.voice) { 
-                Player.Message(p, "Cannot use %T/{0} %Swhile chat moderation is on without %T/Voice%S.", cmd); return false; 
-            }
-            return true;
+        public static bool CanSpeak(Player p, string cmd) {
+            return p.CheckCanSpeak("use &T/" + cmd);
         }
     }
     
     public sealed class CmdHigh5 : MessageCmd {
         public override string name { get { return "High5"; } }
         
-        public override void Use(Player p, string message) {
-            TryMessageAction(p, message, "{0} %Sjust highfived {1}", true);
+        public override void Use(Player p, string message, CommandData data) {
+            TryMessageAction(p, message, "λNICK &Sjust highfived λTARGET", true);
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/High5 [player]");
-            Player.Message(p, "%HHigh five someone! :D");
+            p.Message("&T/High5 [player]");
+            p.Message("&HHigh five someone! :D");
         }
     }
 }

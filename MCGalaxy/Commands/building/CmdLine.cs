@@ -16,7 +16,6 @@
     permissions and limitations under the Licenses.
  */
 using System;
-using MCGalaxy.Drawing.Brushes;
 using MCGalaxy.Drawing.Ops;
 using MCGalaxy.Maths;
 
@@ -24,38 +23,36 @@ namespace MCGalaxy.Commands.Building {
     public sealed class CmdLine : DrawCmd {
         public override string name { get { return "Line"; } }
         public override string shortcut { get { return "l"; } }
+        public override CommandAlias[] Aliases {
+            get { return new[] { new CommandAlias("ln") }; }
+        }
+        
+        protected override string SelectionType { get { return "endpoints"; } }
         protected override string PlaceMessage { get { return "Place or break two blocks to determine the endpoints."; } }
         
         protected override DrawMode GetMode(string[] parts) {
-            string mode = parts[parts.Length - 1];
-            if (mode.Length == 0) return DrawMode.normal;
-            DrawMode dMode = ParseMode(mode);
-            if (dMode != DrawMode.normal) return dMode;
-            
-            // May be in the format <brush args> <mode> <max_length>
-            ushort len;
-            if (parts.Length == 1 || !ushort.TryParse(mode, out len))
-                return DrawMode.normal;
-            return ParseMode(parts[parts.Length - 2]);
-        }
-        
-        static DrawMode ParseMode(string msg) {
-            if (msg == "normal")   return DrawMode.solid;
-            if (msg == "walls")    return DrawMode.walls;
-            if (msg == "straight") return DrawMode.straight;
+            string msg = parts[0];
+            if (msg == "normal")    return DrawMode.solid;
+            if (msg == "walls")     return DrawMode.walls;
+            if (msg == "straight")  return DrawMode.straight;
+            if (msg == "connected") return DrawMode.wire;
             return DrawMode.normal;
         }
         
         protected override DrawOp GetDrawOp(DrawArgs dArgs) {
             LineDrawOp line = new LineDrawOp();
+            if (dArgs.Mode == DrawMode.wire) {
+                dArgs.Player.Message("&HIn connected lines mode, endpoint of each line also forms the " +
+                                     "start point of next line. Use &T/Abort &Hto stop drawing");
+            }
+            
             line.WallsMode = dArgs.Mode == DrawMode.walls;
             string msg = dArgs.Message;
             if (msg.IndexOf(' ') == -1 || dArgs.Mode == DrawMode.normal) return line;
             
             string arg = msg.Substring(msg.LastIndexOf(' ') + 1);
             ushort len;
-            if (ushort.TryParse(arg, out len))
-                line.MaxLength = len;
+            if (ushort.TryParse(arg, out len)) line.MaxLength = len;
             return line;
         }
         
@@ -74,17 +71,30 @@ namespace MCGalaxy.Commands.Building {
         
         protected override void GetBrush(DrawArgs dArgs) {
             LineDrawOp line = (LineDrawOp)dArgs.Op;
-            int endCount = dArgs.DefaultBrushEndCount;
+            int endCount = 0;
             if (line.MaxLength != int.MaxValue) endCount++;
-            dArgs.BrushArgs = dArgs.Message.Splice(0, endCount);
+            dArgs.BrushArgs = dArgs.Message.Splice(dArgs.ModeArgsCount, endCount);
+        }
+        
+        protected override bool DoDraw(Player p, Vec3S32[] marks, object state, ushort block) {
+            if (!base.DoDraw(p, marks, state, block)) return false;
+            DrawArgs dArgs = (DrawArgs)state;
+            if (dArgs.Mode != DrawMode.wire) return true;
+            
+            // special for connected line mode
+            p.MakeSelection(MarksCount, "Selecting endpoints for &S" + dArgs.Op.Name, dArgs, DoDraw);
+            Vec3U16 pos = p.lastClick;
+            p.DoBlockchangeCallback(pos.X, pos.Y, pos.Z, p.GetHeldBlock());
+            return false;
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Line <brush args> <mode> <length>");
-            Player.Message(p, "%HCreates a line between two points.");
-            Player.Message(p, "   %HModes: &fnormal/walls/straight");
-            Player.Message(p, "   %HLength specifies the max number of blocks in the line.");
-            Player.Message(p, BrushHelpLine);
+            p.Message("&T/Line <brush args>");
+            p.Message("&HCreates a line between two points.");
+            p.Message("&T/Line [mode] <brush args> <length>");
+            p.Message("&HModes: &fnormal/walls/straight/connected");
+            p.Message("&HLength optionally specifies max number of blocks in the line");
+            p.Message(BrushHelpLine);
         }
     }
 }

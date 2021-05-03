@@ -19,6 +19,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using MCGalaxy.Commands.World;
+using MCGalaxy.DB;
 using MCGalaxy.Games;
 using MCGalaxy.Generator;
 using MCGalaxy.Network;
@@ -31,129 +32,112 @@ namespace MCGalaxy {
 
         static void LoadMainLevel(SchedulerTask task) {
             try {
-                mainLevel = CmdLoad.LoadLevel(null, ServerConfig.MainLevel);                
+                mainLevel = LevelActions.Load(Player.Console, Server.Config.MainLevel, false);
                 if (mainLevel == null) GenerateMain();
-                
-                mainLevel.Config.AutoUnload = false;
-                LevelInfo.Add(mainLevel);
-            } catch (Exception e) {
-                Logger.LogError(e);
+            } catch (Exception ex) {
+                Logger.LogError("Error loading main level", ex);
             }
         }
         
         static void GenerateMain() {
             Logger.Log(LogType.SystemActivity, "main level not found, generating..");
-            mainLevel = new Level(ServerConfig.MainLevel, 128, 64, 128);
-            MapGen.Generate(mainLevel, "flat", "", null);
+            mainLevel = new Level(Server.Config.MainLevel, 128, 64, 128);
+            
+            MapGen.Find("Flat").Generate(Player.Console, mainLevel, "");
             mainLevel.Save();
+            Level.LoadMetadata(mainLevel);
+            LevelInfo.Add(mainLevel);
         }
         
-        static void LoadPlayerLists(SchedulerTask task) {
-            agreed = new PlayerList("ranks/agreed.txt");
+        static void InitPlayerLists(SchedulerTask task) {
             try {
                 UpgradeTasks.UpgradeOldAgreed();
-                agreed = PlayerList.Load("ranks/agreed.txt");
             } catch (Exception ex) {
-                Logger.LogError(ex);
+                Logger.LogError("Error upgrading agreed list", ex);
             }
             
-            bannedIP = PlayerList.Load("ranks/banned-ip.txt");
-            ircControllers = PlayerList.Load("ranks/IRC_Controllers.txt");
-            hidden = PlayerList.Load("ranks/hidden.txt");
-            vip = PlayerList.Load("text/vip.txt");
-            noEmotes = PlayerList.Load("text/emotelist.txt");
-            lockdown = PlayerList.Load("text/lockdown.txt");            
-            models = PlayerExtList.Load("extra/models.txt");
-            skins = PlayerExtList.Load("extra/skins.txt");
-            reach = PlayerExtList.Load("extra/reach.txt");
+            LoadPlayerLists();
+            ModerationTasks.QueueTasks();
+        }
+		
+        internal static void LoadPlayerLists() {
+            agreed = PlayerList.Load("ranks/agreed.txt");
             invalidIds = PlayerList.Load("extra/invalidids.txt");
-            rotations = PlayerExtList.Load("extra/rotations.txt");
+            Player.Console.DatabaseID = NameConverter.InvalidNameID("(console)");
+            
+            bannedIP       = PlayerList.Load("ranks/banned-ip.txt");
+            ircControllers = PlayerList.Load("ranks/IRC_Controllers.txt");
+            hidden   = PlayerList.Load("ranks/hidden.txt");
+            vip      = PlayerList.Load("text/vip.txt");
+            noEmotes = PlayerList.Load("text/emotelist.txt");
+            lockdown = PlayerList.Load("text/lockdown.txt");
+            
+            models = PlayerExtList.Load("extra/models.txt");
+            skins  = PlayerExtList.Load("extra/skins.txt");
+            reach  = PlayerExtList.Load("extra/reach.txt");
+            rotations   = PlayerExtList.Load("extra/rotations.txt");
             modelScales = PlayerExtList.Load("extra/modelscales.txt");
 
-            muted = PlayerExtList.Load("ranks/muted.txt");
-            frozen = PlayerExtList.Load("ranks/frozen.txt");            
+            muted  = PlayerExtList.Load("ranks/muted.txt");
+            frozen = PlayerExtList.Load("ranks/frozen.txt");
             tempRanks = PlayerExtList.Load(Paths.TempRanksFile);
-            tempBans = PlayerExtList.Load(Paths.TempBansFile);            
-            ModerationTasks.QueueTasks();
-            
-            if (ServerConfig.WhitelistedOnly)
-                whiteList = PlayerList.Load("ranks/whitelist.txt");
-        }
+            tempBans  = PlayerExtList.Load(Paths.TempBansFile);
+            whiteList = PlayerList.Load("ranks/whitelist.txt");
+	    }
         
         static void LoadAutoloadMaps(SchedulerTask task) {
             AutoloadMaps = PlayerExtList.Load("text/autoload.txt", '=');
             List<string> maps = AutoloadMaps.AllNames();
             
             foreach (string map in maps) {
-                if (map.CaselessEq(mainLevel.name)) continue;
-                CmdLoad.LoadLevel(null, map);
+                if (map.CaselessEq(Server.Config.MainLevel)) continue;
+                LevelActions.Load(Player.Console, map, false);
             }
         }
         
         static void SetupSocket(SchedulerTask task) {
-            Logger.Log(LogType.SystemActivity, "Creating listening socket on port {0}... ", ServerConfig.Port);
-            Listener = new TcpListen();
-            
+            Listener = new TcpListen();            
             IPAddress ip;
-            if (!IPAddress.TryParse(ServerConfig.ListenIP, out ip)) {
+            
+            if (!IPAddress.TryParse(Server.Config.ListenIP, out ip)) {
                 Logger.Log(LogType.Warning, "Unable to parse listen IP config key, listening on any IP");
                 ip = IPAddress.Any;
             }            
-            Listener.Listen(ip, (ushort)ServerConfig.Port);
+            Listener.Listen(ip, Server.Config.Port);
         }
         
         static void InitHeartbeat(SchedulerTask task) {
             try {
                 Heartbeat.InitHeartbeats();
-            } catch (Exception e) {
-                Logger.LogError(e);
+            } catch (Exception ex) {
+                Logger.LogError("Error initialising heartbeat", ex);
             }
         }
         
         static void InitTimers(SchedulerTask task) {
-            TextFile announcementsFile = TextFile.Files["Announcements"];
-            announcementsFile.EnsureExists();
-
-            string[] lines = announcementsFile.GetText();
-            messages = new List<string>(lines);
-            
             MainScheduler.QueueRepeat(RandomMessage, null, 
-                                      TimeSpan.FromMinutes(5));
+                                      Server.Config.AnnouncementInterval);
             Critical.QueueRepeat(ServerTasks.UpdateEntityPositions, null,
-                                 TimeSpan.FromMilliseconds(ServerConfig.PositionUpdateInterval));
+                                 TimeSpan.FromMilliseconds(Server.Config.PositionUpdateInterval));
         }
         
         static void InitRest(SchedulerTask task) {
             IRC = new IRCBot();
-            if (ServerConfig.UseIRC) IRC.Connect();
+            if (Server.Config.UseIRC) IRC.Connect();
              
-            InitZombieSurvival();
-            InitLavaSurvival();
+            CountdownGame.Instance.AutoStart();
+            ZSGame.Instance.AutoStart();
+            LSGame.Instance.AutoStart();
+            CTFGame.Instance.AutoStart();
+            TWGame.Instance.AutoStart();
+            
             MainScheduler.QueueRepeat(BlockQueue.Loop, null, 
                                       TimeSpan.FromMilliseconds(BlockQueue.Interval));
-            Critical.QueueRepeat(ServerTasks.LocationChecks, null,
+            Critical.QueueRepeat(ServerTasks.TickPlayers, null,
                                  TimeSpan.FromMilliseconds(20));
 
             Logger.Log(LogType.SystemActivity, "Finished setting up server, finding classicube.net url..");
-            ServerSetupFinished = true;
-        }
-        
-        static void InitZombieSurvival() {
-            if (!ZSConfig.StartImmediately) return;
-            try {
-                Level oldMain = Server.mainLevel;
-                Server.zombie.Start(ZombieGameStatus.InfiniteRounds, null, 0);
-                // Did zombie survival change the main world?
-                if (oldMain != null && oldMain != Server.mainLevel)
-                    oldMain.Unload(true, false);
-            } catch (Exception e) { Logger.LogError(e); }
-        }
-
-        static void InitLavaSurvival() {
-            if (!Server.lava.startOnStartup) return;
-            try {
-                Server.lava.Start();
-            } catch (Exception e) { Logger.LogError(e); }
+            SetupFinished = true;
         }
     }
 }

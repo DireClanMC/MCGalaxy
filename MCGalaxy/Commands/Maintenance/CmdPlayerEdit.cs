@@ -1,5 +1,5 @@
 /*
-    Copyright 2015 MCGalaxy team
+    Copyright 2015 MCGalaxy
     
     Dual-licensed under the Educational Community License, Version 2.0 and
     the GNU General Public License, Version 3 (the "Licenses"); you may
@@ -17,11 +17,12 @@
  */
 using System;
 using System.Data;
+using System.Net;
 using MCGalaxy.DB;
 using MCGalaxy.SQL;
 
 namespace MCGalaxy.Commands.Maintenance {
-    public sealed class CmdPlayerEdit : Command {
+    public sealed class CmdPlayerEdit : Command2 {
         public override string name { get { return "PlayerEdit"; } }
         public override string shortcut { get { return "pe"; } }
         public override string type { get { return CommandTypes.Moderation; } }
@@ -31,8 +32,9 @@ namespace MCGalaxy.Commands.Maintenance {
         }
 
         delegate void DBSetter(string name, string column, string data);
+        const int type_norm = 0, type_lo = 1, type_hi = 2;
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             string[] args = message.SplitSpaces(3);
             args[0] = PlayerInfo.FindMatchesPreferOnline(p, args[0]);
@@ -40,7 +42,7 @@ namespace MCGalaxy.Commands.Maintenance {
             if (args[0] == null) return;
             Player who = PlayerInfo.FindExact(args[0]);
             if (args.Length == 1) {
-                Player.Message(p, Colors.red + "You must specify a type to modify.");
+                p.Message("&WYou must specify a type to modify.");
                 MessageValidTypes(p); return;
             }
             
@@ -53,52 +55,69 @@ namespace MCGalaxy.Commands.Maintenance {
                         v => who.LastLogin = v);
             } else if (opt == "logins") {
                 SetInteger(p, args, PlayerData.ColumnLogins, 1000000000, who,
-                           v => who.TimesVisited = v, UpdateDB);
+                           v => who.TimesVisited = v, type_norm);
             } else if (opt == "deaths") {
                 SetInteger(p, args, PlayerData.ColumnDeaths, short.MaxValue, who,
-                           v => who.TimesDied = v, UpdateDB);
+                           v => who.TimesDied = v, type_norm);
             } else if (opt == "money") {
                 SetInteger(p, args, PlayerData.ColumnMoney, 100000000, who,
-                           v => who.money = v, UpdateDB);
+                           v => who.money = v, type_norm);
             } else if (opt == "title") {
                 if (args.Length < 3) {
-                    Player.Message(p, "Title can be up to 20 characters. Use \"null\" to remove the title"); return;
+                    p.Message("Title can be up to 20 characters. Use \"null\" to remove the title"); return;
                 }
-                if (args[2].Length >= 20) { Player.Message(p, "Title must be under 20 characters"); return; }
+                if (args[2].Length >= 20) { p.Message("Title must be under 20 characters"); return; }
                 if (args[2] == "null") args[2] = "";
                 
                 if (who != null) {
                     who.title = args[2];
                     who.SetPrefix();
                 }
-                UpdateDB(args[0], args[2], PlayerData.ColumnTitle);
+                
+                PlayerDB.Update(args[0], PlayerData.ColumnTitle, args[2].UnicodeToCp437());
                 MessageDataChanged(p, args[0], args[1], args[2]);
-            } else if (opt == "modified") {
-                SetInteger(p, args, PlayerData.ColumnTotalBlocks, int.MaxValue, who,
-                           v => who.TotalModified = v, UpdateDBLo);
+            } else if (opt == "ip") {
+                if (args.Length < 3) {
+                    p.Message("A new IP address must be provided."); return;
+                }
+                
+                IPAddress ip;
+                if (!IPAddress.TryParse(args[2], out ip)) {
+                    p.Message("&W\"{0}\" is not a valid IP address.", args[2]); return;
+                }
+                
+                if (who != null) who.ip = args[2];
+                PlayerDB.Update(args[0], PlayerData.ColumnIP, args[2]);
+                MessageDataChanged(p, args[0], args[1], args[2]);
+            }  else if (opt == "modified") {
+                SetInteger(p, args, PlayerData.ColumnBlocks, int.MaxValue, who,
+                           v => who.TotalModified = v, type_lo);
             } else if (opt == "drawn") {
-                SetInteger(p, args, PlayerData.ColumnTotalCuboided, int.MaxValue, who,
-                           v => who.TotalDrawn = v, UpdateDBLo);
+                SetInteger(p, args, PlayerData.ColumnDrawn, int.MaxValue, who,
+                           v => who.TotalDrawn = v, type_lo);
             } else if (opt == "placed") {
-                SetInteger(p, args, PlayerData.ColumnTotalBlocks, int.MaxValue, who,
-                           v => who.TotalPlaced = v, UpdateDBHi);
+                SetInteger(p, args, PlayerData.ColumnBlocks, int.MaxValue, who,
+                           v => who.TotalPlaced = v, type_hi);
             } else if (opt == "deleted") {
-                SetInteger(p, args, PlayerData.ColumnTotalCuboided, int.MaxValue, who,
-                           v => who.TotalDeleted = v, UpdateDBHi);            
+                SetInteger(p, args, PlayerData.ColumnDrawn, int.MaxValue, who,
+                           v => who.TotalDeleted = v, type_hi);
             } else if (opt == "totalkicked") {
                 SetInteger(p, args, PlayerData.ColumnKicked, 16777215, who,
-                           v => who.TimesBeenKicked = v, UpdateDB);
+                           v => who.TimesBeenKicked = v, type_norm);
             } else if (opt == "messages") {
                 SetInteger(p, args, PlayerData.ColumnMessages, 16777215, who,
-                           v => who.TotalMessagesSent = v, UpdateDB);
+                           v => who.TotalMessagesSent = v, type_norm);
             }  else if (opt == "timespent") {
-                SetTimespan(p, args, PlayerData.ColumnTimeSpent, who, v => who.TotalTime = v);
+                SetTimespan(p, args, PlayerData.ColumnTimeSpent, who,
+                            v => who.TotalTime = v);
             } else if (opt == "color") {
-                SetColor(p, args, PlayerData.ColumnColor, who, v => who.color = (v.Length == 0 ? who.group.Color : v));
+                SetColor(p, args, PlayerData.ColumnColor, who,
+                         v => who.UpdateColor(v.Length == 0 ? who.group.Color : v));
             } else if (opt == "titlecolor") {
-                SetColor(p, args, PlayerData.ColumnTColor, who, v => who.titlecolor = v);
+                SetColor(p, args, PlayerData.ColumnTColor, who,
+                         v => who.titlecolor = v);
             } else {
-                Player.Message(p, Colors.red + "Invalid type.");
+                p.Message("&WInvalid type");
                 MessageValidTypes(p);
             }
         }
@@ -106,7 +125,7 @@ namespace MCGalaxy.Commands.Maintenance {
         
         static void SetColor(Player p, string[] args, string column, Player who, Action<string> setter) {
             if (args.Length < 3) {
-                Player.Message(p, "Color format: color name, or \"null\" to reset to default color."); return;
+                p.Message("Color format: color name, or \"null\" to reset to default color."); return;
             }
             
             string col = args[2] == "null" ? "" : Matcher.FindColor(p, args[2]);
@@ -117,33 +136,32 @@ namespace MCGalaxy.Commands.Maintenance {
                 who.SetPrefix();
                 args[0] = who.name;
             }
-            UpdateDB(args[0], col, column);
+            
+            PlayerDB.Update(args[0], column, col);
             MessageDataChanged(p, args[0], args[1], args[2]);
         }
         
-        const string dateFormat = "yyyy-MM-dd HH:mm:ss";
         static void SetDate(Player p, string[] args, string column, Player who, Action<DateTime> setter) {
             if (args.Length < 3) {
-                Player.Message(p, "Dates must be in the format: yyyy-mm-dd hh:mm:ss");
+                p.Message("Dates must be in the format: " + Database.DateFormat);
                 return;
             }
             
             DateTime date;
-            if (!DateTime.TryParseExact(args[2], dateFormat, null, 0, out date)) {
-                Player.Message(p, "Invalid date. (must be in format: yyyy-mm-dd hh:mm:ss");
+            if (!DateTime.TryParseExact(args[2], Database.DateFormat, null, 0, out date)) {
+                p.Message("Invalid date. It must be in format: " + Database.DateFormat);
                 return;
             }
             
-            if (who != null)
-                setter(date);
-            UpdateDB(args[0], args[2], column);
+            if (who != null) setter(date);
+            PlayerDB.Update(args[0], column, args[2]);
             MessageDataChanged(p, args[0], args[1], args[2]);
         }
         
         static void SetTimespan(Player p, string[] args, string column, Player who, Action<TimeSpan> setter) {
             if (args.Length < 3) {
-                Player.Message(p, "Timespan must be in the format: <number><quantifier>..");
-                Player.Message(p, CommandParser.TimespanHelp, "set time spent to");
+                p.Message("Timespan must be in the format: <number><quantifier>..");
+                p.Message(CommandParser.TimespanHelp, "set time spent to");
                 return;
             }
             
@@ -154,15 +172,21 @@ namespace MCGalaxy.Commands.Maintenance {
                 setter(span);
             } else {
                 long secs = (long)span.TotalSeconds;
-                UpdateDB(args[0], secs.ToString(), column);
+                PlayerDB.Update(args[0], column, secs.ToString());
             }
             MessageDataChanged(p, args[0], args[1], span.Shorten(true));
         }
         
+        static object ReadLong(IDataRecord record, object arg) { return record.GetInt64(0); }
+        static long GetLong(string name, string column) {
+            return (long)Database.ReadRows("Players", column, null, ReadLong,
+        	                               "WHERE Name=@0", name);
+        }
+        
         static void SetInteger(Player p, string[] args, string column, int max, Player who,
-                               Action<int> setter, DBSetter dbSetter) {
+                               Action<int> setter, int type) {
             if (args.Length < 3) {
-                Player.Message(p, "You must specify a positive integer, which can be {0} at most.", max); return;
+                p.Message("You must specify a positive integer, which can be {0} at most.", max); return;
             }
             
             int value = 0;
@@ -171,58 +195,42 @@ namespace MCGalaxy.Commands.Maintenance {
             if (who != null) {
                 setter(value);
             } else {
-                dbSetter(args[0], args[2], column);
+                string dbValue = args[2];
+                // special case handling for packed forms of totalBlocks and totalCuboided
+                if (type == 1) {
+                    long packed = GetLong(args[0], column) & ~PlayerData.LoBitsMask; // hi value only
+                    packed |= (uint)value;
+                    dbValue = packed.ToString();
+                } else if (type == 2) {
+                    long packed = GetLong(args[0], column) & PlayerData.LoBitsMask; // lo value only
+                    packed |= ((long)value) << PlayerData.HiBitsShift;
+                    dbValue = packed.ToString();
+                }
+                PlayerDB.Update(args[0], column, dbValue);
             }
             MessageDataChanged(p, args[0], args[1], args[2]);
         }
-        
-        
-        static void UpdateDB(string name, string value, string column) {
-            Database.Backend.UpdateRows("Players", column + " = @1", "WHERE Name = @0", name, value.UnicodeToCp437());
-        }
-        
-        // special case handling for packed forms of totalBlocks and totalCuboided
-        static void UpdateDBLo(string name, string value, string column) {
-            long loValue = long.Parse(value);
-            // OR with existing high bits of value in DB
-            using (DataTable results = Database.Backend.GetRows("Players", column, "WHERE Name = @0", name)) {
-                if (results.Rows.Count > 0) {
-                    long curValue = PlayerData.ParseLong(results.Rows[0][column].ToString());
-                    loValue |= (curValue & ~PlayerData.LowerBitsMask);
-                }
-            }
-            Database.Backend.UpdateRows("Players", column + " = @1", "WHERE Name = @0", name, loValue);
-        }
-        
-        static void UpdateDBHi(string name, string value, string column) {
-            long hiValue = long.Parse(value) << PlayerData.LowerBits;
-            // OR with existing low bits of value in DB
-            using (DataTable results = Database.Backend.GetRows("Players", column, "WHERE Name = @0", name)) {
-                if (results.Rows.Count > 0) {
-                    long curValue = PlayerData.ParseLong(results.Rows[0][column].ToString());
-                    hiValue |= (curValue & PlayerData.LowerBitsMask);
-                }
-            }
-            Database.Backend.UpdateRows("Players", column + " = @1", "WHERE Name = @0", name, hiValue);
-        }
+
         
         static void MessageDataChanged(Player p, string name, string type, string value) {
-            name = PlayerInfo.GetColoredName(p, name);
-            string msg = value.Length == 0 ? String.Format("The {1} data for &b{0} %Shas been reset.", name, type)
-                : String.Format("The {1} data for &b{0} %Shas been updated to &a{2}%S.", name, type, value);
-            Player.Message(p, msg);
+            name = p.FormatNick(name);
+            if (value.Length == 0) {
+                p.Message("The {1} data for &b{0} &Shas been reset.", name, type);
+            } else {
+                p.Message("The {1} data for &b{0} &Shas been updated to &a{2}&S.", name, type, value);
+            }
         }
 
         static void MessageValidTypes(Player p) {
-            Player.Message(p, "%HValid types: %SFirstLogin, LastLogin, Logins, Title, Deaths, Money, " +
-                           "Modified, Drawn, Placed, Deleted, TotalKicked, TimeSpent, Color, TitleColor, Messages ");
+            p.Message("&HValid types: &SFirstLogin, LastLogin, Logins, Title, IP, Deaths, Money, " +
+                      "Modified, Drawn, Placed, Deleted, TotalKicked, TimeSpent, Color, TitleColor, Messages ");
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/PlayerEdit [username] [type] <value>");
-            Player.Message(p, "%HEdits an online or offline player's information. Use with caution!");
+            p.Message("&T/PlayerEdit [username] [type] <value>");
+            p.Message("&HEdits an online or offline player's information. Use with caution!");
             MessageValidTypes(p);
-            Player.Message(p, "%HTo see value format for a specific type, leave <value> blank.");
+            p.Message("&HTo see value format for a specific type, leave <value> blank.");
         }
     }
 }

@@ -44,11 +44,12 @@ namespace MCGalaxy.DB {
         public readonly IReaderWriterLock Locker;
         
         public BlockDB(Level lvl) {
-            MapName = lvl.name;
+            MapName       = lvl.name;
+            Cache.Enabled = lvl.Config.UseBlockDB; 
             ReadDimensions();
             Locker = new IReaderWriterLock();
             
-            if (Dims.X < lvl.Width) Dims.X = lvl.Width;
+            if (Dims.X < lvl.Width)  Dims.X = lvl.Width;
             if (Dims.Y < lvl.Height) Dims.Y = lvl.Height;
             if (Dims.Z < lvl.Length) Dims.Z = lvl.Length;
             Cache.Dims = Dims;
@@ -60,9 +61,9 @@ namespace MCGalaxy.DB {
                 BlockDBFile.ReadHeader(s, out Dims);
         }
 
-        /// <summary> Writes the entries from the in-memory cache to disc. </summary>
+        /// <summary> Flushes the entries from the in-memory cache to disc. </summary>
         /// <remarks> You must lock using Locker.AccquireWrite() **before** entering this method. </remarks>
-        public void WriteEntries() {
+        public void FlushCache() {
             if (Cache.Head == null) return;
             
             BlockDBFile format = ValidateBackingFile();

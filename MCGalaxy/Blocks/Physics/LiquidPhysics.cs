@@ -16,6 +16,7 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using MCGalaxy.Games;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Blocks.Physics {
@@ -25,14 +26,14 @@ namespace MCGalaxy.Blocks.Physics {
         public static void PhysWater(Level lvl, ushort x, ushort y, ushort z, BlockID type) {
             int index;
             BlockID block = lvl.GetBlock(x, y, z, out index);
-            if (Server.lava.active && Server.lava.map == lvl && Server.lava.InSafeZone(x, y, z))
+            if (LSGame.Instance.Running && LSGame.Instance.Map == lvl && LSGame.Instance.InSafeZone(x, y, z))
                 return;
 
             switch (block) {
                 case Block.Air:
-            		if (!lvl.CheckSpongeWater(x, y, z)) {
-            		    lvl.AddUpdate(index, type);
-            		}
+                    if (!lvl.CheckSpongeWater(x, y, z)) {
+                        lvl.AddUpdate(index, type);
+                    }
                     break;
 
                 case Block.Lava:
@@ -62,14 +63,14 @@ namespace MCGalaxy.Blocks.Physics {
         public static void PhysLava(Level lvl, ushort x, ushort y, ushort z, BlockID type) {
             int index;
             BlockID block = lvl.GetBlock(x, y, z, out index);
-            if (Server.lava.active && Server.lava.map == lvl && Server.lava.InSafeZone(x, y, z))
+            if (LSGame.Instance.Running && LSGame.Instance.Map == lvl && LSGame.Instance.InSafeZone(x, y, z))
                 return;
 
             switch (block) {
                 case Block.Air:
-            		if (!lvl.CheckSpongeLava(x, y, z)) {
-            		    lvl.AddUpdate(index, type);
-            		}
+                    if (!lvl.CheckSpongeLava(x, y, z)) {
+                        lvl.AddUpdate(index, type);
+                    }
                     break;
                     
                 case Block.Water:
@@ -81,7 +82,7 @@ namespace MCGalaxy.Blocks.Physics {
                     
                 case Block.Sand:
                     if (lvl.physics > 1) { //Adv physics changes sand to glass next to lava
-                    	lvl.AddUpdate(index, Block.Glass, default(PhysicsArgs));
+                        lvl.AddUpdate(index, Block.Glass, default(PhysicsArgs));
                     } else {
                         lvl.AddCheck(index);
                     } break;

@@ -37,44 +37,60 @@ namespace MCGalaxy {
             
             name = NetUtils.ReadString(buffer, offset + 2);
             SkinName = name; DisplayName = name; truename = name;
-            if (ServerConfig.ClassicubeAccountPlus) name += "+";
+            if (Server.Config.ClassicubeAccountPlus) name += "+";
             
             string mppass = NetUtils.ReadString(buffer, offset + 66);
-            OnPlayerConnectingEvent.Call(this, mppass);
+            OnPlayerStartConnectingEvent.Call(this, mppass);
             if (cancelconnecting) { cancelconnecting = false; return; }
             
-            byte protocolType = buffer[offset + 130];
+            hasCpe = buffer[offset + 130] == 0x42 && Server.Config.EnableCPE;
+            level = Server.mainLevel;
             Loading = true;
-            if (disconnected) return;
+            if (Socket.Disconnected) return;
             
-            if (protocolType == 0x42) { hasCpe = true; SendCpeExtensions(); }
-            if (protocolType != 0x42) CompleteLoginProcess();
+            if (hasCpe) { SendCpeExtensions(); } 
+            else { CompleteLoginProcess(); }
         }
         
         void SendCpeExtensions() {
-            Send(Packet.ExtInfo((byte)(extensions.Length + 1)));
-            // fix for classicube client, doesn't reply if only send EnvMapAppearance with version 2
+            Send(Packet.ExtInfo((byte)(Extensions.Length + 1)));
+            // fix for classicube java client, doesn't reply if only send EnvMapAppearance with version 2
             Send(Packet.ExtEntry(CpeExt.EnvMapAppearance, 1));
             
-            foreach (ExtEntry ext in extensions) {
-                Send(Packet.ExtEntry(ext.ExtName, ext.ServerExtVersion));
+            foreach (CpeExtension ext in Extensions) {
+                Send(Packet.ExtEntry(ext.Name, ext.ServerVersion));
             }
         }
         
         void CompleteLoginProcess() {
-            // Lock to ensure that no two players can end up with the same playerid
+            Player clone = null;
+            OnPlayerFinishConnectingEvent.Call(this);
+            if (cancelconnecting) { cancelconnecting = false; return; }
+            
             lock (PlayerInfo.Online.locker) {
+                // Check if any players online have same name
+                Player[] players = PlayerInfo.Online.Items;
+                foreach (Player pl in players) {
+                    if (pl.truename == truename) { clone = pl; break; }
+                }
+                
+                // Remove clone from list (hold lock for as short time as possible)
+                if (clone != null && Server.Config.VerifyNames) PlayerInfo.Online.Remove(clone);
                 id = NextFreeId();
                 PlayerInfo.Online.Add(this);
             }
-
-            SendMap(null);
-            if (disconnected) return;
-            loggedIn = true;
-            connections.Remove(this);
-            RemoveFromPending();
-            Server.PlayerListUpdate();
             
+            if (clone != null && Server.Config.VerifyNames) {
+                string reason = ip == clone.ip ? "(Reconnecting)" : "(Reconnecting from a different IP)";
+                clone.Leave(reason);
+            } else if (clone != null) {
+                Leave(null, "Already logged in!", true); return;
+            }
+
+            SendRawMap(null, level);
+            if (Socket.Disconnected) return;
+            loggedIn = true;
+
             SessionStartTime = DateTime.UtcNow;
             LastLogin = DateTime.Now;
             TotalTime = TimeSpan.FromSeconds(1);
@@ -83,81 +99,58 @@ namespace MCGalaxy {
             
             Server.Background.QueueOnce(ShowAltsTask, name, TimeSpan.Zero);
             CheckState();
-            ZombieStats stats = Server.zombie.LoadZombieStats(name);
-            Game.MaxInfected = stats.MaxInfected; Game.TotalInfected = stats.TotalInfected;
-            Game.MaxRoundsSurvived = stats.MaxRounds; Game.TotalRoundsSurvived = stats.TotalRounds;
             
             if (!Directory.Exists("players"))
                 Directory.CreateDirectory("players");
-            PlayerDB.Load(this);
+            PlayerDB.LoadNick(this);
             Game.Team = Team.TeamIn(this);
             SetPrefix();
             LoadCpeData();
             
-            if (ServerConfig.verifyadmins && group.Permission >= ServerConfig.VerifyAdminsRank)
-                adminpen = true;
-            if (Server.noEmotes.Contains(name))
-                parseEmotes = !ServerConfig.ParseEmotes;
+            if (Server.noEmotes.Contains(name)) { parseEmotes = !Server.Config.ParseEmotes; }
 
-            LevelPermission adminChatRank = CommandExtraPerms.MinPerm("adminchat", LevelPermission.Admin);
-            hidden = group.CanExecute("hide") && Server.hidden.Contains(name);
-            if (hidden) SendMessage("&8Reminder: You are still hidden.");
-            if (group.Permission >= adminChatRank && ServerConfig.AdminsJoinSilently) {
-                hidden = true; adminchat = true;
-            }
+            hideRank = Rank;
+            hidden   = CanUse("Hide") && Server.hidden.Contains(name);
+            if (hidden) Message("&8Reminder: You are still hidden.");
             
+            if (Chat.AdminchatPerms.UsableBy(Rank) && Server.Config.AdminsJoinSilently) {
+                hidden = true; adminchat = true;                
+            }
+
             OnPlayerConnectEvent.Call(this);
             if (cancellogin) { cancellogin = false; return; }
             
-            string joinm = "&a+ " + FullName + " %S" + PlayerDB.GetLoginMessage(this);
-            if (hidden) joinm = "&8(hidden)" + joinm;
+            string joinMsg = "&a+ λFULL &S" + PlayerDB.GetLoginMessage(this);
+            if (hidden) joinMsg = "&8(hidden)" + joinMsg;
             
-            const LevelPermission perm = LevelPermission.Guest;
-            if (group.Permission > perm || (ServerConfig.GuestJoinsNotify && group.Permission <= perm)) {
-                Chat.MessageGlobal(this, joinm, false, true);
+            if (Server.Config.GuestJoinsNotify || Rank > LevelPermission.Guest) {
+                Chat.MessageFrom(ChatScope.All, this, joinMsg, null, Chat.FilterVisible(this), !hidden);
             }
 
-            if (ServerConfig.AgreeToRulesOnEntry && group.Permission == LevelPermission.Guest && !Server.agreed.Contains(name)) {
-                SendMessage("&9You must read the &c/Rules&9 and &c/Agree&9 to them before you can build and use commands!");
+            if (Server.Config.AgreeToRulesOnEntry && Rank == LevelPermission.Guest && !Server.agreed.Contains(name)) {
+                Message("&9You must read the &c/Rules &9and &c/Agree &9to them before you can build and use commands!");
                 agreed = false;
             }
-
-            if (ServerConfig.verifyadmins && group.Permission >= ServerConfig.VerifyAdminsRank) {
-                if (!Directory.Exists("extra/passwords") || !File.Exists("extra/passwords/" + name + ".dat"))
-                    SendMessage("&cPlease set your admin verification password with %T/SetPass [Password]!");
-                else
-                    SendMessage("&cPlease complete admin verification with %T/Pass [Password]!");
-            }
             
-            try {
-                if (group.CanExecute("inbox") && Database.TableExists("Inbox" + name) ) {
-                    using (DataTable table = Database.Backend.GetRows("Inbox" + name, "*")) {
-                        if (table.Rows.Count > 0)
-                            SendMessage("You have &a" + table.Rows.Count + " %Smessages in %T/Inbox");
-                    }
+            CheckIsUnverified();
+            
+            if (CanUse("Inbox") && Database.TableExists("Inbox" + name)) {
+                int count = Database.CountRows("Inbox" + name);
+                if (count > 0) {
+                    Message("You have &a" + count + " &Smessages in &T/Inbox");
                 }
-            } catch {
             }
             
-            if (ServerConfig.PositionUpdateInterval > 1000)
-                SendMessage("Lowlag mode is currently &aON.");
+            if (Server.Config.PositionUpdateInterval > 1000)
+                Message("Lowlag mode is currently &aON.");
 
             if (String.IsNullOrEmpty(appName)) {
-                Logger.Log(LogType.UserActivity, "{0} [{1}] connected.", name, ip);
+                Logger.Log(LogType.UserActivity, "{0} [{1}] connected.", truename, ip);
             } else {
-                Logger.Log(LogType.UserActivity, "{0} [{1}] connected using {2}.", name, ip, appName);
+                Logger.Log(LogType.UserActivity, "{0} [{1}] connected using {2}.", truename, ip, appName);
             }
-            Game.InfectMessages = PlayerDB.GetInfectMessages(this);
-            Server.lava.PlayerJoinedServer(this);
             
-            Position pos = level.SpawnPos;
-            byte yaw = level.rotx, pitch = level.roty;
-            OnPlayerSpawningEvent.Call(this, ref pos, ref yaw, ref pitch, false);
-            Pos = pos;
-            SetYawPitch(yaw, pitch);
-            
-            Entities.SpawnEntities(this, true);
-            PlayerActions.CheckGamesJoin(this, null);
+            PlayerActions.PostSentMap(this, null, level, false);
             Loading = false;
         }
         
@@ -168,9 +161,9 @@ namespace MCGalaxy {
             try {
                 welcomeFile.EnsureExists();
                 string[] welcome = welcomeFile.GetText();
-                Player.MessageLines(this, welcome);
+                MessageLines(welcome);
             } catch (Exception ex) {
-                Logger.LogError(ex);
+                Logger.LogError("Error loading welcome text", ex);
             }
         }
         
@@ -199,9 +192,9 @@ namespace MCGalaxy {
             string modelScales = Server.modelScales.FindData(name);
             if (modelScales != null) {
                 string[] bits = modelScales.SplitSpaces(3);
-                Utils.TryParseDecimal(bits[0], out ScaleX);
-                Utils.TryParseDecimal(bits[1], out ScaleY);
-                Utils.TryParseDecimal(bits[2], out ScaleZ);
+                Utils.TryParseSingle(bits[0], out ScaleX);
+                Utils.TryParseSingle(bits[1], out ScaleY);
+                Utils.TryParseSingle(bits[2], out ScaleZ);
             }            
 
             string rotations = Server.rotations.FindData(name);
@@ -211,53 +204,54 @@ namespace MCGalaxy {
                 byte.TryParse(bits[0], out rot.RotX);
                 byte.TryParse(bits[1], out rot.RotZ);
                 Rot = rot;
-            }
-            
-            ModelBB = AABB.ModelAABB(this, level);
+            }            
+            SetModel(Model);
         }
         
         void GetPlayerStats() {
-            DataTable data = Database.Backend.GetRows("Players", "*", "WHERE Name=@0", name);
-            if (data.Rows.Count == 0) {
+            object raw = Database.ReadRows("Players", "*", null, PlayerData.Read,
+			                               "WHERE Name=@0", name);
+            if (raw == null) {
                 PlayerData.Create(this);
-                Chat.MessageGlobal(ColoredName + " %Shas connected for the first time!", false);
-                SendMessage("Welcome " + ColoredName + "%S! This is your first visit.");
+                Chat.MessageFrom(this, "λNICK &Shas connected for the first time!");
+                Message("Welcome " + ColoredName + "&S! This is your first visit.");
             } else {
-                PlayerData.Load(data, this);
-                SendMessage("Welcome back " + FullName + "%S! You've been here " + TimesVisited + " times!");
+                ((PlayerData)raw).ApplyTo(this);
+                Message("Welcome back " + FullName + "&S! You've been here " + TimesVisited + " times!");
             }
-            data.Dispose();
             gotSQLData = true;
         }
         
         void CheckState() {
             if (Server.muted.Contains(name)) {
                 muted = true;
-                Chat.MessageGlobal(this, ColoredName + " &cis still muted from previously.", false);
+                Chat.MessageFrom(this, "λNICK &Wis still muted from previously.");
             }
             
             if (Server.frozen.Contains(name)) {
                 frozen = true;
-                Chat.MessageGlobal(this, ColoredName + " &cis still frozen from previously.", false);
+                Chat.MessageFrom(this, "λNICK &Wis still frozen from previously.");
             }
         }
         
         static void ShowAltsTask(SchedulerTask task) {
             string name = (string)task.State;
             Player p = PlayerInfo.FindExact(name);
-            if (p == null || p.ip == "127.0.0.1" || p.disconnected) return;
+            if (p == null || p.ip == "127.0.0.1" || p.Socket.Disconnected) return;
             
             List<string> alts = PlayerInfo.FindAccounts(p.ip);
             // in older versions it was possible for your name to appear multiple times in DB
             while (alts.CaselessRemove(p.name)) { }
             if (alts.Count == 0) return;
             
-            LevelPermission adminChatRank = CommandExtraPerms.MinPerm("adminchat", LevelPermission.Admin);
-            string altsMsg = p.ColoredName + " %Sis lately known as: " + alts.Join();
-            if (p.group.Permission < adminChatRank || !ServerConfig.AdminsJoinSilently) {
-                Chat.MessageOps(altsMsg);
-                //IRCBot.Say(temp, true); //Tells people in op channel on IRC
-            }
+            ItemPerms opchat = Chat.OpchatPerms;
+            string altsMsg = "λNICK &Sis lately known as: " + alts.Join();
+
+            Chat.MessageFrom(p, altsMsg,
+                             (pl, obj) => pl.CanSee(p) && opchat.UsableBy(pl.Rank));
+                         
+            //IRCBot.Say(temp, true); //Tells people in op channel on IRC
+            altsMsg = altsMsg.Replace("λNICK", name);
             Logger.Log(LogType.UserActivity, altsMsg);
         }
     }

@@ -1,4 +1,4 @@
-/*
+﻿/*
     Written by Jack1312
   
     Copyright 2011 MCForge
@@ -20,14 +20,14 @@
 using System;
 
 namespace MCGalaxy.Commands.Chatting {    
-    public sealed class CmdRankMsg : Command {        
+    public sealed class CmdRankMsg : Command2 {        
         public override string name { get { return "RankMsg"; } }
         public override string shortcut { get { return "rm"; } }
         public override string type { get { return CommandTypes.Chat; } }
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool UseableWhenFrozen { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             if (!MessageCmd.CanSpeak(p, name)) return;
             
@@ -37,16 +37,14 @@ namespace MCGalaxy.Commands.Chatting {
             Group grp = Matcher.FindRanks(p, rank);
             if (grp == null) return;
             
-            Chat.MessageWhere("{3}<{2}>{0}: &f{1}", 
-                              pl => Chat.NotIgnoring(pl, p) && (pl.group == grp || pl == p),
-                              p.ColoredName, text.Trim(), grp.Name, grp.Color);
-            p.CheckForMessageSpam();
+            string msg = grp.Color + "<" + grp.Name + ">λNICK: &f" + text;
+            Chat.MessageChat(ChatScope.Rank, p, msg, grp.Permission, null);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/RankMsg [Rank] [Message]");
-            Player.Message(p, "%HSends a message to the specified rank.");
-            Player.Message(p, "%HNote: If no [rank] is given, player's rank is taken.");
+            p.Message("&T/RankMsg [Rank] [Message]");
+            p.Message("&HSends a message to the specified rank.");
+            p.Message("&HNote: If no [rank] is given, player's rank is taken.");
         }
     }
 }

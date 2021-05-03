@@ -17,10 +17,9 @@
  */
 using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace MCGalaxy.Commands.Info {
-    public sealed class CmdViewRanks : Command {
+    public sealed class CmdViewRanks : Command2 {
         public override string name { get { return "ViewRanks"; } }
         public override string type { get { return CommandTypes.Information; } }
         public override bool UseableWhenFrozen { get { return true; } }
@@ -29,30 +28,24 @@ namespace MCGalaxy.Commands.Info {
                     new CommandAlias("Banned", "banned"), new CommandAlias("BanList", "banned") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces(2);
             if (message.Length == 0) { 
-                Player.Message(p, "Available ranks: " +Group.GroupList.Join(g => g.ColoredName)); return; 
-            }
-            string modifer = args.Length > 1 ? args[1] : "";
+                p.Message("Available ranks: " + Group.GroupList.Join(g => g.ColoredName)); return; 
+            }            
             
             Group grp = message.CaselessEq("banned") ? Group.BannedRank : Matcher.FindRanks(p, args[0]);
             if (grp == null) return;
 
-            List<string> list = grp.Players.All();
-            if (list.Count == 0) {
-                Player.Message(p, "No one has the rank of " + grp.ColoredName);
-            } else {
-                Player.Message(p, "People with the rank of " + grp.ColoredName + ":");
-                MultiPageOutput.Output(p, list, (name) => name,
-                                       "ViewRanks " + args[0], "players", modifer, false);
-            }
+            string modifier = args.Length > 1 ? args[1] : "";
+            grp.Players.OutputPlain(p, "players ranked " + grp.ColoredName,
+                                    "ViewRanks " + args[0], modifier);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "/viewranks [rank] - Shows all players who have [rank]");
-            Player.Message(p, "/viewranks banned - Shows all players who are banned.");
-            Player.Message(p, "Available ranks: " + Group.GroupList.Join(g => g.ColoredName));
+            p.Message("&T/viewranks [rank] &H- Shows all players who have [rank]");
+            p.Message("&T/viewranks banned &H- Shows all players who are banned");
+            p.Message("Available ranks: " + Group.GroupList.Join(g => g.ColoredName));
         }
     }
 }

@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2010 MCLawl Team - Written by Valek (Modified for use with MCGalaxy)
  
    
@@ -20,7 +20,7 @@ using MCGalaxy.Network;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdFixGrass : Command {
+    public sealed class CmdFixGrass : Command2 {
         public override string name { get { return "FixGrass"; } }
         public override string shortcut { get { return "fg"; } }
         public override string type { get { return CommandTypes.World; } }
@@ -28,10 +28,10 @@ namespace MCGalaxy.Commands.World {
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             int totalFixed = 0;
             Level lvl = p.level;
-            if (!LevelInfo.ValidateAction(p, lvl.name, "use %T/fixgrass %Son this level")) return;
+            if (!LevelInfo.Check(p, data.Rank, lvl, "use &T/fixgrass &Son this level")) return;
             
             if (message.Length == 0) {
                 Fix(p, lvl, ref totalFixed, true, true);
@@ -45,7 +45,7 @@ namespace MCGalaxy.Commands.World {
                 Help(p); return;
             }
             
-            Player.Message(p, "Fixed " + totalFixed + " blocks.");
+            p.Message("Fixed " + totalFixed + " blocks.");
         }        
         
         static void Fix(Player p, Level lvl, ref int totalFixed, bool fixGrass, bool fixDirt) {
@@ -59,10 +59,10 @@ namespace MCGalaxy.Commands.World {
             {
                 block = lvl.FastGetBlock(index);
                 if (fixGrass && lvl.Props[block].GrassBlock != Block.Invalid) {
-                	above = y == maxY ? Block.Air : lvl.FastGetBlock(index + oneY);
+                    above = y == maxY ? Block.Air : lvl.FastGetBlock(index + oneY);
                     BlockID grass = lvl.Props[block].GrassBlock;
                     
-                    if (lvl.LightPasses(above) && p.level.DoBlockchange(p, x, y, z, grass) == 2) {
+                    if (lvl.LightPasses(above) && p.level.TryChangeBlock(p, x, y, z, grass) == ChangeResult.Modified) {
                         buffer.Add(index, grass);
                         totalFixed++;
                     }
@@ -70,14 +70,14 @@ namespace MCGalaxy.Commands.World {
                     above = y == maxY ? Block.Air : lvl.FastGetBlock(index + oneY);
                     BlockID dirt = lvl.Props[block].DirtBlock;
                     
-                    if (!lvl.LightPasses(above) && p.level.DoBlockchange(p, x, y, z, dirt) == 2) {
+                    if (!lvl.LightPasses(above) && p.level.TryChangeBlock(p, x, y, z, dirt) == ChangeResult.Modified) {
                         buffer.Add(index, dirt);
                         totalFixed++;
                     }
                 }
                 index++;
             }
-            buffer.Send(true);
+            buffer.Flush();
         }
         
         static void FixLight(Player p, Level lvl, ref int totalFixed) {
@@ -99,7 +99,7 @@ namespace MCGalaxy.Commands.World {
                     }
                     
                     BlockID grass = lvl.Props[block].GrassBlock;
-                    if (!inShadow && p.level.DoBlockchange(p, x, y, z, grass) == 2) {
+                    if (!inShadow && p.level.TryChangeBlock(p, x, y, z, grass) == ChangeResult.Modified) {
                         buffer.Add(lvl.PosToInt(x, y, z), grass);
                         totalFixed++;
                     }
@@ -110,22 +110,22 @@ namespace MCGalaxy.Commands.World {
                     }
                     
                     BlockID dirt = lvl.Props[block].DirtBlock;
-                    if (inShadow && p.level.DoBlockchange(p, x, y, z, dirt) == 2) {
+                    if (inShadow && p.level.TryChangeBlock(p, x, y, z, dirt) == ChangeResult.Modified) {
                         buffer.Add(lvl.PosToInt(x, y, z), dirt);
                         totalFixed++;
                     }
                 }
                 index++;
             }
-            buffer.Send(true);
+            buffer.Flush();
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/FixGrass [type] %H- Fixes grass based on type");
-            Player.Message(p, "%H[type] is \"\": Any grass with something on top is made into dirt, dirt with nothing on top is made grass");
-            Player.Message(p, "%H[type] is \"light\": Only dirt/grass in sunlight becomes grass");
-            Player.Message(p, "%H[type] is \"grass\": Only turns grass to dirt when under stuff");
-            Player.Message(p, "%H[type] is \"dirt\": Only turns dirt with nothing on top to grass");
+            p.Message("&T/FixGrass [mode] &H- Fixes grass based on mode");
+            p.Message("&H[mode] is \"\": Any grass with something on top is made into dirt, dirt with nothing on top is made grass");
+            p.Message("&H[mode] is \"light\": Only dirt/grass in sunlight becomes grass");
+            p.Message("&H[mode] is \"grass\": Only turns grass to dirt when under stuff");
+            p.Message("&H[mode] is \"dirt\": Only turns dirt with nothing on top to grass");
         }
     }
 }

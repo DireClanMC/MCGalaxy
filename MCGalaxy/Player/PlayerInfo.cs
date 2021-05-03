@@ -12,7 +12,7 @@ BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 or implied. See the Licenses for the specific language governing
 permissions and limitations under the Licenses.
  */
- 
+
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -26,16 +26,21 @@ namespace MCGalaxy {
         /// <remarks> Note this field is highly volatile, you should cache references to the items array. </remarks>
         public static VolatileArray<Player> Online = new VolatileArray<Player>(true);
         
-        public static Group GetGroup(string name) { return Group.GroupIn(name); }
-        
-        public static string GetColor(string name) { return GetGroup(name).Color; }
-        
-        public static string GetColoredName(Player p, string name) {
+        public static Group GetGroup(string name) {
             Player target = FindExact(name);
-            return target != null && Entities.CanSee(p, target) ? 
-                target.ColoredName : GetColor(name) + name.RemoveLastPlus(); // TODO: select color from database?
+            return target != null ? target.group : Group.GroupIn(name);
         }
-                
+        
+        [Obsolete("Use p.FormatNick instead")]
+        public static string GetColoredName(Player p, string name) { return p.FormatNick(name); }
+        
+        /// <summary> Calculates default color for the given player. </summary>
+        public static string DefaultColor(Player p) {
+            string col = PlayerDB.FindColor(p);
+            return col.Length > 0 ? col : p.group.Color;
+        }
+        
+        /// <summary> Returns the number of non-hidden players that are currently online </summary>
         public static int NonHiddenCount() {
             Player[] players = Online.Items;
             int count = 0;
@@ -43,137 +48,94 @@ namespace MCGalaxy {
             return count;
         }
         
-        public static Player FindMatches(Player pl, string name, bool onlyCanSee = true) {
-            int matches = 0; return FindMatches(pl, name, out matches, onlyCanSee);
+        public static int NonHiddenUniqueIPCount() {
+            Player[] players = Online.Items;
+            Dictionary<string, bool> uniqueIPs = new Dictionary<string, bool>();
+            
+            foreach (Player p in players) {
+                if (!p.hidden) uniqueIPs[p.ip] = true;
+            }
+            return uniqueIPs.Count;
+        }
+        // TODO: remove _useless parameter. but this breaks backwards compatibility with plugins
+        
+        /// <summary> Matches given name against the names of all online players that the given player can see </summary>
+        /// <returns> A Player instance if exactly one match was found </returns>
+        public static Player FindMatches(Player pl, string name, bool _useless = false) {
+            int matches; return FindMatches(pl, name, out matches);
         }
         
-        public static Player FindMatches(Player pl, string name, 
-                                         out int matches, bool onlyCanSee = true) {
+        /// <summary> Matches given name against the names of all online players that the given player can see </summary>
+        /// <param name="matches"> Outputs the number of matching players </param>
+        /// <returns> A Player instance if exactly one match was found </returns>
+        public static Player FindMatches(Player pl, string name, out int matches, bool _useless = false) {
             matches = 0;
             if (!Formatter.ValidName(pl, name, "player")) return null;
             
-            return Matcher.Find<Player>(pl, name, out matches, Online.Items,
-                                        p => Entities.CanSee(pl, p) || !onlyCanSee,
-                                        p => p.name, "online players");
+            // Try to exactly match name first (because names have + at end)
+            Player exact = FindExact(name);
+            if (exact != null && pl.CanSee(exact)) { matches = 1; return exact; }
+            
+            return Matcher.Find(pl, name, out matches, Online.Items,
+                                p => pl.CanSee(p), p => p.name, "online players");
         }
         
         public static string FindMatchesPreferOnline(Player p, string name) {
             if (!Formatter.ValidName(p, name, "player")) return null;
-            int matches = 0;
+            int matches;
             Player target = FindMatches(p, name, out matches);
             
             if (matches > 1) return null;
-            if (target != null) return target.name;        
-            Player.Message(p, "Searching PlayerDB for \"{0}\"..", name);
-            return FindOfflineNameMatches(p, name);
+            if (target != null) return target.name;
+            p.Message("Searching PlayerDB for \"{0}\"..", name);
+            return PlayerDB.MatchNames(p, name);
         }
         
         /// <summary> Finds the online player whose name caselessly exactly matches the given name. </summary>
         /// <returns> Player instance if an exact match is found, null if not. </returns>
         public static Player FindExact(string name) {
             Player[] players = PlayerInfo.Online.Items;
-
+            name = name.RemoveLastPlus();
+            
             foreach (Player p in players) {
-                if (p.name.CaselessEq(name)) return p;
+                if (p.truename.CaselessEq(name)) return p;
             }
             return null;
         }
- 
-        
-        /// <summary> Retrieves from the database the player data for the player 
-        /// whose name caselessly exactly matches the given name. </summary>
-        /// <returns> PlayerData instance if found, null if not. </returns>
-        public static PlayerData FindData(string name) {
-            using (DataTable results = Query(name, "*")) {
-                if (results.Rows.Count == 0) return null;
-                return PlayerData.Fill(results.Rows[0]);
-            }
-        }
-        
-        /// <summary> Retrieves from the database the actual name for the player 
-        /// whose name caselessly exactly matches the given name. </summary>
-        /// <returns> Correctly cased name if found, null if not. </returns>
-        public static string FindName(string name) {
-            using (DataTable playerDB = Query(name, "Name")) {
-                if (playerDB.Rows.Count == 0) return null;
-                return playerDB.Rows[0]["Name"].ToString().Trim();
-            }
-        }
 
-        /// <summary> Retrieves from the database the last IP address for the
-        /// player whose name caselessly exactly matches the given name. </summary>
-        /// <returns> Last IP address if found, null if not. </returns>
-        public static string FindIP(string name) {
-            using (DataTable results = Query(name, "IP")) {
-                if (results.Rows.Count == 0) return null;
-                return results.Rows[0]["IP"].ToString().Trim();
-            }
-        }
         
-        
-        public static PlayerData FindOfflineMatches(Player p, string name) {
-            DataRow row = QueryMulti(p, name, "*");
-            return row == null ? null : PlayerData.Fill(row);
-        }
-        
-        public static string FindOfflineNameMatches(Player p, string name) {
-            DataRow row = QueryMulti(p, name, "Name");
-            return row == null ? null : row["Name"].ToString();
-        }
-        
-        public static string FindOfflineIPMatches(Player p, string name, out string ip) {
-            DataRow row = QueryMulti(p, name, "Name, IP");
-            ip = row == null ? null : row["IP"].ToString();
-            return row == null ? null : row["Name"].ToString();
-        }
-        
-        public static string FindOfflineMoneyMatches(Player p, string name, out int money) {
-            DataRow row = QueryMulti(p, name, "Name, Money");
-            money = row == null ? 0 : PlayerData.ParseInt(row["Money"].ToString());
-            return row == null ? null : row["Name"].ToString();
+        static object ReadAccounts(IDataRecord record, object arg) {
+            List<string> names = (List<string>)arg;
+            string name = record.GetText(0);
+            
+            if (!names.CaselessContains(name)) names.Add(name);
+            return arg;
         }
         
         /// <summary> Retrieves names of all players whose IP address matches the given IP address. </summary>
         /// <remarks> This is current IP for online players, last IP for offline players from the database. </remarks>
         public static List<string> FindAccounts(string ip) {
-            DataTable clones = Database.Backend.GetRows("Players", "Name", "WHERE IP=@0", ip);
-            List<string> accounts = new List<string>();
-            
-            foreach (DataRow row in clones.Rows) {
-                string name = row["Name"].ToString();
-                if (!accounts.CaselessContains(name))
-                    accounts.Add(name);
-            }
+            List<string> names = new List<string>();
+            Database.ReadRows("Players", "Name", names, ReadAccounts, "WHERE IP=@0", ip);
             
             // TODO: should we instead do save() when the player logs in
             // by checking online players we avoid a DB write though
             Player[] players = PlayerInfo.Online.Items;
             foreach (Player p in players) {
                 if (p.ip != ip) continue;
-                if (!accounts.CaselessContains(p.name))
-                    accounts.Add(p.name);
+                if (!names.CaselessContains(p.name)) names.Add(p.name);
             }
-            
-            clones.Dispose();
-            return accounts;
+            return names;
         }
         
-        
-        internal static DataTable Query(string name, string columns) {
-            string suffix = Database.Backend.CaselessWhereSuffix;
-            return Database.Backend.GetRows("Players", columns,
-                                            "WHERE Name=@0" + suffix, name);
-        }
-        
-        internal static DataRow QueryMulti(Player p, string name, string columns) {
-            string suffix = Database.Backend.CaselessLikeSuffix;
-            using (DataTable results = Database.Backend.GetRows("Players", columns,
-                                                                "WHERE Name LIKE @0 ESCAPE '#' LIMIT 21" + suffix,
-                                                                "%" + name.Replace("_", "#_") + "%")) {
-                int matches = 0;
-                return Matcher.Find<DataRow>(p, name, out matches, results.Rows,
-                                             r => true, r => r["Name"].ToString(), "players", 20);
+        /// <summary> Filters input list to only players that the source player can see. </summary>
+        internal static List<Player> OnlyCanSee(Player p, LevelPermission plRank, 
+                                                IEnumerable<Player> players) {
+            List<Player> list = new List<Player>();
+            foreach (Player pl in players) {
+                if (p.CanSee(pl, plRank)) list.Add(pl);
             }
+            return list;
         }
     }
 }

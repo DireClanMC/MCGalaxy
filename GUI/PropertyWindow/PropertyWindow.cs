@@ -13,29 +13,27 @@ or implied. See the Licenses for the specific language governing
 permissions and limitations under the Licenses.
  */
 using System;
-using System.Collections.Generic;
-using System.Drawing;
 using System.Windows.Forms;
-using MCGalaxy.Blocks;
 using MCGalaxy.Commands;
+using MCGalaxy.Eco;
+using MCGalaxy.Events.GameEvents;
 using MCGalaxy.Games;
 
 namespace MCGalaxy.Gui {
     public partial class PropertyWindow : Form {
         ZombieProperties zsSettings = new ZombieProperties();
-        LavaProperties lsSettings = new LavaProperties();
 
         public PropertyWindow() {
             InitializeComponent();
-            lsSettings.LoadFromServer();
             zsSettings.LoadFromServer();
             propsZG.SelectedObject = zsSettings;
-            pg_lava.SelectedObject = lsSettings;
         }
+        
+        public void RunOnUI_Async(Action act) { BeginInvoke(act); }
 
         void PropertyWindow_Load(object sender, EventArgs e) {
-            ToggleIrcSettings(ServerConfig.UseIRC);
-
+            OnMapsChangedEvent.Register(HandleMapsChanged, Priority.Low);
+            OnStateChangedEvent.Register(HandleStateChanged, Priority.Low);
             GuiPerms.UpdateRankNames();
             rank_cmbDefault.Items.AddRange(GuiPerms.RankNames);
             rank_cmbOsMap.Items.AddRange(GuiPerms.RankNames);
@@ -49,42 +47,25 @@ namespace MCGalaxy.Gui {
                 LoadCommands();
                 LoadBlocks();
             } catch (Exception ex) {
-                Logger.LogError(ex);
-                Logger.Log(LogType.Warning, "Failed to load commands and blocks!");
+                Logger.LogError("Error loading commands and blocks", ex);
             }
 
-            try {
-                LoadLavaSettings();
-                UpdateLavaMapList();
-                UpdateLavaControls();
-            } catch (Exception ex) {
-                Logger.LogError(ex);
-                Logger.Log(LogType.Warning, "Failed to load Lava Survival settings!");
-            }
-
-            try {
-                lavaUpdateTimer = new System.Timers.Timer(10000) { AutoReset = true };
-                lavaUpdateTimer.Elapsed += delegate {
-                    UpdateLavaControls();
-                    UpdateLavaMapList(false);
-                };
-                lavaUpdateTimer.Start();
-            } catch {
-                Logger.Log(LogType.Warning, "Failed to start lava control update timer!");
-            }
+            LoadGameProps();
         }
 
         void PropertyWindow_Unload(object sender, EventArgs e) {
-            lavaUpdateTimer.Dispose();
-            Window.prevLoaded = false;
-            tw_selected = null;
+            OnMapsChangedEvent.Unregister(HandleMapsChanged);
+            OnStateChangedEvent.Unregister(HandleStateChanged);
+            Window.hasPropsForm = false;
         }
 
         void LoadProperties() {
             SrvProperties.Load();
             LoadGeneralProps();
             LoadChatProps();
-            LoadIrcSqlProps();
+            LoadRelayProps();
+            LoadSqlProps();
+            LoadEcoProps();
             LoadMiscProps();
             LoadRankProps();
             LoadSecurityProps();
@@ -95,28 +76,21 @@ namespace MCGalaxy.Gui {
             try {
                 ApplyGeneralProps();
                 ApplyChatProps();
-                ApplyIrcSqlProps();
+                ApplyRelayProps();
+                ApplySqlProps();
+                ApplyEcoProps();
                 ApplyMiscProps();
                 ApplyRankProps();
                 ApplySecurityProps();
-                zsSettings.ApplyToServer();
-                lsSettings.ApplyToServer();
                 
+                zsSettings.ApplyToServer();
                 SrvProperties.Save();
-                CommandExtraPerms.Save();
-            } catch( Exception ex ) {
+                Economy.Save();                
+            } catch (Exception ex) {
                 Logger.LogError(ex);
                 Logger.Log(LogType.Warning, "SAVE FAILED! properties/server.properties");
             }
-        }
-        
-        Color GetColor(string name) {
-            string code = Colors.Parse(name);
-            if (code.Length == 0) return SystemColors.Control;
-            if (Colors.IsStandard(code[1])) return Color.FromName(name);
-            
-            ColorDesc col = Colors.Get(code[1]);
-            return Color.FromArgb(col.R, col.G, col.B);
+            SaveDiscordProps();
         }
 
         void btnSave_Click(object sender, EventArgs e) { SaveChanges(); Dispose(); }
@@ -127,9 +101,9 @@ namespace MCGalaxy.Gui {
             SaveRanks();
             SaveCommands();
             SaveBlocks();
-            try { SaveLavaSettings(); }
-            catch { Logger.Log(LogType.Warning, "Error saving Lava Survival settings!"); }
-            try { ZSConfig.SaveSettings(); }
+            SaveGameProps();
+            
+            try { ZSGame.Config.Save(); }
             catch { Logger.Log(LogType.Warning, "Error saving Zombie Survival settings!"); }
 
             SrvProperties.Load(); // loads when saving?
@@ -139,23 +113,23 @@ namespace MCGalaxy.Gui {
         void btnDiscard_Click(object sender, EventArgs e) { Dispose(); }
 
         void GetHelp(string toHelp) {
-            ConsoleHelpPlayer player = new ConsoleHelpPlayer();
-            Command.all.FindByName("Help").Use(player, toHelp);
-            
-            MessageBox.Show(Colors.Strip(player.HelpOutput),
-                            "Help information for " + toHelp);
+            ConsoleHelpPlayer p = new ConsoleHelpPlayer();
+            Command.Find("Help").Use(p, toHelp);
+            Popup.Message(Colors.StripUsed(p.Messages), "Help for /" + toHelp);
         }
-        
-        sealed class ConsoleHelpPlayer : Player {
-            public string HelpOutput = "";
+    }
+	
+	sealed class ConsoleHelpPlayer : Player {
+        public string Messages = "";
             
-            public ConsoleHelpPlayer() : base("(console)") {
-                group = Group.NobodyRank;
-            }
+        public ConsoleHelpPlayer() : base("(console)") {
+            group = Group.NobodyRank;
+            SuperName = "Console";
+        }
             
-            public override void SendMessage(byte id, string message) {
-                HelpOutput += message + "\r\n";
-            }
+        public override void Message(byte type, string message) {
+            message = Chat.Format(message, this);
+            Messages += message + "\r\n";
         }
     }
 }

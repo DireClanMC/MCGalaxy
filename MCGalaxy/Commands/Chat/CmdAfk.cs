@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2010 MCSharp team (Modified for use with MCZall/MCLawl/MCGalaxy)
     
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -24,7 +24,7 @@ namespace MCGalaxy.Commands.Chatting {
         public override string type { get { return CommandTypes.Information; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) { ToggleAfk(p, message); }        
+        public override void Use(Player p, string message, CommandData data) { ToggleAfk(p, message); }
         internal static void ToggleAfk(Player p, string message) {
             if (p.joker) message = "";
             p.AutoAfk = false;
@@ -33,38 +33,35 @@ namespace MCGalaxy.Commands.Chatting {
             TabList.Update(p, true);
             p.LastAction = DateTime.UtcNow;
 
-            bool cantSend = p.muted || (Server.chatmod && !p.voice);
+            bool cantSend = !p.CanSpeak();
             if (p.IsAfk) {
                 if (cantSend) {
-                    Player.Message(p, "You are now marked as being AFK.");
+                    p.Message("You are now marked as being AFK.");
                 } else {
-                    ShowMessage(p, "-" + p.ColoredName + "%S- is AFK " + message);                    
+                    ShowMessage(p, "-λNICK&S- is AFK " + message);
                     p.CheckForMessageSpam();
                 }
                 p.AFKCooldown = DateTime.UtcNow.AddSeconds(2);
-                OnPlayerActionEvent.Call(p, PlayerAction.AFK, message);
+                OnPlayerActionEvent.Call(p, PlayerAction.AFK, null, cantSend);
             } else {
                 if (cantSend) {
-                    Player.Message(p, "You are no longer marked as being AFK.");
+                    p.Message("You are no longer marked as being AFK.");
                 } else {
-                    ShowMessage(p, "-" + p.ColoredName + "%S- is no longer AFK");                    
+                    ShowMessage(p, "-λNICK&S- is no longer AFK");
                     p.CheckForMessageSpam();
                 }
-                OnPlayerActionEvent.Call(p, PlayerAction.UnAFK, message);
+                OnPlayerActionEvent.Call(p, PlayerAction.UnAFK, null, cantSend);
             }
         }
         
-        static void ShowMessage(Player p, string message) {                        
-            if (p.level.SeesServerWideChat) {
-                 Chat.MessageGlobal(p, message, false, true);
-            } else {
-                Chat.MessageLevel(p, "<Level>" + message, false, p.level);
-            }
+        static void ShowMessage(Player p, string message) {
+            bool announce = !p.hidden && Server.Config.IRCShowAFK;
+            Chat.MessageFrom(p, message, Chat.FilterVisible(p), announce);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/AFK <reason>");
-            Player.Message(p, "%HMarks yourself as AFK. Use again to mark yourself as back");
+            p.Message("&T/AFK <reason>");
+            p.Message("&HMarks yourself as AFK. Use again to mark yourself as back");
         }
     }
 }

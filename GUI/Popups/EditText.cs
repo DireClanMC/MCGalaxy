@@ -34,7 +34,7 @@ namespace MCGalaxy.Gui.Popups {
         
         void cmbList_SelectedIndexChanged(object sender, EventArgs e) {
             if (cmbList.SelectedIndex == -1) return;
-            SaveCurrentFile();
+            TrySaveChanges();
             
             string selectedName = cmbList.SelectedItem.ToString();
             curFile = TextFile.Files[selectedName];
@@ -45,7 +45,7 @@ namespace MCGalaxy.Gui.Popups {
                 Text = "Editing " + curFile.Filename;
             } catch (Exception ex) {
                 Logger.LogError(ex);
-                MessageBox.Show("Failed to read text from " + curFile.Filename);
+                Popup.Error("Failed to read text from " + curFile.Filename);
                 
                 curFile = null;
                 cmbList.Text = "";
@@ -53,24 +53,27 @@ namespace MCGalaxy.Gui.Popups {
             }
         }
         
-        void SaveCurrentFile() {
+        void SaveChanges(string[] lines) {
+            curFile.SetText(lines);
+            Popup.Message("Saved " + curFile.Filename);
+        }
+        
+        void TrySaveChanges() {
             if (curFile == null) return;
-            string[] userLines = txtEdit.Lines;
-            if (!HasTextChanged(userLines)) return;
+            string[] lines = txtEdit.Lines;
+            if (!HasChanged(lines)) return;
             
-            string msg = "Save changes to " + curFile.Filename + "?";
-            if (MessageBox.Show(msg, "Save?", MessageBoxButtons.YesNo) == DialogResult.Yes) {
-                curFile.SetText(userLines);
-                MessageBox.Show("Saved " + curFile.Filename);
+            if (Popup.YesNo("Save changes to " + curFile.Filename + "?", "Save changes")) {
+                SaveChanges(lines);
             }
         }
         
-        bool HasTextChanged(string[] userLines) {
-            string[] lines = curFile.GetText();
-            if (lines.Length != userLines.Length) return true;
+        bool HasChanged(string[] lines) {
+            string[] curLines = curFile.GetText();
+            if (lines.Length != curLines.Length) return true;
             
             for (int i = 0; i < lines.Length; i++) {
-                if (userLines[i] != lines[i]) return true;
+                if (lines[i] != curLines[i]) return true;
             }
             return false;
         }
@@ -101,7 +104,12 @@ namespace MCGalaxy.Gui.Popups {
         }
         
         void EditTxt_Unload(object sender, EventArgs e) {
-            SaveCurrentFile();
+            TrySaveChanges();
+        }
+        
+        void btnSave_Click(object sender, EventArgs e) {
+            if (curFile == null) return;
+            SaveChanges(txtEdit.Lines);
         }
     }
 }

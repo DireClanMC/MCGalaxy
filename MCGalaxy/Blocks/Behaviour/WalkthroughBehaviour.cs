@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Data;
 using MCGalaxy.Blocks.Extended;
 using MCGalaxy.Blocks.Physics;
+using MCGalaxy.Network;
 using MCGalaxy.SQL;
 using BlockID = System.UInt16;
 
@@ -36,9 +37,9 @@ namespace MCGalaxy.Blocks {
         }
         
         internal static bool Train(Player p, BlockID block, ushort x, ushort y, ushort z) {
-            if (!p.trainInvincible) p.HandleDeath(Block.Train);
+            if (!p.trainInvincible && p.level.Config.KillerBlocks) p.HandleDeath(Block.Train);
             return true;
-        }       
+        }
         
         internal static bool DoPortal(Player p, BlockID block, ushort x, ushort y, ushort z) {
             if (p.level.PosToInt(x, y, z) == p.lastWalkthrough) return true;
@@ -59,11 +60,21 @@ namespace MCGalaxy.Blocks {
             if (index != p.lastCheckpointIndex) {
                 Position pos = p.Pos;
                 pos.X = x * 32 + 16; pos.Z = z * 32 + 16;
-                p.SendPos(Entities.SelfID, pos, p.Rot);
-                Entities.Spawn(p, p);
+                if (Server.Config.CheckpointsRespawnClientside) {
+                    if (p.Supports(CpeExt.SetSpawnpoint)) {
+                        p.Send(Packet.SetSpawnpoint(pos, p.Rot, p.hasExtPositions));
+                    } else {
+                        p.SendPos(Entities.SelfID, pos, p.Rot);
+                        Entities.Spawn(p, p);
+                    }
+                    p.Message("Your spawnpoint was updated.");
+                }
                 p.lastCheckpointIndex = index;
+                return true;
             }
-            return true;
+            
+            // allow activating other blocks (e.g. /mb message above it)
+            return false;
         }
     }
 }

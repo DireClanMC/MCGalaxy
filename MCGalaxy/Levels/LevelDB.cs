@@ -18,6 +18,8 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using MCGalaxy.Blocks.Extended;
+using MCGalaxy.Maths;
 using MCGalaxy.SQL;
 using MCGalaxy.Util;
 using BlockID = System.UInt16;
@@ -31,87 +33,84 @@ namespace MCGalaxy {
 
             using (IDisposable wLock = lvl.BlockDB.Locker.AccquireWrite(60 * 1000)) {
                 if (wLock == null) {
-                    Logger.Log(LogType.Warning, "Couldn't accquire BlockDB write lock on {0}, skipping save", lvl.name);
+                    Logger.Log(LogType.Warning, "&WCouldn't accquire BlockDB write lock on {0}, skipping save", lvl.name);
                     return;
                 }
-                lvl.BlockDB.WriteEntries();
+                lvl.BlockDB.FlushCache();
             }
             Logger.Log(LogType.BackgroundActivity, "Saved BlockDB changes for: {0}", lvl.name);
         }
 
-        internal static void LoadZones(Level level, string name) {
-            if (!Database.TableExists("Zone" + name)) return;
-            int id = 0;
-            bool changedPerbuild = false;
+        static object ListZones(IDataRecord record, object arg) {
+            Zone z = new Zone();
+            z.MinX = (ushort)record.GetInt("SmallX");
+            z.MinY = (ushort)record.GetInt("SmallY");
+            z.MinX = (ushort)record.GetInt("SmallZ");
             
-            using (DataTable table = Database.Backend.GetRows("Zone" + name, "*")) {
-                foreach (DataRow row in table.Rows) {
-                    Zone z = new Zone(level);
-                    z.MinX = ushort.Parse(row["SmallX"].ToString());
-                    z.MinY = ushort.Parse(row["SmallY"].ToString());
-                    z.MinZ = ushort.Parse(row["SmallZ"].ToString());
-                    z.MaxX = ushort.Parse(row["BigX"].ToString());
-                    z.MaxY = ushort.Parse(row["BigY"].ToString());
-                    z.MaxZ = ushort.Parse(row["BigZ"].ToString());
-                    
-                    string owner = row["Owner"].ToString();
-                    if (owner.StartsWith("grp")) {
-                        Group grp = Group.Find(owner.Substring(3));
-                        if (grp != null) z.Access.Min = grp.Permission;
-                    } else if (z.CoversMap(level)) {
-                        level.BuildAccess.Whitelisted.Add(owner);
-                        changedPerbuild = true;
-                        continue;
-                    } else {
-                        z.Access.Whitelisted.Add(owner);
-                        z.Access.Min = LevelPermission.Admin;                        
-                    }
-                    
-                    z.Config.Name = "Zone" + id;
-                    id++;
-                    z.AddTo(level);
-                }
-            }
+            z.MaxX = (ushort)record.GetInt("BigX");
+            z.MaxY = (ushort)record.GetInt("BigY");
+            z.MaxX = (ushort)record.GetInt("BigZ");
+            z.Config.Name = record.GetText("Owner");
             
-            if (changedPerbuild) Level.SaveSettings(level);
-            if (level.Zones.Count > 0 && !level.Save(true)) return;
-            Database.Backend.DeleteTable("Zone" + name);
-            Logger.Log(LogType.SystemActivity, "Upgraded zones for map " + name);
+            ((List<Zone>)arg).Add(z);
+            return arg;
         }
         
-        internal static void LoadPortals(Level level, string name) {
-            level.hasPortals = Database.TableExists("Portals" + name);
+        internal static void LoadZones(Level level, string map) {
+            if (!Database.TableExists("Zone" + map)) return;
+            
+            List<Zone> zones = new List<Zone>();
+            Database.ReadRows("Zone" + map, "*", zones, ListZones);
+            
+            bool changedPerbuild = false;
+            for (int i = 0; i < zones.Count; i++) {
+                Zone z = zones[i];
+                string owner = z.Config.Name;
+                
+                if (owner.StartsWith("grp")) {
+                    Group grp = Group.Find(owner.Substring(3));
+                    if (grp != null) z.Access.Min = grp.Permission;
+                } else if (z.CoversMap(level)) {
+                    level.BuildAccess.Whitelisted.Add(owner);
+                    changedPerbuild = true;
+                    continue;
+                } else {
+                    z.Access.Whitelisted.Add(owner);
+                    z.Access.Min = LevelPermission.Admin;
+                }
+                
+                z.Config.Name = "Zone" + i;
+                z.AddTo(level);
+            }
+            
+            if (changedPerbuild) level.SaveSettings();
+            if (level.Zones.Count > 0 && !level.Save(true)) return;
+            
+            Database.DeleteTable("Zone" + map);
+            Logger.Log(LogType.SystemActivity, "Upgraded zones for map " + map);
+        }
+        
+        internal static void LoadPortals(Level level, string map) {
+            List<Vec3U16> coords = Portal.GetAllCoords(map);
+            level.hasPortals     = coords.Count > 0;
             if (!level.hasPortals) return;
             
-            using (DataTable table = Database.Backend.GetRows("Portals" + name, "*")) {
-                foreach (DataRow row in table.Rows) {
-                    ushort x = ushort.Parse(row["EntryX"].ToString());
-                    ushort y = ushort.Parse(row["EntryY"].ToString());
-                    ushort z = ushort.Parse(row["EntryZ"].ToString());
-                    
-                    BlockID block = level.GetBlock(x, y, z);
-                    if (level.Props[block].IsPortal) continue;
-                    
-                    Database.Backend.DeleteRows("Portals" + name, "WHERE EntryX=@0 AND EntryY=@1 AND EntryZ=@2", x, y, z);
-                }
+            foreach (Vec3U16 p in coords) {
+                BlockID block = level.GetBlock(p.X, p.Y, p.Z);
+                if (level.Props[block].IsPortal) continue;
+                Portal.Delete(map, p.X, p.Y, p.Z);
             }
         }
         
-        internal static void LoadMessages(Level level, string name) {
-            level.hasMessageBlocks = Database.TableExists("Messages" + name);
+        internal static void LoadMessages(Level level, string map) {
+            List<Vec3U16> coords   = MessageBlock.GetAllCoords(map);
+            level.hasMessageBlocks = coords.Count > 0;
             if (!level.hasMessageBlocks) return;
             
-            using (DataTable table = Database.Backend.GetRows("Messages" + name, "*")) {
-                foreach (DataRow row in table.Rows) {
-                    ushort x = ushort.Parse(row["X"].ToString());
-                    ushort y = ushort.Parse(row["Y"].ToString());
-                    ushort z = ushort.Parse(row["Z"].ToString());
-                    
-                    BlockID block = level.GetBlock(x, y, z);
-                    if (level.Props[block].IsMessageBlock) continue;
-
-                    Database.Backend.DeleteRows("Messages" + name, "WHERE X=@0 AND Y=@1 AND Z=@2", x, y, z);
-                }
+            foreach (Vec3U16 p in coords) {
+                BlockID block = level.GetBlock(p.X, p.Y, p.Z);
+                if (level.Props[block].IsMessageBlock) continue;
+                MessageBlock.Delete(map, p.X, p.Y, p.Z);
             }
         }
         

@@ -23,7 +23,7 @@ using BlockID = System.UInt16;
 using BlockRaw = System.Byte;
 
 namespace MCGalaxy.Commands.Building {
-    public sealed class CmdRestartPhysics : Command {
+    public sealed class CmdRestartPhysics : Command2 {
         public override string name { get { return "RestartPhysics"; } }
         public override string shortcut { get { return "rp"; } }
         public override string type { get { return CommandTypes.Building; } }
@@ -31,19 +31,19 @@ namespace MCGalaxy.Commands.Building {
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             PhysicsArgs extraInfo = default(PhysicsArgs);
             message = message.ToLower();
             if (message.Length > 0 && !ParseArgs(p, message, ref extraInfo)) return;
 
-            Player.Message(p, "Place or break two blocks to determine the edges.");
-            p.MakeSelection(2, "Selecting region for %SRestart physics", extraInfo, DoRestart);
+            p.Message("Place or break two blocks to determine the edges.");
+            p.MakeSelection(2, "Selecting region for &SRestart physics", extraInfo, DoRestart);
         }
         
         bool ParseArgs(Player p, string message, ref PhysicsArgs args) {
             string[] parts = message.SplitSpaces();
             if (parts.Length % 2 == 1) {
-                Player.Message(p, "Number of parameters must be even");
+                p.Message("Number of parameters must be even");
                 Help(p); return false;
             }
             byte type = 0, value = 0;
@@ -58,7 +58,7 @@ namespace MCGalaxy.Commands.Building {
                 args.Type2 = type; args.Value2 = value;
             }
             if (parts.Length >= 6) {
-                Player.Message(p, "You can only use up to two types of physics."); return false;
+                p.Message("You can only use up to two types of physics."); return false;
             }
             
             args.ExtBlock = extBits;
@@ -75,9 +75,7 @@ namespace MCGalaxy.Commands.Building {
                 return true;
             }
             
-            byte temp = 0;
-            if (!CommandParser.GetByte(p, arg, "Value", ref temp)) return false;
-            value = (byte)temp;
+            if (!CommandParser.GetByte(p, arg, "Value", ref value)) return false;
             
             switch (name) {
                 case "drop": type = PhysicsArgs.Drop; return true;
@@ -86,7 +84,7 @@ namespace MCGalaxy.Commands.Building {
                 case "wait": type = PhysicsArgs.Wait; return true;
                 case "rainbow": type = PhysicsArgs.Rainbow; return true;
             }
-            Player.Message(p, name + " type is not supported.");
+            p.Message(name + " type is not supported.");
             return false;
         }
         
@@ -105,29 +103,29 @@ namespace MCGalaxy.Commands.Building {
             }
 
             if (extraInfo.Raw == 0) {
-                if (buffer.Count > ServerConfig.PhysicsRestartNormLimit) {
-                    Player.Message(p, "Cannot restart more than " + ServerConfig.PhysicsRestartNormLimit + " blocks.");
-                    Player.Message(p, "Tried to restart " + buffer.Count + " blocks.");
+                if (buffer.Count > Server.Config.PhysicsRestartNormLimit) {
+                    p.Message("Cannot restart more than " + Server.Config.PhysicsRestartNormLimit + " blocks.");
+                    p.Message("Tried to restart " + buffer.Count + " blocks.");
                     return false;
                 }
-            } else if (buffer.Count > ServerConfig.PhysicsRestartLimit) {
-                Player.Message(p, "Tried to add physics to " + buffer.Count + " blocks.");
-                Player.Message(p, "Cannot add physics to more than " + ServerConfig.PhysicsRestartLimit + " blocks.");
+            } else if (buffer.Count > Server.Config.PhysicsRestartLimit) {
+                p.Message("Tried to add physics to " + buffer.Count + " blocks.");
+                p.Message("Cannot add physics to more than " + Server.Config.PhysicsRestartLimit + " blocks.");
                 return false;
             }
 
             foreach (int index1 in buffer) {
                 p.level.AddCheck(index1, true, extraInfo);
             }
-            Player.Message(p, "Activated " + buffer.Count + " blocks.");
+            p.Message("Activated " + buffer.Count + " blocks.");
             return true;
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "/restartphysics ([type] [num]) ([type2] [num2]) - Restarts every physics block in an area");
-            Player.Message(p, "[type] will set custom physics for selected blocks");
-            Player.Message(p, "Possible [types]: drop, explode, dissipate, wait, rainbow, revert");
-            Player.Message(p, "/rp revert takes block names");
+            p.Message("/restartphysics ([type] [num]) ([type2] [num2]) - Restarts every physics block in an area");
+            p.Message("[type] will set custom physics for selected blocks");
+            p.Message("Possible [types]: drop, explode, dissipate, wait, rainbow, revert");
+            p.Message("/rp revert takes block names");
         }
     }
 }

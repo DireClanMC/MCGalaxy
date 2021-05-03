@@ -22,21 +22,23 @@ using MCGalaxy.Commands;
 namespace MCGalaxy.Bots {
     public static class ScriptFile {
         
-        public static bool Parse(Player p, PlayerBot bot, string file) {
-            if (!File.Exists(file)) { 
-                Player.Message(p, "Could not find specified AI."); return false; 
+        public static bool Parse(Player p, PlayerBot bot, string ai) {
+            string path = "bots/" + ai;
+            if (!File.Exists(path)) {
+                p.Message("Could not find specified AI."); return false;
             }
 
-            string[] instructions = File.ReadAllLines(file);
-            if (instructions.Length == 0 || !instructions[0].CaselessEq("#Version 2")) {
-                Player.Message(p, "Invalid file version. Remake"); return false; 
+            string[] instructions = File.ReadAllLines(path);
+            if (instructions.Length == 0) {
+                p.Message("No instructions in the AI."); return false;
             }
 
+            bot.AIName = ai;
             bot.Instructions.Clear();
             bot.cur = 0; bot.countdown = 0; bot.movementSpeed = 3;
 
             foreach (string line in instructions) {
-                if (line.Length == 0 || line[0] == '#') continue;
+                if (line.IsCommentLine()) continue;
                 string[] args = line.SplitSpaces();
 
                 try {
@@ -47,28 +49,35 @@ namespace MCGalaxy.Bots {
                     data.Name = args[0];
                     bot.Instructions.Add(data);
                 } catch {
-                    Player.Message(p, "AI file corrupt."); return false;
+                    p.Message("AI file corrupt."); return false;
                 }
             }
             return true;
         }
         
-        public static void Append(Player p, string ai, string action, string[] args) {
+        public static string Append(Player p, string ai, string cmd, string[] args) {
             using (StreamWriter w = new StreamWriter("bots/" + ai, true)) {
-                if (action.Length == 0) action = "walk";
-                if (action.CaselessEq("tp")) action = "teleport";
+                if (cmd.Length == 0)      cmd = "walk";
+                if (cmd.CaselessEq("tp")) cmd = "teleport";
 
-                BotInstruction ins = BotInstruction.Find(action);
+                BotInstruction ins = BotInstruction.Find(cmd);
                 if (ins == null) {
-                    Player.Message(p, "Could not find instruction \"" + action + "\""); return;
+                    p.Message("Could not find instruction \"" + cmd + "\""); return null;
                 }
                 
-                LevelPermission killPerm = CommandExtraPerms.MinPerm("botset");
-                if (ins.Name.CaselessEq("kill") && p.Rank < killPerm) {
-                    Formatter.MessageNeedMinPerm(p, "+ can toggle a bot's killer instinct.", killPerm);
-                    return;
+                CommandExtraPerms killPerms = CommandExtraPerms.Find("BotSet", 1);
+                if (ins.Name.CaselessEq("kill") && !killPerms.UsableBy(p.Rank)) {
+                    killPerms.MessageCannotUse(p); 
+                    return null;
                 }
-                ins.Output(p, args, w);
+                
+                try {
+                    ins.Output(p, args, w);
+                } catch {
+                    p.Message("Invalid arguments given for instruction " + ins.Name);
+                    return null;
+                }
+                return ins.Name;
             }
         }
     }

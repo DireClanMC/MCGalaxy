@@ -19,7 +19,7 @@ using System.Collections.Generic;
 using MCGalaxy.Commands.Moderation;
 
 namespace MCGalaxy.Commands.Info {
-    public sealed class CmdClones : Command {
+    public sealed class CmdClones : Command2 {
         public override string name { get { return "Clones"; } }
         public override string shortcut { get { return "Alts"; } }
         public override string type { get { return CommandTypes.Information; } }
@@ -29,28 +29,30 @@ namespace MCGalaxy.Commands.Info {
             get { return new[] { new CommandAlias("WhoIP") }; }
         }
 
-        public override void Use(Player p, string message) {
-            if (message.Length == 0 && p != null) {
+        public override void Use(Player p, string message, CommandData data) {
+            string name;
+            if (message.Length == 0) {
+                if (p.IsSuper) { SuperRequiresArgs(p, "IP address"); return; }
                 message = p.ip;
             } else {
-                message = ModActionCmd.FindIP(p, message, "find alts of", "clones");
+                message = ModActionCmd.FindIP(p, message, "Clones", out name);
                 if (message == null) return;
             }
 
             List<string> accounts = PlayerInfo.FindAccounts(message);
             if (accounts.Count == 0) {
-                Player.Message(p, "No players last played with the given IP.");
+                p.Message("No players last played with the given IP.");
             } else {
-                Player.Message(p, "These players have the same IP:");
-                Player.Message(p, accounts.Join(alt => PlayerInfo.GetColoredName(p, alt)));
+                p.Message("These players have the same IP:");
+                p.Message(accounts.Join(alt => p.FormatNick(alt)));
             }
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Clones [name]");
-            Player.Message(p, "%HFinds everyone with the same IP as [name]");
-            Player.Message(p, "%T/Clones [ip address]");
-            Player.Message(p, "%HFinds everyone who last played or is playing on the given IP");
+            p.Message("&T/Clones [name]");
+            p.Message("&HFinds everyone with the same IP as [name]");
+            p.Message("&T/Clones [ip address]");
+            p.Message("&HFinds everyone who last played or is playing on the given IP");
         }
     }
 }

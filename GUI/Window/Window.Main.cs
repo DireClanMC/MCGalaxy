@@ -17,6 +17,7 @@
 */
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Windows.Forms;
 using MCGalaxy.UI;
 
@@ -24,8 +25,9 @@ namespace MCGalaxy.Gui {
     public partial class Window : Form {
         
         Player GetSelectedPlayer() {
-            if (main_Players.SelectedRows.Count <= 0) return null;
-            return (Player)(main_Players.SelectedRows[0].DataBoundItem);
+            string name = GetSelected(main_Players);
+            if (name == null) return null;
+            return PlayerInfo.FindExact(name);
         }
         
         void PlayerCmd(string command) {
@@ -40,19 +42,20 @@ namespace MCGalaxy.Gui {
             UIHelpers.HandleCommand(command + " " + prefix + player.name + suffix);
         }
         
-        void tsPlayer_Clones_Click(object sender, EventArgs e) { PlayerCmd("Clones"); }
-        void tsPlayer_Voice_Click(object sender, EventArgs e) { PlayerCmd("Voice"); }
-        void tsPlayer_Whois_Click(object sender, EventArgs e) { PlayerCmd("WhoIs"); }       
-        void tsPlayer_Ban_Click(object sender, EventArgs e) { PlayerCmd("Ban"); }
-        void tsPlayer_Kick_Click(object sender, EventArgs e) { PlayerCmd("Kick", "", " You have been kicked by the console."); }
+        void tsPlayer_Clones_Click(object sender, EventArgs e) {  PlayerCmd("Clones"); }
+        void tsPlayer_Voice_Click(object sender, EventArgs e) {   PlayerCmd("Voice"); }
+        void tsPlayer_Whois_Click(object sender, EventArgs e) {   PlayerCmd("WhoIs"); }       
+        void tsPlayer_Ban_Click(object sender, EventArgs e) {     PlayerCmd("Ban"); }
+        void tsPlayer_Kick_Click(object sender, EventArgs e) {    PlayerCmd("Kick", "", " You have been kicked by the console."); }
         void tsPlayer_Promote_Click(object sender, EventArgs e) { PlayerCmd("SetRank", "+up ", ""); }
-        void tsPlayer_Demote_Click(object sender, EventArgs e) { PlayerCmd("SetRank", "-down ", ""); }
+        void tsPlayer_Demote_Click(object sender, EventArgs e) {  PlayerCmd("SetRank", "-down ", ""); }
 
 
         
         Level GetSelectedLevel() {
-            if (main_Maps.SelectedRows.Count <= 0) return null;
-            return (Level)(main_Maps.SelectedRows[0].DataBoundItem);
+            string name = GetSelected(main_Maps);
+            if (name == null) return null;
+            return LevelInfo.FindExact(name);
         }
         
         void LevelCmd(string command) {
@@ -67,17 +70,17 @@ namespace MCGalaxy.Gui {
             UIHelpers.HandleCommand(command + " " + prefix + level.name + suffix);
         }  
         
-        void tsMap_Info_Click(object sender, EventArgs e) { LevelCmd("Map"); LevelCmd("mapinfo"); }
-        void tsMap_MoveAll_Click(object sender, EventArgs e) { LevelCmd("MoveAll"); }
+        void tsMap_Info_Click(object sender, EventArgs e) {     LevelCmd("Map"); LevelCmd("MapInfo"); }
+        void tsMap_MoveAll_Click(object sender, EventArgs e) {  LevelCmd("MoveAll"); }
         void tsMap_Physics0_Click(object sender, EventArgs e) { LevelCmd("Physics", "", " 0"); }
         void tsMap_Physics1_Click(object sender, EventArgs e) { LevelCmd("Physics", "", " 1"); }
         void tsMap_Physics2_Click(object sender, EventArgs e) { LevelCmd("Physics", "", " 2"); }
         void tsMap_Physics3_Click(object sender, EventArgs e) { LevelCmd("Physics", "", " 3"); }
         void tsMap_Physics4_Click(object sender, EventArgs e) { LevelCmd("Physics", "", " 4"); }
         void tsMap_Physics5_Click(object sender, EventArgs e) { LevelCmd("Physics", "", " 5"); }
-        void tsMap_Save_Click(object sender, EventArgs e) { LevelCmd("Save"); }
-        void tsMap_Unload_Click(object sender, EventArgs e) { LevelCmd("Unload"); }
-        void tsMap_Reload_Click(object sender, EventArgs e) { LevelCmd("Reload", "all ", ""); }
+        void tsMap_Save_Click(object sender, EventArgs e) {     LevelCmd("Save"); }
+        void tsMap_Unload_Click(object sender, EventArgs e) {   LevelCmd("Unload"); }
+        void tsMap_Reload_Click(object sender, EventArgs e) {   LevelCmd("Reload", "all ", ""); }
         
         
         
@@ -128,13 +131,14 @@ namespace MCGalaxy.Gui {
         }
         
         void main_BtnRestart_Click(object sender, EventArgs e) {
-            if (MessageBox.Show("Are you sure you want to restart?", "Restart", MessageBoxButtons.OKCancel) == DialogResult.OK) {
-                Server.Stop(true);
+            if (Popup.OKCancel("Are you sure you want to restart?", "Restart")) {
+                Server.Stop(true, Server.Config.DefaultRestartMessage);
             }
         }
         
         void main_TxtUrl_DoubleClick(object sender, EventArgs e) {
-            main_txtUrl.SelectAll();
+            if (!Main_IsUsingUrl()) return;
+            Program.OpenBrowser(main_txtUrl.Text);
         }
         
         void main_BtnSaveAll_Click(object sender, EventArgs e) {
@@ -181,8 +185,68 @@ namespace MCGalaxy.Gui {
         }
         
         void tsLog_Clear_Click(object sender, EventArgs e) {
-            if (MessageBox.Show("Are you sure you want to clear logs?", "You sure?", MessageBoxButtons.YesNo) == DialogResult.Yes) {
+            if (Popup.OKCancel("Are you sure you want to clear logs?", "Clear logs")) {
                 main_txtLog.ClearLog();
+            }
+        }
+        
+        
+        bool Main_IsUsingUrl() {
+            Uri uri;
+            return Uri.TryCreate(main_txtUrl.Text, UriKind.Absolute, out uri);
+        }
+        
+        void Main_UpdateUrl(string s) {
+            main_txtUrl.Text = s;
+            bool isUrl = Main_IsUsingUrl();
+            Color linkCol = Color.FromArgb(255, 0, 102, 204);
+            
+            // https://stackoverflow.com/questions/20688408/how-do-you-change-the-text-color-of-a-readonly-textbox
+            main_txtUrl.BackColor = main_txtUrl.BackColor;
+            main_txtUrl.ForeColor = isUrl ? linkCol : SystemColors.WindowText;
+            main_txtUrl.Font      = new Font(main_txtUrl.Font, 
+                                             isUrl ? FontStyle.Underline : FontStyle.Regular);
+        }
+        
+        void Main_UpdateMapList() {
+            Level[] loaded = LevelInfo.Loaded.Items;
+            string selected = GetSelected(main_Maps);
+            
+            main_Maps.Rows.Clear();
+            foreach (Level lvl in loaded) {
+                main_Maps.Rows.Add(lvl.name, lvl.players.Count, lvl.physics);
+            }
+            
+            Reselect(main_Maps, selected);
+            main_Maps.Refresh();
+        }
+        
+        void Main_UpdatePlayersList() {
+            UpdateNotifyIconText();
+            Player[] players = PlayerInfo.Online.Items;
+            string selected = GetSelected(main_Players);
+
+            main_Players.Rows.Clear();
+            foreach (Player pl in players) { 
+                main_Players.Rows.Add(pl.truename, pl.level.name, pl.group.Name);
+            }
+            
+            Reselect(main_Players, selected);
+            main_Players.Refresh();
+        }
+        
+        static string GetSelected(DataGridView view) {
+            DataGridViewSelectedRowCollection selected = view.SelectedRows;
+            if (selected.Count <= 0) return null;
+            return (string)selected[0].Cells[0].Value;
+        }
+        
+        static void Reselect(DataGridView view, string selected) {
+            if (selected == null) return;
+            
+            foreach (DataGridViewRow row in view.Rows) {
+                string name = (string)row.Cells[0].Value;
+                if (name.CaselessEq(selected)) row.Selected = true;
             }
         }
     }

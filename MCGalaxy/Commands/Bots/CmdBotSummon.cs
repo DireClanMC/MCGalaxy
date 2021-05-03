@@ -16,29 +16,45 @@
     permissions and limitations under the Licenses.
 */
 using MCGalaxy.Bots;
-
+using MCGalaxy.Commands.Misc;
+    
 namespace MCGalaxy.Commands.Bots {
-    public sealed class CmdBotSummon : Command {
+    public sealed class CmdBotSummon : Command2 {
         public override string name { get { return "BotSummon"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
-            if (!LevelInfo.ValidateAction(p, p.level.name, "summon that bot")) return;
+            if (!LevelInfo.Check(p, data.Rank, p.level, "summon that bot")) return;
             
-            PlayerBot bot = Matcher.FindBots(p, message);
+            string[] args = message.SplitSpaces(2);
+            PlayerBot bot = Matcher.FindBots(p, args[0]);
             if (bot == null) return;
+            if (!bot.EditableBy(p, "summon")) { return; }
             
-            bot.Pos = p.Pos; bot.SetYawPitch(p.Rot.RotY, p.Rot.HeadX);
-            BotsFile.Save(bot.level);
+            Position pos; byte yaw, pitch;            
+            if (args.Length == 1) {
+                pos = p.Pos; yaw = p.Rot.RotY; pitch = p.Rot.HeadX;
+            } else {
+                args = args[1].SplitSpaces();
+                
+                if (args.Length < 3) { Help(p); return; }                
+                if (!CmdTp.GetTeleportCoords(p, bot, args, false, out pos, out yaw, out pitch)) return;
+            }
+            
+            bot.Pos = pos; bot.SetYawPitch(yaw, pitch);
+            BotsFile.Save(p.level);
         }
         
-        public override void Help(Player p) {
-            Player.Message(p, "%T/BotSummon [name]");
-            Player.Message(p, "%HSummons a bot to your position.");
+        public override void Help(Player p) {   
+            p.Message("&T/BotSummon [name] [x y z] <yaw> <pitch>");
+            p.Message("&HTeleports a bot to the given block coordinates.");
+            p.Message("&HUse ~ before a coordinate to move relative to current position");
+            p.Message("&T/BotSummon [name]");
+            p.Message("&HSummons a bot to your position.");
         }
     }
 }

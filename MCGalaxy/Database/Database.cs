@@ -16,112 +16,230 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.IO;
 
 namespace MCGalaxy.SQL {
+    /// <summary> Callback function invoked on a row returned from an SQL query. </summary>
+    public delegate object ReaderCallback(IDataRecord record, object arg);
+    
+    /// <summary> Abstracts a SQL database management engine. </summary>
     public static class Database {
-        
         public static IDatabaseBackend Backend;
+        public const string DateFormat = "yyyy-MM-dd HH:mm:ss";        
+
+        static object ReadInt(IDataRecord record, object arg) { return record.GetInt32(0); }
+        /// <summary> Counts rows in the given table. </summary>
+        /// <param name="modifier"> Optional SQL to filter which rows are counted. </param>
+        public static int CountRows(string table, string modifier = "", params object[] args) {
+            object raw = ReadRows(table, "COUNT(*)", null, ReadInt, modifier, args);
+            return raw == null ? 0 : (int)raw;
+        }
         
-        /// <summary> Returns whether the given table exists in the database. </summary>
+        static object ReadString(IDataRecord record, object arg) { return record.GetText(0); }
+        /// <summary> Returns value of first column in last row read from the given table. </summary>
+        /// <param name="modifier"> Optional SQL to filter which rows are read. </param>
+        public static string ReadString(string table, string column,
+                                        string modifier = "", params object[] args) {
+            return (string)ReadRows(table, column, null, ReadString, modifier, args);
+        }
+        
+        internal static object ReadList(IDataRecord record, object arg) {
+            ((List<string>)arg).Add(record.GetText(0)); return arg;
+        }
+        
+        internal static object ReadFields(IDataRecord record, object arg) {
+            string[] field = new string[record.FieldCount];
+            for (int i = 0; i < field.Length; i++) { field[i] = record.GetStringValue(i); }
+            ((List<string[]>)arg).Add(field);
+            return arg;
+        }
+        
+        /// <summary> Returns all columns of all rows read from the given table. </summary>
+        /// <param name="modifier"> Optional SQL to filter which rows are read. </param>
+        public static List<string[]> GetRows(string table, string columns,
+                                             string modifier = "", params object[] args) {
+            List<string[]> fields = new List<string[]>();
+            ReadRows(table, columns, fields, ReadFields, modifier, args);
+            return fields;
+        }
+        
+        
+        #region High level table management
+        
+        /// <summary> Returns whether a table (case sensitive) exists by that name. </summary>
         public static bool TableExists(string table) {
-            return Backend.TableExists(table);
+            ValidateName(table);
+            return Backend.TableExists(table); 
         }
-
         
-        /// <summary> Executes an SQL command that does not return any results. </summary>
-        public static void Execute(string sql) {
-            ParameterisedQuery query = Backend.GetStaticParameterised();
-            Execute(query, sql, false, null);
+        /// <summary> Creates a new table in the database (unless it already exists). </summary>
+        public static void CreateTable(string table, ColumnDesc[] columns) {
+            ValidateName(table);
+            string sql = Backend.CreateTableSql(table, columns);
+            Execute(sql, null);
+        } 
+        
+        /// <summary> Renames the source table to the given name. </summary>
+        public static void RenameTable(string srcTable, string dstTable) {
+            ValidateName(srcTable);
+            ValidateName(dstTable);
+            string sql = Backend.RenameTableSql(srcTable, dstTable);
+            Execute(sql, null);
+        }
+        
+        /// <summary> Completely removes the given table. </summary>
+        public static void DeleteTable(string table) {
+            ValidateName(table);
+            string sql = Backend.DeleteTableSql(table);
+            Execute(sql, null);
+        }        
+        
+        /// <summary> Adds a new coloumn to the given table. </summary>
+        /// <remarks> Note colAfter is only a hint - some database backends ignore this. </remarks>
+        public static void AddColumn(string table, ColumnDesc col, string colAfter) {
+            ValidateName(table);
+            string sql = Backend.AddColumnSql(table, col, colAfter);
+            Execute(sql, null);            
+        }
+        #endregion
+        
+        
+        #region High level functions
+        
+        /// <summary> Inserts/Copies all the rows from the source table into the destination table. </summary>
+        /// <remarks> May NOT work correctly if the tables have different schema. </remarks>
+        public static void CopyAllRows(string srcTable, string dstTable) {
+            ValidateName(srcTable);
+            ValidateName(dstTable);
+            string sql = Backend.CopyAllRowsSql(srcTable, dstTable);
+            Execute(sql, null);
+        }
+        
+        /// <summary> Iterates over read rows for the given table. </summary>
+        /// <param name="modifier"> Optional SQL to filter which rows are read,
+        /// return rows in a certain order, etc.</param>
+        public static object ReadRows(string table, string columns, object arg,
+                                      ReaderCallback callback, string modifier = "", params object[] args) {
+            ValidateName(table);
+            string sql = Backend.ReadRowsSql(table, columns, modifier);
+            return Iterate(sql, arg, callback, args);
+        }
+        
+        /// <summary> Updates rows for the given table. </summary>
+        /// <param name="modifier"> Optional SQL to filter which rows are updated. </param>
+        public static void UpdateRows(string table, string columns,
+                                       string modifier = "", params object[] args) {
+            ValidateName(table);
+            string sql = Backend.UpdateRowsSql(table, columns, modifier);
+            Execute(sql, args);
+        }
+        
+        /// <summary> Deletes rows for the given table. </summary>
+        /// <param name="modifier"> Optional SQL to filter which rows are deleted. </param>
+        public static void DeleteRows(string table, string modifier = "", params object[] args) {
+            ValidateName(table);
+            string sql = Backend.DeleteRowsSql(table, modifier);
+            Execute(sql, args);
         }
 
+        /// <summary> Adds a row to the given table. </summary>
+        public static void AddRow(string table, string columns, params object[] args) {
+            ValidateName(table);
+            string sql = Backend.AddRowSql(table, columns, args);
+            Execute(sql, args);
+        }
+        
+        /// <summary> Adds or replaces a row (same primary key) in the given table. </summary>
+        public static void AddOrReplaceRow(string table, string columns, params object[] args) {
+            ValidateName(table);
+            string sql = Backend.AddOrReplaceRowSql(table, columns, args);
+            Execute(sql, args);
+        }
+        
+        #endregion
+        
+        
+        #region Low level functions
+        
         /// <summary> Executes an SQL command that does not return any results. </summary>
         public static void Execute(string sql, params object[] args) {
-            ParameterisedQuery query = Backend.CreateParameterised();
-            Execute(query, sql, false, args);
+            Do(sql, false, null, null, args);
         }
 
         /// <summary> Executes an SQL query, invoking callback function on each returned row. </summary>
-        public static void ExecuteReader(string sql, ReaderCallback callback, params object[] args) {
-            ParameterisedQuery query = Backend.CreateParameterised();
-            DoDatabaseCall(query, sql, false, null, callback, args);
-        }
-        
-        /// <summary> Executes an SQL query, returning all read rows into a DataTable. </summary>
-        public static DataTable Fill(string sql) {
-            ParameterisedQuery query = Backend.GetStaticParameterised();
-            return Fill(query, sql, null);
+        public static object Iterate(string sql, object arg, ReaderCallback callback, params object[] args) {
+            return Do(sql, false, arg, callback, args);
         }
 
-        /// <summary> Executes an SQL query, returning all read rows into a DataTable. </summary>        
-        public static DataTable Fill(string sql, params object[] args) {
-            ParameterisedQuery query = Backend.CreateParameterised();
-            return Fill(query, sql, args);
-        }
-
-
-        internal static void Execute(ParameterisedQuery query, string sql, bool createDB, params object[] args) {
-            DoDatabaseCall(query, sql, createDB, null, null, args);
-        }
-        
-        internal static DataTable Fill(ParameterisedQuery query, string sql, params object[] args) {
-            using (DataTable results = new DataTable("toReturn")) {
-                DoDatabaseCall(query, sql, false, results, null, args);
-                return results;
-            }
-        }
-        
-        static void DoDatabaseCall(ParameterisedQuery query, string sql, bool createDB, 
-                                   DataTable results, ReaderCallback callback, params object[] args) {
-            BindParams(query, args);
-            string connString = Backend.ConnectionString;
+        internal static object Do(string sql, bool createDB, object arg,
+                                  ReaderCallback callback, params object[] args) {
             Exception e = null;
-            
             for (int i = 0; i < 10; i++) {
                 try {
                     if (callback != null) {
-                        query.ExecuteReader(sql, connString, callback);
-                    } else if (results == null) {
-                        query.Execute(sql, connString, createDB);
+                        arg = SqlQuery.Iterate(sql, args, arg, callback);
                     } else {
-                        query.Fill(sql, connString, results);
+                        SqlQuery.Execute(sql, args, createDB);
                     }
                     
-                    query.ClearParams();
-                    return;
+                    return arg;
                 } catch (Exception ex) {
                     e = ex; // try yet again
                 }
             }
-            
-            File.AppendAllText("MySQL_error.log", DateTime.Now + " " + sql + "\r\n");
-            Logger.LogError(e);
-        }
 
+            Logger.LogError("Error executing SQL statement: " + sql, e);
+            return arg;
+        }
+        #endregion
         
-        static readonly object idsLock = new object();
-        static string[] ids = null;
-        static void BindParams(ParameterisedQuery query, object[] args) {
-            if (args == null || args.Length == 0) return;
-            string[] names = GetParamNames(args.Length);
-            for (int i = 0; i < args.Length; i++)
-                query.AddParam(names[i], args[i]);
+        internal static bool ValidNameChar(char c) {
+            return 
+                c > ' '   && c != '"' && c != '%' && c != '&'  &&
+                c != '\'' && c != '*' && c != '/' && c != ':'  &&
+                c != '<'  && c != '>' && c != '?' && c != '\\' &&
+                c != '`'  && c != '|' && c <= '~';
         }
         
-        internal static string[] GetParamNames(int count) {
-            // Avoid allocation overhead from string concat every query by caching
-            string[] names = null;
-            lock (idsLock) {
-                names = ids;
-                if (ids == null || count > ids.Length) {
-                    ids = new string[count];
-                    for (int i = 0; i < count; i++)
-                        ids[i] = "@" + i;
-                    names = ids;
-                }
+        internal static void ValidateName(string table) {
+            foreach (char c in table) {
+                if (ValidNameChar(c)) continue;
+                throw new ArgumentException("Invalid character in table name: " + c);
             }
-            return names;
         }
+    }
+    
+    internal static class DatabaseExts {
+        internal static string GetText(this IDataRecord record, int col) {
+            return record.IsDBNull(col) ? "" : record.GetString(col);
+        }
+        
+        internal static string GetText(this IDataRecord record, string name) {
+            int col = record.GetOrdinal(name);
+            return record.IsDBNull(col) ? "" : record.GetString(col);
+        }
+        
+        internal static int GetInt(this IDataRecord record, string name) {
+            int col = record.GetOrdinal(name);
+            return record.IsDBNull(col) ? 0 : record.GetInt32(col);
+        }
+        
+        internal static long GetLong(this IDataRecord record, string name) {
+            int col = record.GetOrdinal(name);
+            return record.IsDBNull(col) ? 0 : record.GetInt64(col);
+        }
+        
+        internal static string GetStringValue(this IDataRecord record, int col) {
+            if (record.IsDBNull(col)) return "";
+            Type type = record.GetFieldType(col);
+            
+            if (type == typeof(string)) return record.GetString(col);
+            if (type == typeof(DateTime)) {
+                return Database.Backend.RawGetDateTime(record, col);
+            }
+            return record.GetValue(col).ToString();
+        }        
     }
 }

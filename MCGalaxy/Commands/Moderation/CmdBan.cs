@@ -19,7 +19,7 @@ using System;
 using MCGalaxy.Events;
 
 namespace MCGalaxy.Commands.Moderation {    
-    public sealed class CmdBan : Command {
+    public sealed class CmdBan : Command2 {
         public override string name { get { return "Ban"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
@@ -27,7 +27,7 @@ namespace MCGalaxy.Commands.Moderation {
             get { return new CommandAlias[] { new CommandAlias("KickBan"), new CommandAlias("kb") }; }
         }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
 
             string[] args = message.SplitSpaces(2);
@@ -38,30 +38,23 @@ namespace MCGalaxy.Commands.Moderation {
             reason = ModActionCmd.ExpandReason(p, reason);
             if (reason == null) return;
             
-            Player who = PlayerInfo.FindExact(target);
-            Group group = who != null ? who.group : Group.GroupIn(target);
-            if (!CheckPerms(target, group, p)) return;
+            Group group = ModActionCmd.CheckTarget(p, data, "ban", target);
+            if (group == null) return;
+            
+            if (group.Permission == LevelPermission.Banned) {
+                p.Message("{0} &Sis already banned.", p.FormatNick(target));
+                return;
+            }
 
             ModAction action = new ModAction(target, p, ModActionType.Ban, reason);
             action.targetGroup = group;
             OnModActionEvent.Call(action);
         }
         
-        static bool CheckPerms(string name, Group group, Player p) {
-            if (group.Permission == LevelPermission.Banned) {
-                Player.Message(p, "{0} %Sis already banned.", PlayerInfo.GetColoredName(p, name));
-                return false;
-            }
-            if (p != null && group.Permission >= p.Rank) {
-                MessageTooHighRank(p, "ban", false); return false;
-            }
-            return true;
-        }
-        
         public override void Help(Player p) {
-            Player.Message(p, "%T/Ban [player] <reason>");
-            Player.Message(p, "%HBans a player (and kicks them if online).");
-            Player.Message(p, "%HFor <reason>, @number can be used as a shortcut for that rule.");
+            p.Message("&T/Ban [player] <reason>");
+            p.Message("&HBans a player (and kicks them if online).");
+            p.Message("&HFor <reason>, @number can be used as a shortcut for that rule.");
         }
     }
 }

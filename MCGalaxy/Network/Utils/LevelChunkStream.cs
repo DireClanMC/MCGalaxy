@@ -28,7 +28,7 @@ namespace MCGalaxy.Network {
         public override bool CanSeek { get { return false; } }
         public override bool CanWrite { get { return true; } }
         
-        static Exception ex = new NotSupportedException("Stream does not support length/seeking.");
+        static Exception ex = new NotSupportedException();
         public override void Flush() { }
         public override long Length { get { throw ex; } }
         public override long Position { get { throw ex; } set { throw ex; } }
@@ -36,7 +36,8 @@ namespace MCGalaxy.Network {
         public override long Seek(long offset, SeekOrigin origin) { throw ex; }
         public override void SetLength(long length) { throw ex; }
         
-        internal int index, position, length;
+        int index;
+        byte chunkValue;
         Player p;
         byte[] data = new byte[chunkSize + 4];
         const int chunkSize = 1024;
@@ -77,161 +78,198 @@ namespace MCGalaxy.Network {
         void WritePacket() {
             data[0] = Opcode.LevelDataChunk;
             NetUtils.WriteU16((ushort)index, data, 1);
-            data[1027] = (byte)(100 * (float)position / length);
+            data[1027] = chunkValue;
             p.Send(data);
             index = 0;
         }
         
         
-        public unsafe static void CompressMap(Player p, LevelChunkStream dst) {
+        public static Stream CompressMapHeader(Player p, int volume, LevelChunkStream dst) {
+            Stream stream = null;
+            if (p.Supports(CpeExt.FastMap)) {
+                stream = new DeflateStream(dst, CompressionMode.Compress, true);
+            } else {
+                stream = new GZipStream(dst, CompressionMode.Compress, true);
+                byte[] buffer = new byte[4];
+                
+                NetUtils.WriteI32(volume, buffer, 0);
+                stream.Write(buffer, 0, 4);
+            }
+            return stream;
+        }
+        
+        public unsafe static void CompressMapSimple(Player p, Stream stream, LevelChunkStream dst) {
             const int bufferSize = 64 * 1024;
             byte[] buffer = new byte[bufferSize];
             int bIndex = 0;
             
             // Store on stack instead of performing function call for every block in map
-            byte* conv = stackalloc byte[Block.Count];
-            byte* convExt = stackalloc byte[Block.Count];
-            
-            for (int b = 0; b < Block.Count; b++) {
-                conv[b] = (byte)Block.Convert((byte)b);
-                if (conv[b] > Block.CpeCount) conv[b] = Block.Orange;
-            }
-
-            // Convert custom blocks (that overwrote core blocks) to their fallbacks
-            #if !TEN_BIT_BLOCKS
-            if (!p.hasBlockDefs) {
-            #endif    
-                for (int b = 0; b < Block.Count; b++) {
-                    BlockID block = Block.FromRaw((byte)b);
-                    BlockDefinition def = p.level.CustomBlockDefs[block];
-                    
-                    if (def == null) {
-                        convExt[b] = block < Block.CpeCount ? (byte)block : Block.Air;
-                    } else {
-                        convExt[b] = def.FallBack;
-                    }
-                }
-            #if !TEN_BIT_BLOCKS    
-            }
-            #endif
-             
-             // Convert custom blocks (that overwrote core blocks) to their fallbacks
-            if (!p.hasBlockDefs) {
-                for (int b = 0; b < Block.CpeCount; b++) {
-                    BlockDefinition def = p.level.CustomBlockDefs[b];
-                    if (def != null) conv[b] = def.FallBack;
-                }
-            }
-            
-            // Convert CPE blocks to their fallbacks
-            if (!p.hasCustomBlocks) {
-                for (int b = 0; b < Block.Count; b++) {
-                    conv[b] = Block.ConvertCPE(conv[b]);
-                    convExt[b] = Block.ConvertCPE(convExt[b]);
-                }
+            byte* conv = stackalloc byte[256];
+            for (int i = 0; i < 256; i++) {
+                conv[i] = (byte)p.ConvertBlock((BlockID)i);
             }
             
             Level lvl = p.level;
-            bool hasBlockDefs = p.hasBlockDefs;
-            using (GZipStream gs = new GZipStream(dst, CompressionMode.Compress, true)) {
-                byte[] blocks = lvl.blocks;
-                NetUtils.WriteI32(blocks.Length, buffer, 0);
-                gs.Write(buffer, 0, sizeof(int));
-                dst.length = blocks.Length;
+            byte[] blocks = lvl.blocks;
+            float progScale = 100.0f / blocks.Length;
+            
+            // compress the map data in 64 kb chunks
+            for (int i = 0; i < blocks.Length; ++i) {
+                buffer[bIndex] = conv[blocks[i]];
+                bIndex++;
                 
-                // compress the map data in 64 kb chunks
-                #if TEN_BIT_BLOCKS
-                if (p.hasExtBlocks) {
-                    for (int i = 0; i < blocks.Length; ++i) {
-                        byte block = blocks[i];
-                        if (block == Block.custom_block) {
-                            buffer[bIndex] = lvl.GetExtTile(i);
-                            buffer[bIndex + 1] = 0;
-                        } else if (block == Block.custom_block_2) {
-                            buffer[bIndex] = lvl.GetExtTile(i);
-                            buffer[bIndex + 1] = 1;
-                        } else if (block == Block.custom_block_3) {
-                            buffer[bIndex] = lvl.GetExtTile(i);
-                            buffer[bIndex + 1] = 2;
-                        } else {
-                            buffer[bIndex] = conv[block];
-                            buffer[bIndex + 1] = 0;
-                        }
-                        
-                        bIndex += 2;
-                        if (bIndex == bufferSize) {
-                            dst.position = i;
-                            gs.Write(buffer, 0, bufferSize); bIndex = 0;
-                        }
-                    }
-                } else if (p.hasBlockDefs) {
-                    for (int i = 0; i < blocks.Length; ++i) {
-                        byte block = blocks[i];
-                        if (block == Block.custom_block) {
-                            buffer[bIndex] = lvl.GetExtTile(i);
-                        } else if (block == Block.custom_block_2 || block == Block.custom_block_3) {
-                            buffer[bIndex] = convExt[lvl.GetExtTile(i)];
-                        } else {
-                            buffer[bIndex] = conv[block];
-                        }
-                        
-                        bIndex++;
-                        if (bIndex == bufferSize) {
-                            dst.position = i;
-                            gs.Write(buffer, 0, bufferSize); bIndex = 0;
-                        }
-                    }
-                } else {
-                    for (int i = 0; i < blocks.Length; ++i) {
-                        byte block = blocks[i];
-                        if (block == Block.custom_block || block == Block.custom_block_2 || block == Block.custom_block_3) {
-                            block = convExt[lvl.GetExtTile(i)];
-                        }
-                        buffer[bIndex] = conv[block];
-                        
-                        bIndex++;
-                        if (bIndex == bufferSize) {
-                            dst.position = i;
-                            gs.Write(buffer, 0, bufferSize); bIndex = 0;
-                        }
-                    }
+                if (bIndex == bufferSize) {
+                    // '0' to indicate this chunk has lower 8 bits of block ids
+                    dst.chunkValue = p.hasExtBlocks ? (byte)0 : (byte)(i * progScale);
+                    stream.Write(buffer, 0, bufferSize); bIndex = 0;
                 }
-                #else
-                if (p.hasBlockDefs) {
-                    for (int i = 0; i < blocks.Length; ++i) {
-                        byte block = blocks[i];
-                        if (block == Block.custom_block) {
-                            buffer[bIndex] = lvl.GetExtTile(i);
-                        } else {
-                            buffer[bIndex] = conv[block];
-                        }
-                        
-                        bIndex++;
-                        if (bIndex == bufferSize) {
-                            dst.position = i;
-                            gs.Write(buffer, 0, bufferSize); bIndex = 0;
-                        }
-                    }
-                } else {
-                    for (int i = 0; i < blocks.Length; ++i) {
-                        byte block = blocks[i];
-                        if (block == Block.custom_block) {
-                            block = convExt[lvl.GetExtTile(i)];
-                        }
-                        buffer[bIndex] = conv[block];
-                        
-                        bIndex++;
-                        if (bIndex == bufferSize) {
-                            dst.position = i;
-                            gs.Write(buffer, 0, bufferSize); bIndex = 0;
-                        }
-                    }
-                }
-                #endif
-                
-                
-                if (bIndex > 0) gs.Write(buffer, 0, bIndex);
             }
+            if (bIndex > 0) stream.Write(buffer, 0, bIndex);
+        }
+        
+        public unsafe static void CompressMap(Player p, Stream stream, LevelChunkStream dst) {
+            const int bufferSize = 64 * 1024;
+            byte[] buffer = new byte[bufferSize];
+            int bIndex = 0;
+            
+            // Store on stack instead of performing function call for every block in map
+            byte* conv = stackalloc byte[Block.ExtendedCount];
+            byte* convExt  = conv + Block.Count;
+            #if TEN_BIT_BLOCKS
+            byte* convExt2 = conv + Block.Count * 2;
+            byte* convExt3 = conv + Block.Count * 3;
+            #endif
+
+            for (int j = 0; j < Block.ExtendedCount; j++) {
+                conv[j] = (byte)p.ConvertBlock((BlockID)j);
+            }
+            
+            Level lvl = p.level;
+            byte[] blocks = lvl.blocks;
+            float progScale = 100.0f / blocks.Length;
+            
+            // compress the map data in 64 kb chunks
+            #if TEN_BIT_BLOCKS
+            if (p.hasExtBlocks) {
+                // Initially assume all custom blocks are <= 255
+                int i;
+                for (i = 0; i < blocks.Length; i++) {
+                    byte block = blocks[i];
+                    if (block == Block.custom_block) {
+                        buffer[bIndex] = lvl.GetExtTile(i);
+                    } else if (block == Block.custom_block_2) {
+                        break;
+                    } else if (block == Block.custom_block_3) {
+                        break;
+                    } else {
+                        buffer[bIndex] = conv[block];
+                    }
+                    
+                    bIndex++;
+                    if (bIndex == bufferSize) {
+                        stream.Write(buffer, 0, bufferSize);
+                        bIndex = 0;
+                    }
+                }
+                
+                // Check if map only used custom blocks <= 255
+                if (bIndex > 0) stream.Write(buffer, 0, bIndex);                
+                if (i == blocks.Length) return;
+                bIndex = 0;
+                
+                // Nope - have to go slower path now                
+                using (LevelChunkStream dst2 = new LevelChunkStream(p))
+                    using (Stream stream2 = LevelChunkStream.CompressMapHeader(p, blocks.Length, dst2))
+                {
+                    dst2.chunkValue = 1; // 'extended' blocks
+                    byte[] buffer2 = new byte[bufferSize];
+                    
+                    // Need to fill in all the upper 8 bits of blocks before this one with 0
+                    for (int j = 0; j < i; j += bufferSize) {
+                        int len = Math.Min(bufferSize, i - j);
+                        stream2.Write(buffer2, 0, len);
+                    }
+                    
+                    for (; i < blocks.Length; i++) {
+                        byte block = blocks[i];
+                        if (block == Block.custom_block) {
+                            buffer[bIndex]  = lvl.GetExtTile(i);
+                            buffer2[bIndex] = 0;
+                        } else if (block == Block.custom_block_2) {
+                            buffer[bIndex]  = lvl.GetExtTile(i);
+                            buffer2[bIndex] = 1;
+                        } else if (block == Block.custom_block_3) {
+                            buffer[bIndex]  = lvl.GetExtTile(i);
+                            buffer2[bIndex] = 2;
+                        } else {
+                            buffer[bIndex]  = conv[block];
+                            buffer2[bIndex] = 0;
+                        }
+                        
+                        bIndex++;
+                        if (bIndex == bufferSize) {
+                            stream.Write(buffer,   0, bufferSize);
+                            stream2.Write(buffer2, 0, bufferSize);
+                            bIndex = 0;
+                        }
+                    }
+                    if (bIndex > 0) stream2.Write(buffer2, 0, bIndex);
+                }
+            } else {
+                for (int i = 0; i < blocks.Length; i++) {
+                    byte block = blocks[i];
+                    if (block == Block.custom_block) {
+                        buffer[bIndex] = convExt[lvl.GetExtTile(i)];
+                    } else if (block == Block.custom_block_2) {
+                        buffer[bIndex] = convExt2[lvl.GetExtTile(i)];
+                    } else if (block == Block.custom_block_3) {
+                        buffer[bIndex] = convExt3[lvl.GetExtTile(i)];
+                    } else {
+                        buffer[bIndex] = conv[block];
+                    }
+                    
+                    bIndex++;
+                    if (bIndex == bufferSize) {
+                        dst.chunkValue = (byte)(i * progScale);
+                        stream.Write(buffer, 0, bufferSize); bIndex = 0;
+                    }
+                }
+            }
+            #else
+            if (p.hasBlockDefs) {
+                for (int i = 0; i < blocks.Length; i++) {
+                    byte block = blocks[i];
+                    if (block == Block.custom_block) {
+                        buffer[bIndex] = lvl.GetExtTile(i);
+                    } else {
+                        buffer[bIndex] = conv[block];
+                    }
+                    
+                    bIndex++;
+                    if (bIndex == bufferSize) {
+                        dst.chunkValue = (byte)(i * progScale);
+                        stream.Write(buffer, 0, bufferSize); bIndex = 0;
+                    }
+                }
+            } else {
+                for (int i = 0; i < blocks.Length; i++) {
+                    byte block = blocks[i];
+                    if (block == Block.custom_block) {
+                        buffer[bIndex] = convExt[lvl.GetExtTile(i)];
+                    } else {
+                        buffer[bIndex] = conv[block];
+                    }
+                    
+                    bIndex++;
+                    if (bIndex == bufferSize) {
+                        dst.chunkValue = (byte)(i * progScale);
+                        stream.Write(buffer, 0, bufferSize); bIndex = 0;
+                    }
+                }
+            }
+            #endif
+            
+            if (bIndex > 0) stream.Write(buffer, 0, bIndex);
         }
     }
 }

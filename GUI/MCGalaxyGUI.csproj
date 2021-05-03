@@ -46,15 +46,15 @@
     <GenerateSerializationAssemblies>Auto</GenerateSerializationAssemblies>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\CLI\CLIProgram.cs">
-      <Link>CLIProgram.cs</Link>
+    <Compile Include="Controls\ColoredTextBox.cs">
+      <SubType>Component</SubType>
     </Compile>
-    <Compile Include="Descriptors.cs" />
+    <Compile Include="Controls\HackyPropertyGrid.cs" />
+    <Compile Include="Controls\TimespanUpDown.cs" />
     <Compile Include="GuiPerms.cs" />
     <Compile Include="Popups\ColorSelector.cs" />
     <Compile Include="Popups\ColorSelector.Designer.cs">
@@ -81,6 +81,8 @@
       <DependentUpon>TokenSelector.cs</DependentUpon>
     </Compile>
     <Compile Include="Program.cs" />
+    <Compile Include="PropertyWindow\GamesHelper.cs" />
+    <Compile Include="PropertyWindow\ItemPermsHelper.cs" />
     <Compile Include="PropertyWindow\PropertyWindow.Blocks.cs" />
     <Compile Include="PropertyWindow\PropertyWindow.Chat.cs" />
     <Compile Include="PropertyWindow\PropertyWindow.Commands.cs" />
@@ -90,35 +92,19 @@
     <Compile Include="PropertyWindow\PropertyWindow.Designer.cs">
       <DependentUpon>PropertyWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="PropertyWindow\PropertyWindow.Economy.cs" />
     <Compile Include="PropertyWindow\PropertyWindow.Games.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="PropertyWindow\PropertyWindow.General.cs" />
-    <Compile Include="PropertyWindow\PropertyWindow.IRCSql.cs" />
+    <Compile Include="PropertyWindow\PropertyWindow.Relay.cs" />
     <Compile Include="PropertyWindow\PropertyWindow.Misc.cs" />
     <Compile Include="PropertyWindow\PropertyWindow.Ranks.cs" />
     <Compile Include="PropertyWindow\PropertyWindow.Security.cs" />
-    <Compile Include="Settings\LavaMapProperties.cs" />
     <Compile Include="Settings\LevelProperties.cs" />
-    <Compile Include="Settings\LavaProperties.cs" />
     <Compile Include="Settings\PlayerProperties.cs" />
     <Compile Include="Settings\TypeConverters.cs" />
     <Compile Include="Settings\ZombieProperties.cs" />
-    <Compile Include="ColoredTextBox.cs">
-      <SubType>Component</SubType>
-    </Compile>
-    <Compile Include="Eco\EcoLevelWindow.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Eco\EcoLevelWindow.Designer.cs">
-      <DependentUpon>EcoLevelWindow.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Eco\EconomyWindow.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Eco\EconomyWindow.Designer.cs">
-      <DependentUpon>EconomyWindow.cs</DependentUpon>
-    </Compile>
     <Compile Include="..\MCGalaxy\properties\AssemblyInfo.cs" />
     <Compile Include="UPnP.cs" />
     <Compile Include="Window\Window.cs">
@@ -131,15 +117,6 @@
     <Compile Include="Window\Window.Main.cs" />
     <Compile Include="Window\Window.Map.cs" />
     <Compile Include="Window\Window.Players.cs" />
-    <EmbeddedResource Include="Eco\EconomyWindow.resx">
-      <DependentUpon>EconomyWindow.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Popups\EditText.resx">
-      <DependentUpon>EditText.Designer.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Popups\PortTools.resx">
-      <DependentUpon>PortTools.cs</DependentUpon>
-    </EmbeddedResource>
     <EmbeddedResource Include="Window\Window.resx">
       <DependentUpon>Window.cs</DependentUpon>
       <SubType>Designer</SubType>
@@ -159,6 +136,7 @@
     <Content Include="Galaxy.ico" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="Controls" />
     <Folder Include="Popups" />
     <Folder Include="PropertyWindow" />
     <Folder Include="Window" />

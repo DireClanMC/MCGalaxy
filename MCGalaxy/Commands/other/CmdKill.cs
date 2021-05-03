@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2011 MCForge
         
     Dual-licensed under the    Educational Community License, Version 2.0 and
@@ -18,12 +18,12 @@
 using MCGalaxy.Commands.Chatting;
 
 namespace MCGalaxy.Commands.Misc {
-    public sealed class CmdKill : Command {
+    public sealed class CmdKill : Command2 {
         public override string name { get { return "Kill"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             if (!MessageCmd.CanSpeak(p, name)) return; // do not allow using kill to spam every 2 secs
             
@@ -31,33 +31,30 @@ namespace MCGalaxy.Commands.Misc {
             Player target = PlayerInfo.FindMatches(p, args[0]);
             
             if (target == null) {
-                if (p != null) p.HandleDeath(Block.Stone, "@p %Skilled themselves in their confusion");
+                if (p != null) p.HandleDeath(Block.Stone, "@p &Skilled themselves in their confusion");
                 return;
             }
-            if (p != null && (target != p && target.Rank >= p.Rank)) {
-                MessageTooHighRank(p, "kill", false); return;
-            }
+            if (!CheckRank(p, data, target, "kill", false)) return;
             
             bool explode = false;
-            string killer = p == null ? "(console)" : p.ColoredName;            
-            string deathMsg = GetDeathMessage(args, killer, ref explode);
+            string deathMsg = GetDeathMessage(args, p.ColoredName, ref explode);
             target.HandleDeath(Block.Stone, deathMsg, explode);
         }
         
         static string GetDeathMessage(string[] args, string killer, ref bool explode) {
-            if (args.Length < 2) return "@p %Swas killed by " + killer;
+            if (args.Length < 2) return "@p &Swas killed by " + killer;
             
             if (args[1].CaselessEq("explode")) {
                 explode = true;
-                return "@p %Swas exploded by " + killer;
+                return "@p &Swas exploded by " + killer;
             }
-            return "@p %S" + args[1];
+            return "@p &S" + args[1];
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Kill [name] <message>");
-            Player.Message(p, "%HKills [name], with <message> if given.");
-            Player.Message(p, "%HCauses an explosion if \"explode\" is used for <message>");
+            p.Message("&T/Kill [name] <message>");
+            p.Message("&HKills [name], with <message> if given.");
+            p.Message("&HCauses an explosion if \"explode\" is used for <message>");
         }
     }
 }

@@ -19,15 +19,13 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
 
-namespace MCGalaxy { 
+namespace MCGalaxy {
     public static class Utils {
 
-        /// <summary> The absolute path on disc of the folder MCGalaxy.exe is currently running from. </summary>
-        public static string FolderPath { get { return AppDomain.CurrentDomain.BaseDirectory; } }
-        
         public static string Hex(byte r, byte g, byte b) {
-             return "#" + r.ToString("X2") + g.ToString("X2") + b.ToString("X2");
+            return "#" + r.ToString("X2") + g.ToString("X2") + b.ToString("X2");
         }
         
         public static unsafe void memset(IntPtr srcPtr, byte value, int startIndex, int bytes) {
@@ -67,28 +65,41 @@ namespace MCGalaxy {
         /// <summary> Divides by 16, rounding up if there is a remainder. </summary>
         public static int CeilDiv16(int x) { return (x + 15) / 16; }
         
+        const NumberStyles style = NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite
+            | NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint;
+        
         // Not all languages use . as their decimal point separator
-        public static bool TryParseDecimal(string s, out float result) {
+        public static bool TryParseSingle(string s, out float result) {
             if (s != null && s.IndexOf(',') >= 0) s = s.Replace(',', '.');
-            result = 0;
-            float temp;
-            const NumberStyles style = NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite 
-                | NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint;
-            
+            result = 0; float temp;
+
             if (!Single.TryParse(s, style, NumberFormatInfo.InvariantInfo, out temp)) return false;
             if (Single.IsInfinity(temp) || Single.IsNaN(temp)) return false;
             result = temp;
             return true;
         }
+        
+        public static bool TryParseDouble(string s, out double result) {
+            if (s != null && s.IndexOf(',') >= 0) s = s.Replace(',', '.');
+            result = 0; double temp;
+            
+            if (!Double.TryParse(s, style, NumberFormatInfo.InvariantInfo, out temp)) return false;
+            if (Double.IsInfinity(temp) || Double.IsNaN(temp)) return false;
+            result = temp;
+            return true;
+        }
+        
+        // in JSON we must use . instead of ,
+        public static string StringifyDouble(double value) {
+            return value.ToString(CultureInfo.InvariantCulture);
+        }
 
-                
+        
         public static List<string> ReadAllLinesList(string path) {
             List<string> lines = new List<string>();
-            using (StreamReader r = new StreamReader(path)) {
-                string item;
-                while ((item = r.ReadLine()) != null) {
-                    lines.Add(item);
-                }
+            using (StreamReader r = new StreamReader(path, Encoding.UTF8)) {
+                string line;
+                while ((line = r.ReadLine()) != null) { lines.Add(line); }
             }
             return lines;
         }

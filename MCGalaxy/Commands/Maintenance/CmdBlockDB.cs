@@ -18,7 +18,7 @@
 using MCGalaxy.SQL;
 
 namespace MCGalaxy.Commands.Maintenance {
-    public sealed class CmdBlockDB : Command {
+    public sealed class CmdBlockDB : Command2 {
         public override string name { get { return "BlockDB"; } }
         public override string type { get { return CommandTypes.World; } }
         public override bool museumUsable { get { return false; } }
@@ -29,49 +29,49 @@ namespace MCGalaxy.Commands.Maintenance {
         }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
-            if (args.Length == 1 && Player.IsSuper(p)) { SuperRequiresArgs(p, "map name"); return; }
+            if (args.Length == 1 && p.IsSuper) { SuperRequiresArgs(p, "map name"); return; }
             
-            Level lvl = p == null ? null : p.level;
+            Level lvl = p.IsSuper ? null : p.level;
             if (args.Length > 1) {
                 lvl = Matcher.FindLevels(p, args[1]);
                 if (lvl == null) return;
             }
-            if (!LevelInfo.ValidateAction(p, lvl.name, "change BlockDB state of this level")) return;
+            if (!LevelInfo.Check(p, data.Rank, lvl, "change BlockDB state of this level")) return;
             
             if (args[0].CaselessEq("clear")) {
-                Player.Message(p, "Clearing &cALL %Sblock changes for {0}%S...", lvl.ColoredName);
+                p.Message("Clearing &cALL &Sblock changes for {0}&S...", lvl.ColoredName);
                 if (Database.TableExists("Block" + lvl.name))
-                    Database.Backend.DeleteTable("Block" + lvl.name);
+                    Database.DeleteTable("Block" + lvl.name);
                 lvl.BlockDB.DeleteBackingFile();
-                Player.Message(p, "Cleared &cALL %Sblock changes for " + lvl.ColoredName);
+                p.Message("Cleared &cALL &Sblock changes for " + lvl.ColoredName);
             } else if (args[0].CaselessEq("disable")) {
                 lvl.Config.UseBlockDB = false;
                 lvl.BlockDB.Cache.Enabled = false;
                 
-                Player.Message(p, "&cDisabled %Srecording further block changes for " + lvl.ColoredName);
-                Level.SaveSettings(lvl);
+                p.Message("&cDisabled &Srecording further block changes for " + lvl.ColoredName);
+                lvl.SaveSettings();
             } else if (args[0].CaselessEq("enable")) {
                 lvl.Config.UseBlockDB = true;
                 lvl.BlockDB.Cache.Enabled = true;
                 
-                Player.Message(p, "&aEnabled %Srecording further block changes for " + lvl.ColoredName);
-                Level.SaveSettings(lvl);
+                p.Message("&aEnabled &Srecording further block changes for " + lvl.ColoredName);
+                lvl.SaveSettings();
             } else {
                 Help(p);
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/BlockDB clear [map]");
-            Player.Message(p, "%HClears the BlockDB (block changes stored in /about) for [map]");
-            Player.Message(p, "%T/BlockDB disable [map]");
-            Player.Message(p, "%HDisables recording block changes to the BlockDB for [map]");
-            Player.Message(p, "%T/BlockDB enable [map]");
-            Player.Message(p, "%HEnables %Hrecording block changes to the BlockDB for [map]");
-            Player.Message(p, "%HIf no map name is given, uses your current map.");
-            Player.Message(p, "%CUse these commands with great caution!");
+            p.Message("&T/BlockDB clear [level]");
+            p.Message("&HClears the BlockDB (block changes stored in /b) for [level]");
+            p.Message("&T/BlockDB disable [level]");
+            p.Message("&HDisables recording block changes to the BlockDB for [level]");
+            p.Message("&T/BlockDB enable [level]");
+            p.Message("&HEnables &Hrecording block changes to the BlockDB for [level]");
+            p.Message("&HIf [level] is not given, uses your current level.");
+            p.Message("&WUse these commands with great caution!");
         }
     }
 }

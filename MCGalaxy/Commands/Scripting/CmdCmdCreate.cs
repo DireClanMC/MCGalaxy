@@ -20,46 +20,42 @@ using System.IO;
 using MCGalaxy.Scripting;
 
 namespace MCGalaxy.Commands.Scripting {
-    public sealed class CmdCmdCreate : Command {      
+    public sealed class CmdCmdCreate : Command2 {      
         public override string name { get { return "CmdCreate"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Nobody; } }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             string[] args = message.SplitSpaces();
 
-            IScripting engine = null;
-            if (args.Length == 1) {
-                engine = IScripting.CS;
-            } else if (args[1].CaselessEq("vb")) {
-                engine = IScripting.VB;
-            } else {
-                Help(p); return;
-            }
+            string language  = args.Length > 1 ? args[1] : "";
+            ICompiler engine = ICompiler.Lookup(language, p);
+            if (engine == null) return;
             
-            string path = engine.SourcePath(args[0]);
+            string path = engine.CommandPath(args[0]);
             if (File.Exists(path)) {
-                Player.Message(p, "File {0} already exists. Choose another name.", path); return;
+                p.Message("File {0} already exists. Choose another name.", path); return;
             }
             
             try {
-                engine.CreateNew(path, args[0]);
-            } catch (Exception e) {
-                Logger.LogError(e);
-                Player.Message(p, "An error occurred creating the class file.");
+            	string source = engine.GenExampleCommand(args[0]);
+            	File.WriteAllText(path, source);
+            } catch (Exception ex) {
+                Logger.LogError("Error saving new command to " + path, ex);
+                p.Message("An error occurred creating the command.");
                 return;
             }
-            Player.Message(p, "Successfully created a new command class.");
+            p.Message("Successfully created a new command class.");
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/CmdCreate [name]");
-            Player.Message(p, "%HCreates a dummy C# command named Cmd[Name]");
-            Player.Message(p, "%T/CmdCreate [name] vb");
-            Player.Message(p, "%HCreates a dummy Visual Basic command named Cmd[Name].");
-            Player.Message(p, "%This file can be used as the basis for creating a new command.");
+            p.Message("&T/CmdCreate [name]");
+            p.Message("&HCreates a dummy C# command named Cmd[Name]");
+            p.Message("&T/CmdCreate [name] vb");
+            p.Message("&HCreates a dummy Visual Basic command named Cmd[Name].");
+            p.Message("&TThis file can be used as the basis for creating a new command.");
         }
     }
 }

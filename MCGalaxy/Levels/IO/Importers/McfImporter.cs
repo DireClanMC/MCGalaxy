@@ -28,6 +28,7 @@ namespace MCGalaxy.Levels.IO {
     public sealed class McfImporter : IMapImporter {
 
         public override string Extension { get { return ".mcf"; } }
+        public override string Description { get { return "MCForge redux map"; } }
 
         public override Vec3U16 ReadDimensions(Stream src) {
             using (Stream gs = new GZipStream(src, CompressionMode.Decompress, true)) {
@@ -57,11 +58,11 @@ namespace MCGalaxy.Levels.IO {
         }
         
         static Vec3U16 ReadHeader(byte[] header, Stream gs) {
-            gs.Read(header, 0, 2);
+            ReadFully(gs, header, 2);
             if (BitConverter.ToUInt16(header, 0) != 1874)
                 throw new InvalidDataException(".mcf files must have a version of 1874");
             
-            gs.Read(header, 0, 16);
+            ReadFully(gs, header, 16);
             Vec3U16 dims;
             dims.X = BitConverter.ToUInt16(header, 0);
             dims.Z = BitConverter.ToUInt16(header, 2);

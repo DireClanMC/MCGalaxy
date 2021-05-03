@@ -20,40 +20,11 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using MCGalaxy.Bots;
-using MCGalaxy.DB;
 using MCGalaxy.SQL;
-using Newtonsoft.Json;
 
 namespace MCGalaxy.Tasks {
     internal static class UpgradeTasks {
-        
-        internal static void UpgradeOldBlacklist(SchedulerTask task) {
-            if (!Directory.Exists("levels/blacklists")) return;
-            string[] files = Directory.GetFiles("levels/blacklists");
-            for (int i = 0; i < files.Length; i++) {
-                string[] blacklist = File.ReadAllLines(files[i]);
-                List<string> names = new List<string>();
-                
-                // Lines are in the format: day.month.year name+
-                foreach (string entry in blacklist) {
-                    string[] parts = entry.SplitSpaces();
-                    string name = parts[parts.Length - 1];
-                    name = name.Substring(0, name.Length - 1);
-                    names.Add(name);
-                }
-                
-                if (names.Count > 0) {
-                    string lvlName = Path.GetFileNameWithoutExtension(files[i]);
-                    string propsPath = LevelInfo.PropertiesPath(lvlName);
-                    using (StreamWriter w = new StreamWriter(propsPath, true)) {
-                        w.WriteLine("VisitBlacklist = " + names.Join());
-                    }
-                }
-                File.Delete(files[i]);
-            }
-            Directory.Delete("levels/blacklists");
-        }
-        
+
         internal static void UpgradeOldAgreed() {
             // agreed.txt format used to be names separated by spaces, we need to fix that up.
             if (!File.Exists("ranks/agreed.txt")) return;
@@ -67,92 +38,12 @@ namespace MCGalaxy.Tasks {
             File.WriteAllText("ranks/agreed.txt", data);
         }
         
-        internal static void MovePreviousLevelFiles(SchedulerTask task) {
-            if (!Directory.Exists("levels")) return;
-            if (Directory.Exists("levels/prev")) return;
-            
-            try {
-                string[] files = Directory.GetFiles("levels", "*.prev");
-                if (files.Length == 0) return;
-                if (!Directory.Exists("levels/prev"))
-                    Directory.CreateDirectory("levels/prev");
-                
-                foreach (string file in files) {
-                    string name = Path.GetFileName(file);
-                    string newFile = "levels/prev/" + name;
-                    
-                    try {
-                        File.Move(file, newFile);
-                    } catch (Exception ex) {
-                        Logger.Log(LogType.Warning, "Error while trying to move .lvl.prev file");
-                        Logger.LogError(ex);
-                    }
-                }
-            } catch (Exception ex) {
-                Logger.LogError(ex);
-            }
-        }
-        
-        internal static void CombineEnvFiles(SchedulerTask task) {
-            if (!Directory.Exists("levels/level properties")) return;
-            try {
-                string[] files = Directory.GetFiles("levels/level properties", "*.env");
-                if (files.Length == 0) return;
-                
-                Logger.Log(LogType.SystemActivity, "Combining {0} .env and .properties files..", files.Length);
-                foreach (string envFile in files) {
-                    try {
-                        Combine(envFile);
-                    } catch (Exception ex) {
-                        Logger.Log(LogType.Warning, "Error while trying to combine .env and .properties file");
-                        Logger.LogError(ex);
-                    }
-                }
-                Logger.Log(LogType.SystemActivity, "Finished combining .env and .properties files.");
-            } catch (Exception ex) {
-                Logger.LogError(ex);
-            }
-        }
-        
-        static void Combine(string envFile) {
-            string name = Path.GetFileNameWithoutExtension(envFile);
-            string propsPath = LevelInfo.PropertiesPath(name);
-            
-            List<string> lines = new List<string>();
-            if (File.Exists(propsPath)) {
-                lines = Utils.ReadAllLinesList(propsPath);
-            }
-            
-            using (StreamReader r = new StreamReader(envFile)) {
-                string line = null;
-                while ((line = r.ReadLine()) != null)
-                    lines.Add(line);
-            }
-            
-            File.WriteAllLines(propsPath, lines.ToArray());
-            File.Delete(envFile);
-        }
-        
-        internal static void UpgradeOldLockdown(SchedulerTask task) {
-            if (!Directory.Exists("text/lockdown/map")) return;
-            
-            string[] files = Directory.GetFiles("text/lockdown/map");
-            for (int i = 0; i < files.Length; i++) {
-                File.Delete(files[i]);
-                string level = Path.GetFileName(files[i]);
-                Server.lockdown.AddIfNotExists(level);
-            }
-            
-            Server.lockdown.Save();
-            Directory.Delete("text/lockdown/map");
-        }
-        
         internal static void UpgradeOldTempranks(SchedulerTask task) {
             if (!File.Exists(Paths.TempRanksFile)) return;
 
             // Check if empty, or not old form
-            using (StreamReader reader = new StreamReader(Paths.TempRanksFile)) {
-                string line = reader.ReadLine();
+            using (StreamReader r = new StreamReader(Paths.TempRanksFile)) {
+                string line = r.ReadLine();
                 if (line == null) return;
                 string[] parts = line.SplitSpaces();
                 if (parts.Length < 9) return;
@@ -178,19 +69,19 @@ namespace MCGalaxy.Tasks {
             File.WriteAllLines(Paths.TempRanksFile, lines);
         }
         
+		const string oldBotsFile = "extra/bots.json";
         internal static void UpgradeBots(SchedulerTask task) {
-            if (!File.Exists(Paths.BotsFile)) return;
-            string json = File.ReadAllText(Paths.BotsFile);
-            File.WriteAllText(Paths.BotsFile + ".bak", json);
+            if (!File.Exists(oldBotsFile)) return;
+            File.Copy(oldBotsFile, oldBotsFile + ".bak", true);
             Logger.Log(LogType.SystemActivity, "Making bots file per-level.. " +
                        "saved backup of global bots file to extra/bots.json.bak");
             
-            BotProperties[] bots = JsonConvert.DeserializeObject<BotProperties[]>(json);
+            List<BotProperties> bots = BotsFile.ReadAll(oldBotsFile);
             Dictionary<string, List<BotProperties>> botsByLevel = new Dictionary<string, List<BotProperties>>();
             
             foreach (BotProperties bot in bots) {
                 List<BotProperties> levelBots;
-                if (bot.Level == null || bot.Level.Length == 0) continue;
+                if (String.IsNullOrEmpty(bot.Level)) continue;
                 
                 if (!botsByLevel.TryGetValue(bot.Level, out levelBots)) {
                     levelBots = new List<BotProperties>();
@@ -200,22 +91,22 @@ namespace MCGalaxy.Tasks {
             }
             
             foreach (var kvp in botsByLevel) {
-                json = JsonConvert.SerializeObject(kvp.Value);
-                File.WriteAllText(BotsFile.BotsPath(kvp.Key), json);
+                string path = Paths.BotsPath(kvp.Key);
+                using (StreamWriter w = new StreamWriter(path)) {
+                    BotsFile.WriteAll(w, kvp.Value);
+                }
             }
             
             if (Server.mainLevel.Bots.Count == 0) {
                 BotsFile.Load(Server.mainLevel);
             }
-            File.Delete(Paths.BotsFile);
+            File.Delete(oldBotsFile);
         }
 
         
         internal static void UpgradeDBTimeSpent(SchedulerTask task) {
-            DataTable table = Database.Backend.GetRows(PlayerData.DBTable, "TimeSpent", "LIMIT 1");
-            if (table.Rows.Count == 0) return; // no players
-            
-            string time = table.Rows[0]["TimeSpent"].ToString();
+            string time = Database.ReadString("Players", "TimeSpent", "LIMIT 1");
+            if (time == null) return; // no players at all in DB
             if (time.IndexOf(' ') == -1) return; // already upgraded
             
             Logger.Log(LogType.SystemActivity, "Upgrading TimeSpent column in database to new format..");
@@ -228,42 +119,32 @@ namespace MCGalaxy.Tasks {
         static List<long> playerSeconds;
         static int playerCount, playerFailed = 0;
         
-        
         static void DumpPlayerTimeSpents() {
             playerIds = new List<int>();
             playerSeconds = new List<long>();
-            Database.ExecuteReader("SELECT ID, TimeSpent FROM Players", AddPlayerTimeSpent);
+            Database.ReadRows("Players", "ID,TimeSpent", null, ReadTimeSpent);
         }
         
-        static void AddPlayerTimeSpent(IDataReader reader) {
+        static object ReadTimeSpent(IDataRecord record, object arg) {
             playerCount++;
             try {
-                int id = reader.GetInt32(0);
-                TimeSpan span = reader.GetString(1).ParseDBTime();
+                int id = record.GetInt32(0);
+                TimeSpan span = record.GetString(1).ParseOldDBTimeSpent();
                 
                 playerIds.Add(id);
                 playerSeconds.Add((long)span.TotalSeconds);
             } catch {
                 playerFailed++;
             }
+            return arg;
         }
         
-        static void UpgradePlayerTimeSpents() {          
-            using (BulkTransaction bulk = Database.Backend.CreateBulk()) {
-                IDataParameter idParam = bulk.CreateParam("@0", DbType.Int32);
-                IDataParameter secsParam = bulk.CreateParam("@1", DbType.Int64);
-                
+        static void UpgradePlayerTimeSpents() {
+            using (SqlTransaction bulk = new SqlTransaction()) {
                 for (int i = 0; i < playerIds.Count; i++) {
-                    idParam.Value = playerIds[i];
-                    secsParam.Value = playerSeconds[i];
-                    
-                    using (IDbCommand cmd = bulk.CreateCommand("UPDATE Players SET TimeSpent = @1 WHERE ID = @0")) {
-                        cmd.Parameters.Add(idParam);
-                        cmd.Parameters.Add(secsParam);
-                        cmd.ExecuteNonQuery();
-                    }
+                    bulk.Execute("UPDATE Players SET TimeSpent=@1 WHERE ID=@0", 
+                                 playerIds[i], playerSeconds[i]);
                 }
-                
                 bulk.Commit();
             }
         }

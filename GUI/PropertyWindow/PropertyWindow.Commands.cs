@@ -21,27 +21,28 @@ using MCGalaxy.Gui.Popups;
 namespace MCGalaxy.Gui {
     public partial class PropertyWindow : Form {
         
-        bool commandSupressEvents = true;
-        ComboBox[] commandAllowBoxes, commandDisallowBoxes, commandExtraBoxes;
+        ItemPermsHelper commandItems = new ItemPermsHelper();
+        ComboBox[] commandExtraBoxes;
         Label[] commandExtraLabels;
         Command cmd;
         
         // need to keep a list of changed command perms, because we don't want
         // to modify the server's live permissions if user clicks 'discard'
-        CommandPerms commandPermsOrig, commandPerms;
+        CommandPerms commandPermsOrig, commandPermsCopy;
         List<CommandExtraPerms> extraPermsList;
         List<CommandPerms> commandPermsChanged = new List<CommandPerms>();
         List<CommandExtraPerms> commandExtraPermsChanged = new List<CommandExtraPerms>();
         
         void LoadCommands() {
             cmd_list.Items.Clear();
-            List<Command> all = Command.all.All();
+            List<Command> all = Command.CopyAll();
             all.Sort((a, b) => a.name.CompareTo(b.name));
             
             foreach (Command cmd in all) {
                 cmd_list.Items.Add(cmd.name);
             }
 
+            commandItems.GetCurPerms = CommandGetOrAddPermsChanged;
             if (cmd_list.SelectedIndex == -1)
                 cmd_list.SelectedIndex = 0;
         }
@@ -54,7 +55,7 @@ namespace MCGalaxy.Gui {
                                  changed.Allowed, changed.Disallowed);
             }            
             foreach (CommandExtraPerms changed in commandExtraPermsChanged) {
-                CommandExtraPerms orig = CommandExtraPerms.Find(changed.CmdName, changed.Number);
+                CommandExtraPerms orig = CommandExtraPerms.Find(changed.CmdName, changed.Num);
                 orig.MinRank = changed.MinRank;
             }
             
@@ -66,87 +67,56 @@ namespace MCGalaxy.Gui {
         
         bool CommandsChanged() {
             return commandExtraPermsChanged.Count > 0 || commandPermsChanged.Count > 0;
-        }
-        
+        }        
         
         void cmd_list_SelectedIndexChanged(object sender, EventArgs e) {
             string cmdName = cmd_list.SelectedItem.ToString();        
-            CommandInitSpecificArrays();
-            
-            cmd = Command.all.FindByName(cmdName);
+            CommandInitSpecificArrays();          
+            cmd = Command.Find(cmdName);
             if (cmd == null) return;
+            
             commandPermsOrig = CommandPerms.Find(cmdName);
-            commandPerms = commandPermsChanged.Find(p => p.CmdName.CaselessEq(cmdName));
+            commandPermsCopy = commandPermsChanged.Find(p => p.CmdName.CaselessEq(cmdName));
             
             // fix for when command is added to server but doesn't have permissions defined
             if (commandPermsOrig == null) {
                 commandPermsOrig = new CommandPerms(cmdName, cmd.defaultRank, null, null);
             }
-
-            commandSupressEvents = true;
-            CommandPerms perms = commandPerms != null ? commandPerms : commandPermsOrig;
-            GuiPerms.SetDefaultIndex(cmd_cmbMin, perms.MinRank);
-            GuiPerms.SetSpecificPerms(perms.Allowed, commandAllowBoxes);
-            GuiPerms.SetSpecificPerms(perms.Disallowed, commandDisallowBoxes);
+            
+            commandItems.SupressEvents = true;
             CommandInitExtraPerms();
-            commandSupressEvents = false;
+            CommandPerms perms = commandPermsCopy != null ? commandPermsCopy : commandPermsOrig;
+            commandItems.Update(perms);
         }
         
         void CommandInitSpecificArrays() {
-            if (commandAllowBoxes != null) return;
-            commandAllowBoxes = new ComboBox[] { cmd_cmbAlw1, cmd_cmbAlw2, cmd_cmbAlw3 };
-            commandDisallowBoxes = new ComboBox[] { cmd_cmbDis1, cmd_cmbDis2, cmd_cmbDis3 };
+            if (commandItems.MinBox != null) return;
+            commandItems.MinBox = cmd_cmbMin;
+            commandItems.AllowBoxes = new ComboBox[] { cmd_cmbAlw1, cmd_cmbAlw2, cmd_cmbAlw3 };
+            commandItems.DisallowBoxes = new ComboBox[] { cmd_cmbDis1, cmd_cmbDis2, cmd_cmbDis3 };
+            commandItems.FillInitial();
+            
             commandExtraBoxes = new ComboBox[] { cmd_cmbExtra1, cmd_cmbExtra2, cmd_cmbExtra3, 
                 cmd_cmbExtra4, cmd_cmbExtra5, cmd_cmbExtra6, cmd_cmbExtra7 };
             commandExtraLabels = new Label[] { cmd_lblExtra1, cmd_lblExtra2, cmd_lblExtra3,
                 cmd_lblExtra4, cmd_lblExtra5, cmd_lblExtra6, cmd_lblExtra7 };
-            
-            GuiPerms.FillRanks(commandAllowBoxes);
-            GuiPerms.FillRanks(commandDisallowBoxes);
             GuiPerms.FillRanks(commandExtraBoxes, false);
         }
         
-        void CommandGetOrAddPermsChanged() {
-            if (commandPerms != null) return;
-            commandPerms = commandPermsOrig.Copy();
-            commandPermsChanged.Add(commandPerms);
+        ItemPerms CommandGetOrAddPermsChanged() {
+            if (commandPermsCopy != null) return commandPermsCopy;
+            commandPermsCopy = commandPermsOrig.Copy();
+            commandPermsChanged.Add(commandPermsCopy);
+            return commandPermsCopy;
         }
         
         
         void cmd_cmbMin_SelectedIndexChanged(object sender, EventArgs e) {
-            int idx = cmd_cmbMin.SelectedIndex;
-            if (idx == -1 || commandSupressEvents) return;
-            CommandGetOrAddPermsChanged();
-            
-            commandPerms.MinRank = GuiPerms.RankPerms[idx];
+            commandItems.OnMinRankChanged((ComboBox)sender);
         }
         
         void cmd_cmbSpecific_SelectedIndexChanged(object sender, EventArgs e) {
-            ComboBox box = (ComboBox)sender;
-            if (commandSupressEvents) return;
-            int idx = box.SelectedIndex;
-            if (idx == -1) return;
-            CommandGetOrAddPermsChanged();
-            
-            List<LevelPermission> perms = commandPerms.Allowed;
-            ComboBox[] boxes = commandAllowBoxes;
-            int boxIdx = Array.IndexOf<ComboBox>(boxes, box);
-            if (boxIdx == -1) {
-                perms = commandPerms.Disallowed;
-                boxes = commandDisallowBoxes;
-                boxIdx = Array.IndexOf<ComboBox>(boxes, box);
-            }
-            
-            if (idx == box.Items.Count - 1) {
-                if (boxIdx >= perms.Count) return;
-                perms.RemoveAt(boxIdx);
-                
-                commandSupressEvents = true;
-                GuiPerms.SetSpecificPerms(perms, boxes);
-                commandSupressEvents = false;
-            } else {
-                GuiPerms.SetSpecific(boxes, boxIdx, perms, idx);
-            }
+            commandItems.OnSpecificChanged(((ComboBox)sender));
         }
         
         void cmd_btnHelp_Click(object sender, EventArgs e) {
@@ -170,12 +140,12 @@ namespace MCGalaxy.Gui {
             
             int height = 12;
             for (int i = 0; i < extraPermsList.Count; i++) {
-                CommandExtraPerms perms = LookupExtraPerms(extraPermsList[i].CmdName, extraPermsList[i].Number);
+                CommandExtraPerms perms = LookupExtraPerms(extraPermsList[i].CmdName, extraPermsList[i].Num);
                 if (perms == null) perms = extraPermsList[i];
                 
                 GuiPerms.SetDefaultIndex(commandExtraBoxes[i], perms.MinRank);
-                commandExtraBoxes[i].Visible = true;               
-                commandExtraLabels[i].Text = perms.Description;
+                commandExtraBoxes[i].Visible = true;
+                commandExtraLabels[i].Text = "+ " + perms.Desc;
                 commandExtraLabels[i].Visible = true;
                 height = commandExtraBoxes[i].Bottom + 12;
             }
@@ -185,18 +155,18 @@ namespace MCGalaxy.Gui {
         
         CommandExtraPerms LookupExtraPerms(string cmdName, int number) {
             return commandExtraPermsChanged.Find(
-                p => p.CmdName == cmdName && p.Number == number);
+                p => p.CmdName == cmdName && p.Num == number);
         }
         
         void cmd_cmbExtra_SelectedIndexChanged(object sender, EventArgs e) {
             ComboBox box = (ComboBox)sender;
-            if (commandSupressEvents) return;
+            if (commandItems.SupressEvents) return;
             int idx = box.SelectedIndex;
             if (idx == -1) return;
             
             int boxIdx = Array.IndexOf<ComboBox>(commandExtraBoxes, box);
             CommandExtraPerms orig = extraPermsList[boxIdx];
-            CommandExtraPerms copy = LookupExtraPerms(orig.CmdName, orig.Number);
+            CommandExtraPerms copy = LookupExtraPerms(orig.CmdName, orig.Num);
             
             if (copy == null) {
                 copy = orig.Copy();

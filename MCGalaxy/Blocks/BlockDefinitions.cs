@@ -18,37 +18,52 @@
 using System;
 using System.IO;
 using MCGalaxy.Blocks;
+using MCGalaxy.Config;
 using MCGalaxy.Network;
-using Newtonsoft.Json;
-using BlockID_ = System.UInt16;
-using BlockRaw = System.Byte;
+using BlockID = System.UInt16;
 
 namespace MCGalaxy {
     public sealed class BlockDefinition {
         
-        public ushort BlockID; // really raw block ID
-        public string Name;
-        public byte CollideType;
-        public float Speed;
-        public byte TopTex, SideTex, BottomTex;
-        public bool BlocksLight;
-        public byte WalkSound;
-        public bool FullBright;
-        public byte Shape;
-        public byte BlockDraw;
-        public byte FogDensity, FogR, FogG, FogB;
-        public byte FallBack;
-        // BlockDefinitionsExt fields
-        public byte MinX, MinY, MinZ;
-        public byte MaxX, MaxY, MaxZ;
-        // BlockDefinitionsExt version 2 fields
-        public bool Version2;
-        public byte LeftTex, RightTex, FrontTex, BackTex;
+        [ConfigUShort("BlockID", null)]
+        public ushort RawID;
+        [ConfigString] public string Name;
+        [ConfigFloat]  public float Speed;
+        [ConfigByte]   public byte CollideType;
+        [ConfigUShort] public ushort TopTex;
+        [ConfigUShort] public ushort BottomTex;
         
+        [ConfigBool] public bool BlocksLight;
+        [ConfigByte] public byte WalkSound;
+        [ConfigBool] public bool FullBright;
+        [ConfigByte] public byte Shape;
+        [ConfigByte] public byte BlockDraw;
+        [ConfigByte] public byte FallBack;
+        
+        [ConfigByte] public byte FogDensity;
+        [ConfigByte] public byte FogR;
+        [ConfigByte] public byte FogG;
+        [ConfigByte] public byte FogB;
+        
+        // BlockDefinitionsExt fields
+        [ConfigByte] public byte MinX;
+        [ConfigByte] public byte MinY;
+        [ConfigByte] public byte MinZ;
+        [ConfigByte] public byte MaxX;
+        [ConfigByte] public byte MaxY;
+        [ConfigByte] public byte MaxZ;
+        
+        // BlockDefinitionsExt version 2 fields
+        [ConfigUShort] public ushort LeftTex;
+        [ConfigUShort] public ushort RightTex;
+        [ConfigUShort] public ushort FrontTex;
+        [ConfigUShort] public ushort BackTex;
+        
+        [ConfigInt(null, null, -1, -1)]
         public int InventoryOrder = -1;
         
-        public BlockID_ GetBlock() { return Block.FromRaw(BlockID); }
-        public void SetBlock(BlockID_ b) { BlockID = Block.ToRaw(b); }
+        public BlockID GetBlock() { return Block.FromRaw(RawID); }
+        public void SetBlock(BlockID b) { RawID = Block.ToRaw(b); }
         
         public const string GlobalPath = "blockdefs/global.json", GlobalBackupPath = "blockdefs/global.json.bak";
         
@@ -56,84 +71,96 @@ namespace MCGalaxy {
         
         public BlockDefinition Copy() {
             BlockDefinition def = new BlockDefinition();
-            def.BlockID = BlockID; def.Name = Name;
-            def.CollideType = CollideType; def.Speed = Speed;
-            def.TopTex = TopTex; def.SideTex = SideTex;
-            def.BottomTex = BottomTex; def.BlocksLight = BlocksLight;
-            def.WalkSound = WalkSound; def.FullBright = FullBright;
-            def.Shape = Shape; def.BlockDraw = BlockDraw;
-            def.FogDensity = FogDensity; def.FogR = FogR;
-            def.FogG = FogG; def.FogB = FogB;
-            def.FallBack = FallBack;
+            def.RawID = RawID; def.Name = Name;
+            def.Speed = Speed; def.CollideType = CollideType;
+            def.TopTex = TopTex; def.BottomTex = BottomTex;
+            
+            def.BlocksLight = BlocksLight; def.WalkSound = WalkSound;
+            def.FullBright = FullBright; def.Shape = Shape;
+            def.BlockDraw = BlockDraw; def.FallBack = FallBack;
+            
+            def.FogDensity = FogDensity;
+            def.FogR = FogR; def.FogG = FogG; def.FogB = FogB;
             def.MinX = MinX; def.MinY = MinY; def.MinZ = MinZ;
             def.MaxX = MaxX; def.MaxY = MaxY; def.MaxZ = MaxZ;
-            def.Version2 = Version2;
+            
             def.LeftTex = LeftTex; def.RightTex = RightTex;
             def.FrontTex = FrontTex; def.BackTex = BackTex;
             def.InventoryOrder = InventoryOrder;
             return def;
         }
         
-        
-        internal static BlockDefinition[] Load(bool global, string mapName) {
-            BlockDefinition[] defs = null;
-            string path = global ? GlobalPath : "blockdefs/lvl_" + mapName + ".json";
+        static ConfigElement[] elems;
+        public static BlockDefinition[] Load(string path) {
+            BlockDefinition[] defs = new BlockDefinition[Block.ExtendedCount];
+            if (!File.Exists(path)) return defs;
+            if (elems == null) elems = ConfigElement.GetAll(typeof(BlockDefinition));
+            
             try {
-                if (File.Exists(path)) {
-                    string json = File.ReadAllText(path);
-                    defs = JsonConvert.DeserializeObject<BlockDefinition[]>(json);
+                string json = File.ReadAllText(path);
+                
+                JsonReader reader = new JsonReader(json);
+                reader.OnMember   = (obj, key, value) => {
+                    if (obj.Meta == null) obj.Meta = new BlockDefinition();
+                    ConfigElement.Parse(elems, obj.Meta, key, (string)value);
+                };
+                
+                JsonArray array = (JsonArray)reader.Parse();
+                if (array == null) return defs;
+                
+                foreach (object raw in array) {
+                    JsonObject obj = (JsonObject)raw;
+                    if (obj == null || obj.Meta == null) continue;
+                    
+                    BlockDefinition def = (BlockDefinition)obj.Meta;
+                    if (String.IsNullOrEmpty(def.Name)) continue;
+                    
+                    BlockID block = def.GetBlock();
+                    if (block >= defs.Length) {
+                        Logger.Log(LogType.Warning, "Invalid block ID: " + def.RawID);
+                    } else {
+                        defs[block] = def;
+                    }
+                    
+                    // In case user manually edited fallback in the json file
+                    def.FallBack = Math.Min(def.FallBack, Block.CpeMaxBlock);
                 }
             } catch (Exception ex) {
-                Logger.LogError(ex);
+                Logger.LogError("Error Loading block defs from " + path, ex);
             }
-            if (defs == null) return new BlockDefinition[Block.ExtendedCount];
-            
-            for (int i = 0; i < defs.Length; i++) {
-                if (defs[i] != null && defs[i].Name == null) defs[i] = null;
-                BlockDefinition def = defs[i];
-                if (def == null) continue;
-                
-                if (!def.Version2) {
-                    def.Version2 = true;
-                    def.SetSideTex(def.SideTex);
-                }
-            }
-            
-            // Need to adjust index of raw block ID
-            BlockDefinition[] adjDefs = new BlockDefinition[Block.ExtendedCount];
-            for (int b = 0; b < defs.Length; b++) {
-                BlockDefinition def = defs[b];
-                if (def == null) continue;
-                
-                BlockID_ block = def.GetBlock();
-                if (block >= adjDefs.Length) {
-                    Logger.Log(LogType.Warning, "Invalid block ID: " + block);
-                } else {
-                    adjDefs[block] = def;
-                }
-            }
-            return adjDefs;
+            return defs;
         }
         
-        internal static void Save(bool global, Level lvl) {
+        public static void Save(bool global, Level lvl) {
+            string path = global ? GlobalPath : Paths.MapBlockDefs(lvl.MapName);
             BlockDefinition[] defs = global ? GlobalDefs : lvl.CustomBlockDefs;
-            // We don't want to save global blocks in the level's custom blocks list
-            if (!global) {
-                BlockDefinition[] realDefs = new BlockDefinition[defs.Length];
-                for (int i = 0; i < defs.Length; i++) {
-                    realDefs[i] = defs[i] == GlobalDefs[i] ? null : defs[i];
-                }
-                defs = realDefs;
-            }
+            Save(global, defs, path);
+        }
+        
+        public static void Save(bool global, BlockDefinition[] defs, string path) {
+            if (elems == null) elems = ConfigElement.GetAll(typeof(BlockDefinition));
             
-            string json = JsonConvert.SerializeObject(defs, Formatting.Indented);
-            string path = global ? GlobalPath : "blockdefs/lvl_" + lvl.MapName + ".json";
-            File.WriteAllText(path, json);
+            using (StreamWriter w = new StreamWriter(path)) {
+                w.WriteLine("[");
+                string separator = null;
+                
+                for (int i = 0; i < defs.Length; i++) {
+                    BlockDefinition def = defs[i];
+                    // don't want to save global blocks in the level's custom blocks list
+                    if (!global && def == GlobalDefs[i]) def = null;
+                    if (def == null) continue;
+                    
+                    w.Write(separator);
+                    Json.Serialise(w, elems, def);
+                    separator = ",\r\n";
+                }
+                w.WriteLine("]");
+            }
         }
         
         public static void LoadGlobal() {
             BlockDefinition[] oldDefs = GlobalDefs;
-            GlobalDefs = Load(true, null);
+            GlobalDefs = Load(GlobalPath);
             GlobalDefs[Block.Air] = null;
             
             try {
@@ -141,10 +168,9 @@ namespace MCGalaxy {
                     File.Copy(GlobalPath, GlobalBackupPath, true);
                 }
             } catch (Exception ex) {
-                Logger.LogError(ex);
+                Logger.LogError("Error backing up global block defs", ex);
             }
             
-            Save(true, null);
             // As the BlockDefinition instances in levels will now be different
             // to the instances in GlobalDefs, we need to update them.
             if (oldDefs != null) UpdateLoadedLevels(oldDefs);
@@ -160,14 +186,14 @@ namespace MCGalaxy {
                     if ((lvl.Props[b].ChangedScope & 2) == 0) {
                         lvl.Props[b] = Block.Props[b];
                     }
-                    lvl.UpdateCustomBlock((BlockID_)b, GlobalDefs[b]);
+                    lvl.UpdateCustomBlock((BlockID)b, GlobalDefs[b]);
                 }
             }
         }
         
         
         public static void Add(BlockDefinition def, BlockDefinition[] defs, Level level) {
-            BlockID_ block = def.GetBlock();
+            BlockID block = def.GetBlock();
             bool global = defs == GlobalDefs;
             if (global) UpdateGlobalCustom(block, def);
             
@@ -178,17 +204,16 @@ namespace MCGalaxy {
             Player[] players = PlayerInfo.Online.Items;
             foreach (Player pl in players) {
                 if (!global && pl.level != level) continue;
-                if (!pl.hasBlockDefs || def.BlockID > pl.MaxRawBlock) continue;
+                if (!pl.hasBlockDefs || def.RawID > pl.MaxRawBlock) continue;
                 if (global && pl.level.CustomBlockDefs[block] != GlobalDefs[block]) continue;
                 
                 pl.Send(def.MakeDefinePacket(pl));
                 pl.SendCurrentBlockPermissions();
             }
-            Save(global, level);
         }
         
         public static void Remove(BlockDefinition def, BlockDefinition[] defs, Level level) {
-            BlockID_ block = def.GetBlock();
+            BlockID block = def.GetBlock();
             bool global = defs == GlobalDefs;
             if (global) UpdateGlobalCustom(block, null);
             
@@ -199,29 +224,23 @@ namespace MCGalaxy {
             Player[] players = PlayerInfo.Online.Items;
             foreach (Player pl in players) {
                 if (!global && pl.level != level) continue;
-                if (!pl.hasBlockDefs || def.BlockID > pl.MaxRawBlock) continue;
+                if (!pl.hasBlockDefs || def.RawID > pl.MaxRawBlock) continue;
                 if (global && pl.level.CustomBlockDefs[block] != null) continue;
                 
                 pl.Send(Packet.UndefineBlock(def, pl.hasExtBlocks));
             }
-            Save(global, level);
         }
         
         public static void UpdateOrder(BlockDefinition def, bool global, Level level) {
-            if (def.InventoryOrder == -1) return;
-            BlockID_ block = def.GetBlock();
-            
             Player[] players = PlayerInfo.Online.Items;
             foreach (Player pl in players) {
                 if (!global && pl.level != level) continue;
-                if (global && pl.level.CustomBlockDefs[block] != GlobalDefs[block]) continue;
-
-                if (!pl.Supports(CpeExt.InventoryOrder) || def.BlockID > pl.MaxRawBlock) continue;
-                pl.Send(Packet.SetInventoryOrder(def, pl.hasExtBlocks));
+                if (!pl.Supports(CpeExt.InventoryOrder) || def.RawID > pl.MaxRawBlock) continue;
+                SendLevelInventoryOrder(pl);
             }
         }
         
-        static void UpdateGlobalCustom(BlockID_ block, BlockDefinition def) {
+        static void UpdateGlobalCustom(BlockID block, BlockDefinition def) {
             Level[] loaded = LevelInfo.Loaded.Items;
             foreach (Level lvl in loaded) {
                 if (lvl.CustomBlockDefs[block] != GlobalDefs[block]) continue;
@@ -229,13 +248,12 @@ namespace MCGalaxy {
             }
         }
         
-        public void SetAllTex(byte id) {
-            SideTex = id; TopTex = id; BottomTex = id;
-            LeftTex = id; RightTex = id; FrontTex = id; BackTex = id;
+        public void SetAllTex(ushort id) {
+            SetSideTex(id);
+            TopTex = id; BottomTex = id;
         }
         
-        public void SetSideTex(byte id) {
-            SideTex = id;
+        public void SetSideTex(ushort id) {
             LeftTex = id; RightTex = id; FrontTex = id; BackTex = id;
         }
         
@@ -244,42 +262,97 @@ namespace MCGalaxy {
             BlockDefinition[] defs = pl.level.CustomBlockDefs;
             for (int i = 0; i < defs.Length; i++) {
                 BlockDefinition def = defs[i];
-                if (def == null || def.BlockID > pl.MaxRawBlock) continue;
+                if (def == null || def.RawID > pl.MaxRawBlock) continue;
                 pl.Send(def.MakeDefinePacket(pl));
             }
         }
         
-        internal static void SendLevelInventoryOrder(Player pl) {
+        internal unsafe static void SendLevelInventoryOrder(Player pl) {
             BlockDefinition[] defs = pl.level.CustomBlockDefs;
-            for (int b = 0; b < defs.Length; b++) {
-                BlockDefinition def = defs[b];
-                if (def == null || def.BlockID > pl.MaxRawBlock) continue;
-                if (def.InventoryOrder >= 0) {
-                    pl.Send(Packet.SetInventoryOrder(def, pl.hasExtBlocks));
+            
+            int count = pl.MaxRawBlock + 1;
+            int* order_to_blocks = stackalloc int[Block.ExtendedCount];
+            int* block_to_orders = stackalloc int[Block.ExtendedCount];
+            for (int b = 0; b < Block.ExtendedCount; b++) {
+                order_to_blocks[b] = -1;
+                block_to_orders[b] = -1;
+            }
+            
+            // Fill slots with explicit order
+            for (int i = 0; i < defs.Length; i++) {
+                BlockDefinition def = defs[i];
+                if (def == null || def.RawID > pl.MaxRawBlock) continue;
+                if (def.InventoryOrder == -1) continue;
+                
+                if (def.InventoryOrder != 0) {
+                    if (order_to_blocks[def.InventoryOrder] != -1) continue;
+                    order_to_blocks[def.InventoryOrder] = def.RawID;
                 }
+                block_to_orders[def.RawID] = def.InventoryOrder;
+            }
+            
+            // Put blocks into their default slot if slot is unused
+            for (int i = 0; i < defs.Length; i++) {
+                BlockDefinition def = defs[i];
+                int raw = def != null ? def.RawID : i;
+                if (raw > pl.MaxRawBlock || (def == null && raw >= Block.CpeCount)) continue;
+                
+                if (def != null && def.InventoryOrder >= 0) continue;
+                if (order_to_blocks[raw] == -1) {
+                    order_to_blocks[raw] = raw;
+                    block_to_orders[raw] = raw;
+                }
+            }
+            
+            // Push blocks whose slots conflict with other blocks into free slots at end
+            for (int i = defs.Length - 1; i >= 0; i--) {
+                BlockDefinition def = defs[i];
+                int raw = def != null ? def.RawID : i;
+                if (raw > pl.MaxRawBlock || (def == null && raw >= Block.CpeCount)) continue;
+                
+                if (block_to_orders[raw] != -1) continue;
+                for (int slot = count - 1; slot >= 1; slot--) {
+                    if (order_to_blocks[slot] != -1) continue;
+                    
+                    block_to_orders[raw]  = slot;
+                    order_to_blocks[slot] = raw;
+                    break;
+                }
+            }
+            
+            for (int raw = 0; raw < count; raw++) {
+                int order = block_to_orders[raw];
+                if (order == -1) order = 0;
+                
+                BlockDefinition def = defs[Block.FromRaw((BlockID)raw)];
+                if (def == null && raw >= Block.CpeCount) continue;
+                // Special case, don't want 255 getting hidden by default
+                if (raw == 255 && def.InventoryOrder == -1) continue;
+                
+                pl.Send(Packet.SetInventoryOrder((BlockID)raw, (BlockID)order, pl.hasExtBlocks));
             }
         }
         
         public byte[] MakeDefinePacket(Player pl) {
             if (pl.Supports(CpeExt.BlockDefinitionsExt, 2) && Shape != 0) {
-                return Packet.DefineBlockExt(this, true, pl.hasCP437, pl.hasExtBlocks);
+                return Packet.DefineBlockExt(this, true, pl.hasCP437, pl.hasExtBlocks, pl.hasExtTexs);
             } else if (pl.Supports(CpeExt.BlockDefinitionsExt) && Shape != 0) {
-                return Packet.DefineBlockExt(this, false, pl.hasCP437, pl.hasExtBlocks);
+                return Packet.DefineBlockExt(this, false, pl.hasCP437, pl.hasExtBlocks, pl.hasExtTexs);
             } else {
-                return Packet.DefineBlock(this, pl.hasCP437, pl.hasExtBlocks);
+                return Packet.DefineBlock(this, pl.hasCP437, pl.hasExtBlocks, pl.hasExtTexs);
             }
         }
         
-        public static void UpdateFallback(bool global, BlockID_ block, Level level) {
+        public static void UpdateFallback(bool global, BlockID block, Level level) {
             Player[] players = PlayerInfo.Online.Items;
             foreach (Player pl in players) {
                 if (!global && pl.level != level) continue;
                 if (pl.hasBlockDefs) continue;
                 
-                // if custom block is replacing core block, need to always reload for fallback
-                if (block >= Block.CpeCount && !pl.level.MayHaveCustomBlocks) continue;
-                
-                LevelActions.ReloadMap(pl, pl, false);
+                // If custom block is replacing core block, need to always reload for fallback
+                // But if level doesn't use custom blocks, don't need to reload for the player
+                if (block >= Block.CpeCount && !pl.level.MightHaveCustomBlocks()) continue;
+                PlayerActions.ReloadMap(pl);
             }
         }
     }

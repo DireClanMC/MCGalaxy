@@ -13,12 +13,11 @@ or implied. See the Licenses for the specific language governing
 permissions and limitations under the Licenses.
  */
 using System;
-using System.Collections.Generic;
 using System.CodeDom.Compiler;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
-using MCGalaxy.Commands;
 using MCGalaxy.Scripting;
 
 namespace MCGalaxy.Gui.Popups {
@@ -28,38 +27,37 @@ namespace MCGalaxy.Gui.Popups {
             InitializeComponent();
 
             //Sigh. I wish there were SOME event to help me.
-            foreach (Command cmd in Command.all.commands) {
-                if (Command.core.commands.Contains(cmd)) continue;
-                lstCommands.Items.Add(cmd.name);
+            foreach (Command cmd in Command.allCmds) {
+                if (!Command.IsCore(cmd)) lstCommands.Items.Add(cmd.name);
             }
         }
-        
-        void btnCreate_Click(object sender, EventArgs e) {
-            if (String.IsNullOrEmpty(txtCmdName.Text.Trim())) {
-                MessageBox.Show("Command must have a name");
-                return;
+		
+		void CreateCommand(ICompiler engine) {
+            string cmdName = txtCmdName.Text.Trim();
+            if (cmdName.Length == 0) {
+                Popup.Warning("Command must have a name"); return;
             }
             
-            string cmdName = txtCmdName.Text.Trim().ToLower();
-            IScripting engine = radVB.Checked ? IScripting.VB : IScripting.CS;
-            string path = engine.SourcePath(cmdName);
+            string path = engine.CommandPath(cmdName);
             if (File.Exists(path)) {
-                MessageBox.Show("Command already exists", "", MessageBoxButtons.OK);
-                return;
+                Popup.Warning("Command already exists"); return;
             }
             
             try {
-                engine.CreateNew(path, cmdName);
+                string source = engine.GenExampleCommand(cmdName);
+                File.WriteAllText(path, source);
             } catch (Exception ex) {
                 Logger.LogError(ex);
-                MessageBox.Show("An error occurred creating the class file.", "", MessageBoxButtons.OK);
+                Popup.Error("Failed to generate command. Check error logs for more details.");
                 return;
             }
-            MessageBox.Show("Command: Cmd" + cmdName + engine.Ext + " created.");
+            Popup.Message("Command Cmd" + cmdName + engine.FileExtension + " created.");
         }
-
+        
+        void btnCreateCS_Click(object sender, EventArgs e) { CreateCommand(ICompiler.CS); }
+        void btnCreateVB_Click(object sender, EventArgs e) { CreateCommand(ICompiler.VB); }
+        
         void btnLoad_Click(object sender, EventArgs e) {
-            List<Command> commands = null;
             string fileName;
             using (FileDialog dialog = new OpenFileDialog()) {
                 dialog.RestoreDirectory = true;
@@ -69,62 +67,61 @@ namespace MCGalaxy.Gui.Popups {
             }
             
             if (fileName.CaselessEnds(".dll")) {
-                byte[] data = File.ReadAllBytes(fileName);
-                Assembly lib = Assembly.Load(data);
-                commands = IScripting.LoadTypes<Command>(lib);
-            } else {
-                IScripting engine = fileName.CaselessEnds(".cs") ? IScripting.CS : IScripting.VB;
-                if (!File.Exists(fileName)) return;
-                
-                CompilerParameters args = new CompilerParameters();
-                args.GenerateInMemory = true;
-                var result = engine.CompileSource(File.ReadAllText(fileName), args);
-                if (result == null) { MessageBox.Show("Error compiling files"); return; }
-
-                if (result.Errors.HasErrors) {
-                    foreach (CompilerError err in result.Errors) {
-                        Logger.Log(LogType.Warning, "Error #" + err.ErrorNumber);
-                        Logger.Log(LogType.Warning, "Message: " + err.ErrorText);
-                        Logger.Log(LogType.Warning, "Line: " + err.Line);
-                        Logger.Log(LogType.Warning, "=================================");
-                    }
-                    MessageBox.Show("Error compiling from source. Check logs for more details.");
-                    return;
-                }
-                commands = IScripting.LoadTypes<Command>(result.CompiledAssembly);
+                Assembly lib = IScripting.LoadAssembly(fileName);
+                LoadCommands(lib);
+                return;
             }
+            
+            ICompiler engine = fileName.CaselessEnds(".cs") ? ICompiler.CS : ICompiler.VB;
+            if (!File.Exists(fileName)) return;
+            
+            ConsoleHelpPlayer p    = new ConsoleHelpPlayer();          
+            CompilerResults result = engine.Compile(fileName, null);
 
-            if (commands == null) { MessageBox.Show("Error compiling files"); return; }
-            for (int i = 0; i < commands.Count; i++) {
-                Command cmd = commands[i];
-
-                if (lstCommands.Items.Contains(cmd.name)) {
-                    MessageBox.Show("Command " + cmd.name + " already exists. As a result, it was not loaded");
-                    continue;
-                }
-
-                lstCommands.Items.Add(cmd.name);
-                Command.all.Add(cmd);
-                Logger.Log(LogType.SystemActivity, "Added " + cmd.name + " to commands");
+            if (result.Errors.HasErrors) {
+                ICompiler.SummariseErrors(result, p);
+                string body = "\r\n\r\n" + Colors.StripUsed(p.Messages);
+                Popup.Error("Compilation error. See logs/errors/compiler.log for more details." + body);
+                return;
             }
-            CommandPerms.Load();
+            LoadCommands(result.CompiledAssembly);            
         }
 
         void btnUnload_Click(object sender, EventArgs e) {
             string cmdName = lstCommands.SelectedItem.ToString();
-            Command cmd = Command.all.Find(cmdName);
+            Command cmd = Command.Find(cmdName);
             if (cmd == null) {
-                MessageBox.Show(cmdName + " is not a valid or loaded command.", ""); return;
+                Popup.Warning("Command " + cmdName + " is not loaded."); return;
             }
 
-            lstCommands.Items.Remove( cmd.name );
-            Command.all.Remove(cmd);
-            CommandPerms.Load();
-            MessageBox.Show("Command was successfully unloaded.", "");
+            lstCommands.Items.Remove(cmd.name);
+            Command.Unregister(cmd);
+            Popup.Message("Command successfully unloaded.");
         }
         
         void lstCommands_SelectedIndexChanged(object sender, EventArgs e) {
             btnUnload.Enabled = lstCommands.SelectedIndex != -1;
+        }
+        
+        
+        void LoadCommands(Assembly assembly) {
+            List<Command> commands = IScripting.LoadTypes<Command>(assembly);
+            if (commands == null) {
+                Popup.Error("Error compiling files. Check logs for more details"); return;
+            }
+            
+            for (int i = 0; i < commands.Count; i++) {
+                Command cmd = commands[i];
+
+                if (lstCommands.Items.Contains(cmd.name)) {
+                    Popup.Warning("Command " + cmd.name + " already exists, so was not loaded");
+                    continue;
+                }
+
+                lstCommands.Items.Add(cmd.name);
+                Command.Register(cmd);
+                Logger.Log(LogType.SystemActivity, "Added " + cmd.name + " to commands");
+            }
         }
     }
 }

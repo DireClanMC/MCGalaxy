@@ -26,7 +26,7 @@ using MCGalaxy.Maths;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Building {
-    public sealed class CmdCopy : Command {
+    public sealed class CmdCopy : Command2 {
         public override string name { get { return "Copy"; } }
         public override string shortcut { get { return "c"; } }
         public override string type { get { return CommandTypes.Building; } }
@@ -36,7 +36,7 @@ namespace MCGalaxy.Commands.Building {
             get { return new CommandAlias[] { new CommandAlias("Cut", "cut") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             int offsetIndex = message.IndexOf('@');
             if (offsetIndex != -1)
                 message = message.Replace("@ ", "").Replace("@", "");
@@ -52,23 +52,23 @@ namespace MCGalaxy.Commands.Building {
                 if (parts.Length != 2) { Help(p); return; }
                 if (!Formatter.ValidName(p, parts[1], "saved copy")) return;
                 LoadCopy(p, parts[1]);
-            } else if (opt == "delete") {
+            } else if (IsDeleteCommand(opt)) {
                 if (parts.Length != 2) { Help(p); return; }
                 if (!Formatter.ValidName(p, parts[1], "saved copy")) return;
                 
                 string path = FindCopy(p.name, parts[1]);
-                if (path == null) { Player.Message(p, "No such copy exists."); return; }
+                if (path == null) { p.Message("No such copy exists."); return; }
                 File.Delete(path);
-                Player.Message(p, "Deleted copy " + parts[1]);
-            } else if (opt == "list") {
+                p.Message("Deleted copy " + parts[1]);
+            } else if (IsListCommand(opt)) {
                 string dir = "extra/savecopy/" + p.name;
                 if (!Directory.Exists(dir)) {
-                    Player.Message(p, "No such directory exists"); return;
+                    p.Message("You have no saved copies"); return;
                 }
                 
                 string[] files = Directory.GetFiles(dir);
                 for (int i = 0; i < files.Length; i++) {
-                    Player.Message(p, Path.GetFileNameWithoutExtension(files[i]));
+                    p.Message(Path.GetFileNameWithoutExtension(files[i]));
                 }
             } else {
                 HandleOther(p, parts, offsetIndex);
@@ -86,27 +86,37 @@ namespace MCGalaxy.Commands.Building {
                 } else if (opt.CaselessEq("air")) {
                     cArgs.air = true;
                 } else if (opt.Length > 0) {
-                    Help(p);
+                    Help(p); return;
                 }
             }
 
-            Player.Message(p, "Place or break two blocks to determine the edges.");
+            p.Message("Place or break two blocks to determine the edges.");
             int marks = cArgs.offsetIndex != -1 ? 3 : 2;
-            p.MakeSelection(marks, "Selecting region for %SCopy", cArgs, DoCopy, DoCopyMark);
+            p.MakeSelection(marks, "Selecting region for &SCopy", cArgs, DoCopy, DoCopyMark);
+        }
+        
+        void CompleteCopy(Player p, Vec3S32[] m, CopyArgs cArgs) {
+            if (!cArgs.cut) return;
+            DrawOp op = new CuboidDrawOp();
+            op.Flags = BlockDBFlags.Cut;
+            Brush brush = new SolidBrush(Block.Air);
+            DrawOpPerformer.Do(op, brush, p, new Vec3S32[] { m[0], m[1] }, false);
         }
 
         void DoCopyMark(Player p, Vec3S32[] m, int i, object state, BlockID block) {
+            CopyArgs cArgs = (CopyArgs)state;
             if (i == 2) {
-                CopyState copy = p.CopySlots[p.CurrentCopySlot];
+                CopyState copy = p.CurrentCopy;
                 copy.Offset.X = copy.OriginX - m[i].X;
                 copy.Offset.Y = copy.OriginY - m[i].Y;
                 copy.Offset.Z = copy.OriginZ - m[i].Z;
-                Player.Message(p, "Set offset of where to paste from.");
+                
+                p.Message("Set offset of where to paste from.");
+                CompleteCopy(p, m, cArgs);
                 return;
             }
             if (i != 1) return;
             
-            CopyArgs cArgs = (CopyArgs)state;
             Vec3S32 min = Vec3S32.Min(m[0], m[1]), max = Vec3S32.Max(m[0], m[1]);
             ushort minX = (ushort)min.X, minY = (ushort)min.Y, minZ = (ushort)min.Z;
             ushort maxX = (ushort)max.X, maxY = (ushort)max.Y, maxZ = (ushort)max.Z;
@@ -131,31 +141,26 @@ namespace MCGalaxy.Commands.Building {
             }
             
             if (cState.UsedBlocks > p.group.DrawLimit) {
-                Player.Message(p, "You tried to copy {0} blocks. You cannot copy more than {1} blocks.",
-                               cState.UsedBlocks, p.group.DrawLimit);
+                p.Message("You tried to copy {0} blocks. You cannot copy more than {1} blocks.",
+                          cState.UsedBlocks, p.group.DrawLimit);
                 cState.Clear(); cState = null;
                 p.ClearSelection();
                 return;
             }
             
             cState.CopySource = "level " + p.level.name;
-            p.SetCurrentCopy(cState);
-            if (cArgs.cut) {
-                DrawOp op = new CuboidDrawOp();
-                op.Flags = BlockDBFlags.Cut;
-                Brush brush = new SolidBrush(Block.Air);
-                DrawOpPerformer.Do(op, brush, p, new Vec3S32[] { min, max }, false);
-            }
+            p.CurrentCopy = cState;
 
-            Player.Message(p, "Copied &a{0} %Sblocks, origin at ({1}, {2}, {3}) corner", cState.UsedBlocks,
-                           cState.OriginX == cState.X ? "Min" : "Max",
-                           cState.OriginY == cState.Y ? "Min" : "Max",
-                           cState.OriginZ == cState.Z ? "Min" : "Max");
-            if (!cState.PasteAir) {
-                Player.Message(p, "To also copy air blocks, use %T/Copy Air");
-            }
+            p.Message("Copied &a{0} &Sblocks, origin at ({1}, {2}, {3}) corner", cState.UsedBlocks,
+                      cState.OriginX == cState.X ? "Min" : "Max",
+                      cState.OriginY == cState.Y ? "Min" : "Max",
+                      cState.OriginZ == cState.Z ? "Min" : "Max");
+            if (!cState.PasteAir) p.Message("To also copy air blocks, use &T/Copy Air");
+            
             if (cArgs.offsetIndex != -1) {
-                Player.Message(p, "Place a block to determine where to paste from");
+                p.Message("Place a block to determine where to paste from");
+            } else {
+                CompleteCopy(p, m, cArgs);
             }
         }
         
@@ -168,22 +173,27 @@ namespace MCGalaxy.Commands.Building {
             if (!Directory.Exists("extra/savecopy/" + p.name))
                 Directory.CreateDirectory("extra/savecopy/" + p.name);
             if (Directory.GetFiles("extra/savecopy/" + p.name).Length > 15) {
-                Player.Message(p, "You can only save a maxmium of 15 copies. /copy delete some.");
+                p.Message("You can only save a maxmium of 15 copies. /copy delete some.");
                 return;
+            }
+            
+            CopyState cState = p.CurrentCopy;
+            if (cState == null) {
+                p.Message("You haven't copied anything yet"); return;
             }
             
             string path = "extra/savecopy/" + p.name + "/" + file + ".cpb";
             using (FileStream fs = File.Create(path))
-                using(GZipStream gs = new GZipStream(fs, CompressionMode.Compress))
+                using (GZipStream gs = new GZipStream(fs, CompressionMode.Compress))
             {
-                p.CopySlots[p.CurrentCopySlot].SaveTo(gs);
+                cState.SaveTo(gs);
             }
-            Player.Message(p, "Saved copy as " + file);
+            p.Message("Saved copy as " + file);
         }
 
         void LoadCopy(Player p, string file) {
             string path = FindCopy(p.name, file);
-            if (path == null) { Player.Message(p, "No such copy exists"); return; }
+            if (path == null) { p.Message("No such copy exists"); return; }
             file = Path.GetFileNameWithoutExtension(path);
             
             using (FileStream fs = File.OpenRead(path))
@@ -195,10 +205,11 @@ namespace MCGalaxy.Commands.Building {
                 } else {
                     state.LoadFromOld(gs, fs);
                 }
+                
                 state.CopySource = "file " + file;
-                p.SetCurrentCopy(state);
+                p.CurrentCopy = state;
             }
-            Player.Message(p, "Loaded copy from " + file);
+            p.Message("Loaded copy from " + file);
         }
         
         static string FindCopy(string name, string file) {
@@ -212,14 +223,14 @@ namespace MCGalaxy.Commands.Building {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Copy %H- Copies the blocks in an area.");
-            Player.Message(p, "%T/Copy save [name] %H- Saves what you have copied.");
-            Player.Message(p, "%T/Copy load [name] %H- Loads what you have saved.");
-            Player.Message(p, "%T/Copy delete [name] %H- Deletes the specified copy.");
-            Player.Message(p, "%T/Copy list %H- Lists all saved copies you have");
-            Player.Message(p, "%T/Copy cut %H- Copies the blocks in an area, then removes them.");
-            Player.Message(p, "%T/Copy air %H- Copies the blocks in an area, including air.");
-            Player.Message(p, "/Copy @ - @ toggle for all the above, gives you a third click after copying that determines where to paste from");
+            p.Message("&T/Copy &H- Copies the blocks in an area.");
+            p.Message("&T/Copy save [name] &H- Saves what you have copied.");
+            p.Message("&T/Copy load [name] &H- Loads what you have saved.");
+            p.Message("&T/Copy delete [name] &H- Deletes the specified copy.");
+            p.Message("&T/Copy list &H- Lists all saved copies you have");
+            p.Message("&T/Copy cut &H- Copies the blocks in an area, then removes them.");
+            p.Message("&T/Copy air &H- Copies the blocks in an area, including air.");
+            p.Message("/Copy @ - @ toggle for all the above, gives you a third click after copying that determines where to paste from");
         }
     }
 }

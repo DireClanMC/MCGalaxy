@@ -25,9 +25,12 @@ namespace MCGalaxy {
         internal static string[] coreNames = new string[Block.Count];
         public static bool Undefined(BlockID block) { return IsPhysicsType(block) && coreNames[block].CaselessEq("unknown"); }
         
-        public static bool ExistsGlobal(BlockID b) {
+        public static bool ExistsGlobal(BlockID b) { return ExistsFor(Player.Console, b); }
+        
+        public static bool ExistsFor(Player p, BlockID b) {
             if (b < Block.Count) return !Undefined(b);
-            if (b >= Block.Extended && b < Block.Extended + Block.CpeCount) return false;
+            
+            if (!p.IsSuper) return p.level.GetBlockDef(b) != null;
             return BlockDefinition.GlobalDefs[b] != null;
         }
         
@@ -35,7 +38,7 @@ namespace MCGalaxy {
             if (IsPhysicsType(block)) return coreNames[block];
             
             BlockDefinition def;
-            if (!Player.IsSuper(p)) {
+            if (!p.IsSuper) {
                 def = p.level.GetBlockDef(block);
             } else {
                 def = BlockDefinition.GlobalDefs[block];
@@ -46,7 +49,7 @@ namespace MCGalaxy {
         }
         
         public static BlockID Parse(Player p, string input) {
-            BlockDefinition[] defs = p == null ? BlockDefinition.GlobalDefs : p.level.CustomBlockDefs;
+            BlockDefinition[] defs = p.IsSuper ? BlockDefinition.GlobalDefs : p.level.CustomBlockDefs;
             BlockID block;
             // raw ID is treated specially, before names
             if (BlockID.TryParse(input, out block)) {
@@ -82,8 +85,8 @@ namespace MCGalaxy {
                 case LightPink: return Pink;
                 case ForestGreen: return Green;
                 case Brown: return Dirt;
-                case deepblue: return Blue;
-                case turquoise: return Cyan;
+                case DeepBlue: return Blue;
+                case Turquoise: return Cyan;
                 case Ice: return Glass;
                 case CeramicTile: return Iron;
                 case MagmaBlock: return Obsidian;

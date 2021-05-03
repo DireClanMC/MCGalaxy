@@ -26,40 +26,32 @@ namespace MCGalaxy.Games {
         public string Color, Name, Owner;
         public List<string> Members = new List<string>();
         
-        public Team() { }        
+        public Team() { }
         public Team(string name, string owner) {
             Name = name;
             Owner = owner;
             Members.Add(owner);
         }
         
-        public void Chat(Player source, string message) {
-            string toSend = "&9- to team - " + source.ColoredName + ": &f" + message;
-            foreach (string name in Members) {
-                Player p = PlayerInfo.FindExact(name);
-                if (p == null || !MCGalaxy.Chat.NotIgnoring(p, source)) continue;
-                Player.Message(p, toSend);
-            }
+        public void Message(Player source, string message) {
+            message = "&9- to team - λNICK: &f" + message;
+            if (!source.CheckCanSpeak("send teamchat")) return;
+            
+            Chat.MessageChat(ChatScope.All, source, message, this,
+                             (pl, arg) => pl.Game.Team == arg);
         }
         
         public void Action(Player source, string message) {
-            string toSend = "Team - " + source.ColoredName + " %S" + message;
-            foreach (string name in Members) {
-                Player p = PlayerInfo.FindExact(name);
-                if (p == null) continue;
-                Player.Message(p, toSend);
-            }
+            message = "Team - λNICK &S" + message;
+            Chat.MessageFrom(ChatScope.All, source, message, this,
+                             (pl, arg) => pl.Game.Team == arg);
         }
         
         public bool Remove(string name) {
-            for (int i = 0; i < Members.Count; i++) {
-                if (!name.CaselessEq(Members[i])) continue;
-                Members.RemoveAt(i); return true;
-            }
-            return false;
-        }        
+            return Members.CaselessRemove(name);
+        }
                 
-        public void RemoveIfEmpty() {
+        public void DeleteIfEmpty() {
             if (Members.Count > 0) return;
             Teams.Remove(this);
         }        
@@ -84,8 +76,11 @@ namespace MCGalaxy.Games {
         }
         
         public static Team Find(string name) {
+            name = Colors.Strip(name);
+        	
             foreach (Team team in Teams) {
-                if (name.CaselessEq(team.Name)) return team;
+                string teamName = Colors.Strip(team.Name);
+                if (name.CaselessEq(teamName)) return team;
             }
             return null;
         }
@@ -112,11 +107,13 @@ namespace MCGalaxy.Games {
         
         public static void LoadList() {
             if (!File.Exists("extra/teams.txt")) return;
-            Team tmp = new Team();
-            lock (ioLock)
-                PropertiesFile.Read("extra/teams.txt", ref tmp, LineProcessor, '=');
+            Team tmp = new Team();            
             
-            if (tmp.Name != null) Add(tmp);
+            lock (ioLock) {
+                Teams.Clear();
+                PropertiesFile.Read("extra/teams.txt", ref tmp, LineProcessor, '=');       
+                if (tmp.Name != null) Add(tmp);
+            }
         }
         
         static void LineProcessor(string key, string value, ref Team tmp) {
@@ -131,7 +128,7 @@ namespace MCGalaxy.Games {
                 case "owner":
                     tmp.Owner = value; break;
                 case "members":
-                    tmp.Members = new List<string>(value.Split(',')); break;
+                    tmp.Members = new List<string>(value.SplitComma()); break;
             }
         }
     }

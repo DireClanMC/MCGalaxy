@@ -27,14 +27,14 @@ namespace MCGalaxy.Gui {
         
         public PlayerProperties(Player player) {
             this.p = player;
-            inMsg = PlayerDB.GetLoginMessage(player);
+            inMsg  = PlayerDB.GetLoginMessage(player);
             outMsg = PlayerDB.GetLogoutMessage(player);
         }
 
         [Category("Properties")]
         [DisplayName("Color")]
         [TypeConverter(typeof(ColorConverter))]
-        public string Color { get { return Colors.Name(p.color); } set { DoCmd("color", value); } }
+        public string Color { get { return Colors.Name(p.color); } set { DoCmd("Color", value); } }
         
         [Category("Properties")]
         [DisplayName("IP address")]
@@ -42,25 +42,25 @@ namespace MCGalaxy.Gui {
         
         [Category("Properties")]
         [DisplayName("Login message")]
-        public string LoginMsg { get { return inMsg; } set { inMsg = value; DoCmd("loginmessage", value); } }
+        public string LoginMsg { get { return inMsg; } set { inMsg = value; DoCmd("LoginMessage", value); } }
         
         [Category("Properties")]
         [DisplayName("Logout message")]
-        public string LogoutMsg { get { return outMsg; } set { outMsg = value; DoCmd("logoutmessage", value); } }
+        public string LogoutMsg { get { return outMsg; } set { outMsg = value; DoCmd("LogoutMessage", value); } }
         
         [Category("Properties")]
         [DisplayName("Rank")]
         [TypeConverter(typeof(RankConverter))]
-        public string Rank { get { return p.group.Name; } set { DoCmd("setrank", value); } }
+        public string Rank { get { return p.group.Name; } set { DoCmd("SetRank", value); } }
         
         [Category("Properties")]
         [DisplayName("Title")]
-        public string Title { get { return p.title; } set { DoCmd("title", value); } }
+        public string Title { get { return p.title; } set { DoCmd("Title", value); } }
 
         [Category("Properties")]
         [DisplayName("Title color")]
         [TypeConverter(typeof(ColorConverter))]
-        public string TColor { get { return Colors.Name(p.titlecolor); } set { DoCmd("tcolor", value); } }
+        public string TColor { get { return Colors.Name(p.titlecolor); } set { DoCmd("TColor", value); } }
         
 
         [Category("Stats")]
@@ -82,34 +82,26 @@ namespace MCGalaxy.Gui {
 
         [Category("Status")]
         [DisplayName("AFK")]
-        public bool AFK { get { return p.IsAfk; } set { DoCmd("sendcmd", "afk"); } }
-        
-        [Category("Status")]
-        [DisplayName("Frozen")]
-        public bool Frozen { get { return p.frozen; } set { DoCmd("freeze"); } }
+        public bool AFK { get { return p.IsAfk; } set { DoCmd("SendCmd", "afk"); } }
         
         [Category("Status")]
         [DisplayName("Hidden")]
-        public bool Hidden { get { return p.hidden; } set { DoCmd("ohide"); } }
+        public bool Hidden { get { return p.hidden; } set { DoCmd("oHide"); } }
         
         [Category("Status")]
         [DisplayName("Jokered")]
-        public bool Jokered { get { return p.joker; } set { DoCmd("joker"); } }
+        public bool Jokered { get { return p.joker; } set { DoCmd("Joker"); } }
         
         [Category("Status")]
         [DisplayName("Map")]
         [TypeConverter(typeof(LevelConverter))]
-        public string Map { get { return p.level.name; } set { DoCmd("sendcmd", "goto " + value); } }
-        
-        [Category("Status")]
-        [DisplayName("Muted")]
-        public bool Muted { get { return p.muted; } set { DoCmd("mute"); } }
+        public string Map { get { return p.level.name; } set { DoCmd("SendCmd", "goto " + value); } }
         
         [Category("Status")]
         [DisplayName("Voiced")]
-        public bool Voiced { get { return p.voice; } set { DoCmd("voice"); } }
+        public bool Voiced { get { return p.voice; } set { DoCmd("Voice"); } }
         
-        void DoCmd(string cmd) { DoCmd(cmd, ""); }      
+        void DoCmd(string cmd) { DoCmd(cmd, ""); }
         void DoCmd(string cmd, string args) {
             // Is the player still on the server?
             Player pl = PlayerInfo.FindExact(p.name);
@@ -117,7 +109,7 @@ namespace MCGalaxy.Gui {
 
             try {
                 string cmdArgs = args.Length == 0 ? p.name : p.name + " " + args;
-                Command.all.Find(cmd).Use(null, cmdArgs);
+                Command.Find(cmd).Use(Player.Console, cmdArgs);
             } catch (Exception ex) {
                 Logger.LogError(ex);
             }

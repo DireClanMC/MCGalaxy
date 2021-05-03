@@ -14,36 +14,58 @@
     BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
-*/
+ */
 using System.Data;
 using MCGalaxy.SQL;
 
 namespace MCGalaxy.Commands.Info {
-    public sealed class CmdWhoNick : Command {        
+    public sealed class CmdWhoNick : Command2 {
         public override string name { get { return "WhoNick"; } }
         public override string shortcut { get { return "RealName"; } }
         public override string type { get { return CommandTypes.Information; } }
         public override bool UseableWhenFrozen { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
+            string[] args = message.SplitSpaces(2);
+            if (args.Length > 1 && args[0].CaselessEq("bot")) {
+                ForBot(p, args[1]);
+                return;
+            }
+            ForPlayer(p, message);
+        }
+        
+        static void ForPlayer(Player p, string message) {
             Player nick = FindNick(p, message);
-            
             if (nick == null) return;
-            Player.Message(p, "This player's real username is " + nick.name);
-        }      
-                
+            p.Message("The player nicknamed {0} &Sis named {1}", nick.DisplayName, nick.name);
+        }
         static Player FindNick(Player p, string nick) {
             nick = Colors.Strip(nick);
             Player[] players = PlayerInfo.Online.Items;
-            int matches = 0;
-            return Matcher.Find<Player>(p, nick, out matches, players, pl => Entities.CanSee(p, pl), 
-                                        pl => Colors.Strip(pl.DisplayName), "online player nicks");
+            int matches;
+            return Matcher.Find(p, nick, out matches, players, pl => p.CanSee(pl),
+                                pl => Colors.Strip(pl.DisplayName), "online player nicks");
+        }
+        
+        static void ForBot(Player p, string message) {
+            PlayerBot bot = FindBotNick(p, message);
+            if (bot == null) return;
+            p.Message("The bot nicknamed {0} &Sis named {1}", bot.DisplayName, bot.name);
+        }
+        static PlayerBot FindBotNick(Player p, string nick) {
+            nick = Colors.Strip(nick);
+            PlayerBot[] bots = p.level.Bots.Items;
+            int matches;
+            return Matcher.Find(p, nick, out matches, bots, pl => true,
+                                pl => Colors.Strip(pl.DisplayName), "bot nicknames");
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/WhoNick [nickname]");
-            Player.Message(p, "%HDisplays the player's real username");
+            p.Message("&T/WhoNick [nickname]");
+            p.Message("&HDisplays the player's real username");
+            p.Message("&T/WhoNick bot [nickname]");
+            p.Message("&HDisplays the bot's real name");
         }
     }
 }

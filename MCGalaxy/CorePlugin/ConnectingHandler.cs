@@ -13,7 +13,6 @@ or implied. See the Licenses for the specific language governing
 permissions and limitations under the Licenses.
  */
 using System;
-using System.Security.Cryptography;
 using MCGalaxy.Events;
 using MCGalaxy.Network;
 
@@ -33,56 +32,27 @@ namespace MCGalaxy.Core {
             if (!Player.ValidName(p.truename)) {
                 p.Leave(null, "Invalid player name", true); return false;
             }
-      
+            
             if (!VerifyName(p, mppass)) return false;
             if (!IPThrottler.CheckIP(p)) return false;
-            if (!CheckPendingAlts(p)) return false;
             if (!CheckTempban(p)) return false;
 
-            bool whitelisted = CheckWhitelist(p.name, p.ip);
-            if (!whitelisted) {
-                p.Leave(null, "This is a private server!", true);
+            if (Server.Config.WhitelistedOnly && !Server.whiteList.Contains(p.name)) {
+                p.Leave(null, Server.Config.DefaultWhitelistMessage, true);
                 return false;
             }
             
-            Group group = Group.GroupIn(p.name);
-            if (!CheckBanned(group, p, whitelisted)) return false;
-            if (!CheckPlayersCount(group, p)) return false;
-            if (!CheckOnlinePlayers(p)) return false;    
-            p.group = group;
+            p.group = Group.GroupIn(p.name);
+            if (!CheckBanned(p)) return false;
+            if (!CheckPlayersCount(p)) return false;
             return true;
         }
-        
-        static System.Text.ASCIIEncoding enc = new System.Text.ASCIIEncoding();
-        static MD5CryptoServiceProvider md5 = new MD5CryptoServiceProvider();
-        static object md5Lock = new object();        
-        
-        static bool CheckPendingAlts(Player p) {
-            int altsCount = 0;
-            lock (Player.pendingLock) {
-                DateTime now = DateTime.UtcNow;
-                foreach (Player.PendingItem item in Player.pendingNames) {
-                    if (item.Name == p.truename && (now - item.Connected).TotalSeconds <= 60)
-                        altsCount++;
-                }
-                Player.pendingNames.Add(new Player.PendingItem(p.truename));
-            }
-            
-            if (altsCount > 0) {
-                p.Leave(null, "Already logged in!", true); return false;
-            }
-            return true;
-        }
-        
+
         static bool VerifyName(Player p, string mppass) {
-            if (!ServerConfig.VerifyNames) return true;
+            if (!Server.Config.VerifyNames) return true;
+            string calculated = Server.CalcMppass(p.truename);
             
-            byte[] hash = null;
-            lock (md5Lock)
-                hash = md5.ComputeHash(enc.GetBytes(Server.salt + p.truename));
-            
-            string hashHex = BitConverter.ToString(hash);
-            if (!mppass.CaselessEq(hashHex.Replace("-", ""))) {
+            if (!mppass.CaselessEq(calculated)) {
                 if (!HttpUtil.IsPrivateIP(p.ip)) {
                     p.Leave(null, "Login failed! Close the game and sign in again.", true); return false;
                 }
@@ -114,72 +84,46 @@ namespace MCGalaxy.Core {
             } catch { }
             return true;
         }
-
-        static bool CheckWhitelist(string name, string ip) {
-            if (!ServerConfig.WhitelistedOnly) return true;
-            if (ServerConfig.VerifyNames) return Server.whiteList.Contains(name);
-            
-            // Verify names is off, check if the player is on the same IP.
-            return Server.whiteList.Contains(name) && PlayerInfo.FindAccounts(ip).Contains(name);
-        }
         
-        static bool CheckPlayersCount(Group group, Player p) {
+        static bool CheckPlayersCount(Player p) {
             if (Server.vip.Contains(p.name)) return true;
             
             Player[] online = PlayerInfo.Online.Items;
-            if (online.Length >= ServerConfig.MaxPlayers && !HttpUtil.IsPrivateIP(p.ip)) {
+            if (online.Length >= Server.Config.MaxPlayers && !HttpUtil.IsPrivateIP(p.ip)) {
                 p.Leave(null, "Server full!", true); return false;
             }
-            if (group.Permission > LevelPermission.Guest) return true;
+            if (p.Rank > LevelPermission.Guest) return true;
             
             online = PlayerInfo.Online.Items;
             int guests = 0;
             foreach (Player pl in online) {
                 if (pl.Rank <= LevelPermission.Guest) guests++;
             }
-            if (guests < ServerConfig.MaxGuests) return true;
+            if (guests < Server.Config.MaxGuests) return true;
             
-            if (ServerConfig.GuestLimitNotify) Chat.MessageOps("Guest " + p.truename + " couldn't log in - too many guests.");
+            if (Server.Config.GuestLimitNotify) Chat.MessageOps("Guest " + p.truename + " couldn't log in - too many guests.");
             Logger.Log(LogType.Warning, "Guest {0} couldn't log in - too many guests.", p.truename);
             p.Leave(null, "Server has reached max number of guests", true);
             return false;
         }
         
-        static bool CheckOnlinePlayers(Player p) {
-            Player[] players = PlayerInfo.Online.Items;
-            foreach (Player pl in players) {
-                if (pl.name != p.name) continue;
-                
-                if (ServerConfig.VerifyNames) {
-                    string reason = pl.ip == p.ip ? "(Reconnecting)" : "(Reconnecting from a different IP)";
-                    pl.Leave(reason); break;
-                } else {
-                    p.Leave(null, "Already logged in!", true);
-                    return false;
-                }
-            }
-            return true;
-        }
-        
-        static bool CheckBanned(Group group, Player p, bool whitelisted) {
-            if (Server.bannedIP.Contains(p.ip) && (!ServerConfig.WhitelistedOnly || !whitelisted)) {
-                p.Kick(null, ServerConfig.DefaultBanMessage, true);
+        static bool CheckBanned(Player p) {
+            if (Server.bannedIP.Contains(p.ip)) {
+                p.Kick(null, Server.Config.DefaultBanMessage, true);
                 return false;
             }
+            if (p.Rank != LevelPermission.Banned) return true;
             
-            if (group.Permission == LevelPermission.Banned) {
-                string banner, reason, prevRank;
-                DateTime time;
-                Ban.GetBanData(p.name, out banner, out reason, out time, out prevRank);
-                
-                if (banner != null) {
-                    p.Kick(null, "Banned by " + banner + ": " + reason, true);
-                } else {
-                    p.Kick(null, ServerConfig.DefaultBanMessage, true);
-                }
-                return false;
+            string banner, reason, prevRank;
+            DateTime time;
+            Ban.GetBanData(p.name, out banner, out reason, out time, out prevRank);
+            
+            if (banner != null) {
+                p.Kick(null, "Banned by " + banner + ": " + reason, true);
+            } else {
+                p.Kick(null, Server.Config.DefaultBanMessage, true);
             }
-            return true;
+            return false;
         }
     }
 }

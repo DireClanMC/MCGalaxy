@@ -19,35 +19,36 @@ using System;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdUnflood : Command {
+    public sealed class CmdUnflood : Command2 {
         public override string name { get { return "Unflood"; } }
         public override string type { get { return CommandTypes.World; } }
         public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override bool SuperUseable { get { return false; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             BlockID block;
             if (!message.CaselessEq("all") && !CommandParser.GetBlock(p, message, out block)) return;
             
-            int phys = p.level.physics;
-            CmdPhysics.SetPhysics(p.level, 0);
+            Level lvl = p.level;
+            if (!LevelInfo.Check(p, data.Rank, lvl, "unflood this level")) return;           
+            int phys  = lvl.physics;
+            CmdPhysics.SetPhysics(lvl, 0);
             
-            Command cmd = Command.all.FindByName("ReplaceAll");
-            string args = message.CaselessEq("all") ?
-                "lavafall waterfall lava_fast active_lava active_water " +
-                "active_hot_lava active_cold_water fast_hot_lava magma geyser" : message;
-            cmd.Use(p, args + " air");
+            Command cmd = Command.Find("ReplaceAll");
+            string args = !message.CaselessEq("all") ? message : 
+                "8 10 lavafall waterfall lava_fast active_hot_lava active_cold_water fast_hot_lava magma geyser";
+            cmd.Use(p, args + " air", data);
 
-            CmdPhysics.SetPhysics(p.level, phys);
-            Chat.MessageLevel(p.level, "Unflooded!");
+            CmdPhysics.SetPhysics(lvl, phys);
+            lvl.Message("Unflooded!");
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Unflood [liquid]");
-            Player.Message(p, "%HUnfloods the map you are currently in of [liquid].");
-            Player.Message(p, "%H  If [liquid] is \"all\", unfloods the map of all liquids.");
+            p.Message("&T/Unflood [liquid]");
+            p.Message("&HUnfloods the map you are currently in of [liquid].");
+            p.Message("&H  If [liquid] is \"all\", unfloods the map of all liquids.");
         }
     }
 }

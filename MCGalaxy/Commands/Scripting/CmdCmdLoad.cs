@@ -19,33 +19,32 @@ using System.IO;
 using MCGalaxy.Scripting;
 
 namespace MCGalaxy.Commands.Scripting {
-    public sealed class CmdCmdLoad : Command {
+    public sealed class CmdCmdLoad : Command2 {
         public override string name { get { return "CmdLoad"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Nobody; } }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
-            if (!Formatter.ValidName(p, message, "command")) return;            
-            if (Command.all.Contains(message)) {
-                Player.Message(p, "That command is already loaded!"); return;
+        public override void Use(Player p, string cmdName, CommandData data) {
+            if (!Formatter.ValidName(p, cmdName, "command")) return;
+            if (Command.Find(cmdName) != null) {
+                p.Message("That command is already loaded!"); return;
             }
             
-            string path = IScripting.DllPath(message);
+            string path = IScripting.CommandPath(cmdName);
             if (!File.Exists(path)) {
-                Player.Message(p, "File &9{0} %Snot found.", path); return;
+                p.Message("File &9{0} &Snot found.", path); return;
             }
             
-            string error = IScripting.Load(path);
-            if (error != null) { Player.Message(p, error); return; }
-            CommandPerms.Load();
-            Player.Message(p, "Command was successfully loaded.");
+            string error = IScripting.LoadCommands(path);
+            if (error != null) { p.Message("&W" + error); return; }
+            p.Message("Command was successfully loaded.");
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/CmdLoad [command name]");
-            Player.Message(p, "%HLoads a compiled command into the server for use.");
-            Player.Message(p, "%H  Loads both C# and Visual Basic compiled commands.");
+            p.Message("&T/CmdLoad [command name]");
+            p.Message("&HLoads a compiled command into the server for use.");
+            p.Message("&H  Loads both C# and Visual Basic compiled commands.");
         }
     }
 }

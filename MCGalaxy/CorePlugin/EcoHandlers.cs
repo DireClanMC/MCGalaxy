@@ -17,6 +17,7 @@
  */
 using System;
 using System.Globalization;
+using MCGalaxy.Events.EconomyEvents;
 using MCGalaxy.Eco;
 using MCGalaxy.SQL;
 
@@ -39,51 +40,52 @@ namespace MCGalaxy.Core {
         static void HandlePurchase(EcoTransaction data) {
             Economy.EcoStats stats = Economy.RetrieveStats(data.TargetName);
             stats.TotalSpent += data.Amount;
-            stats.Purchase = data.ItemDescription + "%3 for %f" + data.Amount + " %3" + ServerConfig.Currency
+            stats.Purchase = data.ItemDescription + "%3 for %f" + data.Amount + " %3" + Server.Config.Currency
                 + " on %f" + DateTime.Now.ToString(CultureInfo.InvariantCulture);
             
             Player p = PlayerInfo.FindExact(data.TargetName);
-            if (p != null) Player.Message(p, "Your balance is now &f{0} &3{1}", p.money, ServerConfig.Currency);
+            if (p != null) p.Message("Your balance is now &f{0} &3{1}", p.money, Server.Config.Currency);
             Economy.UpdateStats(stats);
         }
         
         static void HandleTake(EcoTransaction data) {
-            MessageAll("{0} %Stook &f{2} &3{3} %Sfrom {1}{4}", data);
+            MessageAll("{0} &Stook &f{2} &3{3} &Sfrom {1}{4}", data);
             Economy.EcoStats stats = Economy.RetrieveStats(data.TargetName);
-            stats.Fine = Format(" by " + data.SourceName, data);
+            stats.Fine = Format(" by " + data.Source.name, data);
             Economy.UpdateStats(stats);
         }
         
         static void HandleGive(EcoTransaction data) {
-            MessageAll("{0} %Sgave {1} &f{2} &3{3}{4}", data);
+            MessageAll("{0} &Sgave {1} &f{2} &3{3}{4}", data);
             Economy.EcoStats stats = Economy.RetrieveStats(data.TargetName);
-            stats.Salary = Format(" by " + data.SourceName, data);
+            stats.Salary = Format(" by " + data.Source.name, data);
             Economy.UpdateStats(stats);
         }
         
         static void HandlePayment(EcoTransaction data) {
-            MessageAll("{0} %Spaid {1} &f{2} &3{3}{4}", data);
+            MessageAll("{0} &Spaid {1} &f{2} &3{3}{4}", data);
             Economy.EcoStats stats = Economy.RetrieveStats(data.TargetName);
-            stats.Salary = Format(" by " + data.SourceName, data);
+            stats.Salary = Format(" by " + data.Source.name, data);
             Economy.UpdateStats(stats);
             
-            if (Player.IsSuper(data.SourcePlayer)) return;
+            if (data.Source.IsSuper) return;
             
-            stats = Economy.RetrieveStats(data.SourceName);
+            stats = Economy.RetrieveStats(data.Source.name);
             stats.Payment = Format(" to " + data.TargetName, data);
             Economy.UpdateStats(stats);
-            data.SourcePlayer.SetMoney(data.SourcePlayer.money - data.Amount);
-        }        
+            data.Source.SetMoney(data.Source.money - data.Amount);
+        }
         
         
         static void MessageAll(string format, EcoTransaction data) {
-            string reason = data.Reason == null ? "" : " %S(" + data.Reason + "%S)";
-            Chat.MessageGlobal(format, data.SourceFormatted, data.TargetFormatted,
-                               data.Amount, ServerConfig.Currency, reason);
+            string reason = data.Reason == null ? "" : " &S(" + data.Reason + "&S)";
+            string msg = string.Format(format, data.Source.ColoredName, data.TargetFormatted,
+                                       data.Amount, Server.Config.Currency, reason);
+            Chat.MessageGlobal(msg);
         }
 
         static string Format(string action, EcoTransaction data) {
-            string entry = "%f" + data.Amount + "%3 " + ServerConfig.Currency + action
+            string entry = "%f" + data.Amount + "%3 " + Server.Config.Currency + action
                 + "%3 on %f" + DateTime.Now.ToString(CultureInfo.InvariantCulture);
             string reason = data.Reason;
             
@@ -95,7 +97,7 @@ namespace MCGalaxy.Core {
             if (totalLen >= 256) {
                 int truncatedLen = reason.Length - (totalLen - 255);
                 reason = reason.Substring(0, truncatedLen);
-                Player.Message(data.SourcePlayer, "Reason too long, truncating to: {0}", reason);
+                data.Source.Message("Reason too long, truncating to: {0}", reason);
             }
             return entry + " (" + reason + ")";
         }

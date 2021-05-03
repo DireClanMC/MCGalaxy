@@ -18,16 +18,15 @@
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Building {
-    public sealed class CmdMode : Command {
+    public sealed class CmdMode : Command2 {
         public override string name { get { return "Mode"; } }
         public override string type { get { return CommandTypes.Building; } }
-        public override bool museumUsable { get { return false; } }
         public override bool SuperUseable { get { return false; } }
         public override CommandAlias[] Aliases {
             get { return new CommandAlias[] { new CommandAlias("TNT", "tnt") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             // Special handling for the old TNT command
             if (message.CaselessStarts("tnt ")) {
                 string[] parts = message.SplitSpaces(2);
@@ -41,9 +40,9 @@ namespace MCGalaxy.Commands.Building {
             }
             
             if (message.Length == 0) {
-                if (p.ModeBlock != Block.Air) {
-                    Player.Message(p, "&b{0} %Smode: &cOFF", Block.GetName(p, p.ModeBlock));
-                    p.ModeBlock = Block.Air;
+                if (p.ModeBlock != Block.Invalid) {
+                    p.Message("&b{0} &Smode: &cOFF", Block.GetName(p, p.ModeBlock));
+                    p.ModeBlock = Block.Invalid;
                 } else {
                     Help(p);
                 }
@@ -52,26 +51,25 @@ namespace MCGalaxy.Commands.Building {
             
             BlockID block;
             if (!CommandParser.GetBlock(p, message, out block)) return;
-            if (block == Block.Air) { Player.Message(p, "Cannot use Air Mode."); return; }
             if (!CommandParser.IsBlockAllowed(p, "place", block)) return;
             
             if (p.ModeBlock == block) {
-                Player.Message(p, "&b{0} %Smode: &cOFF", Block.GetName(p, p.ModeBlock));
-                p.ModeBlock = Block.Air;
+                p.Message("&b{0} &Smode: &cOFF", Block.GetName(p, p.ModeBlock));
+                p.ModeBlock = Block.Invalid;
             } else {
                 p.ModeBlock = block;
-                Player.Message(p, "&b{0} %Smode: &aON", Block.GetName(p, p.ModeBlock));
+                p.Message("&b{0} &Smode: &aON", Block.GetName(p, p.ModeBlock));
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Mode");
-            Player.Message(p, "%HReverts the last %T/Mode [block].");
-            Player.Message(p, "%T/Mode [block]");
-            Player.Message(p, "%HMakes every block placed into [block].");
-            Player.Message(p, "%H/[block] also works");
-            Player.Message(p, "%T/Mode tnt small/big/nuke %H");
-            Player.Message(p, "%HMakes every block placed into exploding TNT (if physics on).");
+            p.Message("&T/Mode");
+            p.Message("&HReverts the last &T/Mode [block].");
+            p.Message("&T/Mode [block]");
+            p.Message("&HMakes every block placed into [block].");
+            p.Message("&H/[block] also works");
+            p.Message("&T/Mode tnt small/big/nuke &H");
+            p.Message("&HMakes every block placed into exploding TNT (if physics on).");
         }
     }
 }

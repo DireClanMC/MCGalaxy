@@ -26,57 +26,50 @@ namespace MCGalaxy.UI {
         public static void HandleChat(string text) {
             if (text != null) text = text.Trim();
             if (String.IsNullOrEmpty(text)) return;
-            if (ChatModes.Handle(null, text)) return;
             
-            Chat.MessageGlobal("Console [&a{0}%S]:&f {1}", ServerConfig.ConsoleName, text);
-            Server.IRC.Say("Console [&a" + ServerConfig.ConsoleName + "%S]: " + text);
-            Logger.Log(LogType.PlayerChat, "(console): " + text);
+            Player p = Player.Console;
+            if (ChatModes.Handle(p, text)) return;
+            
+            Chat.MessageChat(ChatScope.Global, p, "λFULL: &f" + text, null, null, true);
         }
         
-        public static Thread RepeatCommand() {
+        public static void RepeatCommand() {
             if (lastCMD.Length == 0) {
                 Logger.Log(LogType.CommandUsage, "(console): Cannot repeat command - no commands used yet.");
-                return null;
+                return;
             }
-            Logger.Log(LogType.CommandUsage, "Repeating %T/" + lastCMD);
-            return HandleCommand(lastCMD);
+            Logger.Log(LogType.CommandUsage, "Repeating &T/" + lastCMD);
+            HandleCommand(lastCMD);
         }
         
-        public static Thread HandleCommand(string text) {
+        public static void HandleCommand(string text) {
             if (text != null) text = text.Trim();
             if (String.IsNullOrEmpty(text)) {
                 Logger.Log(LogType.CommandUsage, "(console): Whitespace commands are not allowed."); 
-                return null;
+                return;
             }
             if (text[0] == '/' && text.Length > 1)
                 text = text.Substring(1);
             
             lastCMD = text;
-            int sep = text.IndexOf(' ');
-            string name = "", args = "";
-            
-            if (sep >= 0) {
-                name = text.Substring(0, sep);
-                args = text.Substring(sep + 1);
-            } else {
-                name = text;
-            }
+            string name, args;
+            text.Separate(out name, out args);
             
             Command.Search(ref name, ref args);
-            if (Server.Check(name, args)) { Server.cancelcommand = false; return null; }            
-            Command cmd = Command.all.Find(name);
+            if (Server.Check(name, args)) { Server.cancelcommand = false; return; }
+            Command cmd = Command.Find(name);
             
             if (cmd == null) { 
-                Logger.Log(LogType.CommandUsage, "(console): Unknown command \"{0}\"", name); return null; 
+                Logger.Log(LogType.CommandUsage, "(console): Unknown command \"{0}\"", name); return; 
             }
             if (!cmd.SuperUseable) { 
-                Logger.Log(LogType.CommandUsage, "(console): /{0} can only be used in-game.", cmd.name); return null; 
+                Logger.Log(LogType.CommandUsage, "(console): /{0} can only be used in-game.", cmd.name); return; 
             }
             
             Thread thread = new Thread(
                 () => {
                     try {
-                        cmd.Use(null, args);
+                        cmd.Use(Player.Console, args);
                         if (args.Length == 0) {
                             Logger.Log(LogType.CommandUsage, "(console) used /" + cmd.name);
                         } else {
@@ -90,7 +83,6 @@ namespace MCGalaxy.UI {
             thread.Name = "MCG_ConsoleCommand";
             thread.IsBackground = true;
             thread.Start();
-            return thread;
         }
         
         public static string Format(string message) {
@@ -120,8 +112,8 @@ namespace MCGalaxy.UI {
                 if (i == message.Length - 1) return -1;
                 
                 // Check following character is an actual colour code
-                char col = message[i + 1];
-                if (Colors.Map(ref col)) return i;
+                char col = Colors.Lookup(message[i + 1]);
+                if (col != '\0') return i;
             }
             return -1;
         }

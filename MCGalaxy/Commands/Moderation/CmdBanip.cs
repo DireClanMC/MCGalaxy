@@ -21,7 +21,7 @@ using System.Net;
 using MCGalaxy.Events;
 
 namespace MCGalaxy.Commands.Moderation {
-    public sealed class CmdBanip : Command {
+    public sealed class CmdBanip : Command2 {
         public override string name { get { return "BanIP"; } }
         public override string shortcut { get { return "bi"; } }
         public override string type { get { return CommandTypes.Moderation; } }
@@ -30,39 +30,39 @@ namespace MCGalaxy.Commands.Moderation {
             get { return new CommandAlias[] { new CommandAlias("IPBan") }; }
         }
 
-        public override void Use(Player p, string message) {
-            if (message.Length == 0) { Help(p); return; }            
+        public override void Use(Player p, string message, CommandData data) {
+            if (message.Length == 0) { Help(p); return; }
             string[] args = message.SplitSpaces(2);
-            args[0] = ModActionCmd.FindIP(p, args[0], "IP ban", "banip");
-            if (args[0] == null) return;
+            string name, addr = ModActionCmd.FindIP(p, args[0], "BanIP", out name);
+            if (addr == null) return;
 
             IPAddress ip;
-            if (!IPAddress.TryParse(args[0], out ip)) { Player.Message(p, "\"{0}\" is not a valid IP.", args[0]); return; }
-            if (IPAddress.IsLoopback(ip)) { Player.Message(p, "You cannot IP ban the server."); return; }
-            if (p != null && p.ip == args[0]) { Player.Message(p, "You cannot IP ban yourself."); return; }
-            if (Server.bannedIP.Contains(args[0])) { Player.Message(p, "{0} is already IP banned.", args[0]); return; }
+            if (!IPAddress.TryParse(addr, out ip)) { p.Message("\"{0}\" is not a valid IP.", addr); return; }
+            if (IPAddress.IsLoopback(ip)) { p.Message("You cannot IP ban the server."); return; }
+            if (p.ip == addr) { p.Message("You cannot IP ban yourself."); return; }
+            if (Server.bannedIP.Contains(addr)) { p.Message("{0} is already IP banned.", addr); return; }
             // Check if IP is shared by any other higher ranked accounts
-            if (!CheckIP(p, args[0])) return;
+            if (!CheckIP(p, data, addr)) return;
             
             string reason = args.Length > 1 ? args[1] : "";
             reason = ModActionCmd.ExpandReason(p, reason);
             if (reason == null) return;
             
-            ModAction action = new ModAction(args[0], p, ModActionType.BanIP, reason);
+            ModAction action = new ModAction(addr, p, ModActionType.BanIP, reason);
             OnModActionEvent.Call(action);
         }
         
-        static bool CheckIP(Player p, string ip) {
-            if (p == null) return true;
+        static bool CheckIP(Player p, CommandData data, string ip) {
+            if (p.IsConsole) return true;
             List<string> accounts = PlayerInfo.FindAccounts(ip);
             if (accounts == null || accounts.Count == 0) return true;
             
             foreach (string name in accounts) {
-                Group grp = Group.GroupIn(name);
-                if (grp == null || grp.Permission < p.Rank) continue;
+                Group grp = PlayerInfo.GetGroup(name);
+                if (grp.Permission < data.Rank) continue;
                 
-                Player.Message(p, "You can only IP ban IPs used by players with a lower rank.");
-                Player.Message(p, name + "(" + grp.ColoredName + "%S) uses that IP.");
+                p.Message("You can only IP ban IPs used by players with a lower rank.");
+                p.Message(name + "(" + grp.ColoredName + "&S) uses that IP.");
                 
                 Logger.Log(LogType.SuspiciousActivity, 
                            "{0} failed to ipban {1} - IP is also used by: {2}({3})", p.name, ip, name, grp.Name);
@@ -72,9 +72,9 @@ namespace MCGalaxy.Commands.Moderation {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/BanIP [ip/player] <reason>");
-            Player.Message(p, "%HBans an IP, or the IP the given player is on.");
-            Player.Message(p, "%HFor <reason>, @number can be used as a shortcut for that rule.");
+            p.Message("&T/BanIP [ip/player] <reason>");
+            p.Message("&HBans an IP, or the IP the given player is on.");
+            p.Message("&HFor <reason>, @number can be used as a shortcut for that rule.");
         }
     }
 }

@@ -22,10 +22,9 @@ using MCGalaxy.DB;
 using MCGalaxy.Maths;
 using MCGalaxy.SQL;
 using BlockID = System.UInt16;
-using BlockRaw = System.Byte;
 
 namespace MCGalaxy.Commands.Info {
-    public sealed class CmdAbout : Command {
+    public sealed class CmdAbout : Command2 {
         public override string name { get { return "About"; } }
         public override string shortcut { get { return "b"; } }
         public override string type { get { return CommandTypes.Information; } }
@@ -35,12 +34,12 @@ namespace MCGalaxy.Commands.Info {
             get { return new [] { new CommandAlias("BInfo"), new CommandAlias("WhoDid") }; }
         }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.AdvBuilder, "+ can see portal/MB data of a block") }; }
+            get { return new[] { new CommandPerm(LevelPermission.AdvBuilder, "can see portal/MB data of a block") }; }
         }
         
-        public override void Use(Player p, string message) {
-            Player.Message(p, "Break/build a block to display information.");
-            p.MakeSelection(1, "Selecting location for %SBlock info", null, PlacedMark);
+        public override void Use(Player p, string message, CommandData data) {
+            p.Message("Break/build a block to display information.");
+            p.MakeSelection(1, "Selecting location for &SBlock info", data, PlacedMark);
         }
 
         bool PlacedMark(Player p, Vec3S32[] marks, object state, BlockID block) {
@@ -49,7 +48,8 @@ namespace MCGalaxy.Commands.Info {
             p.RevertBlock(x, y, z);
             Dictionary<int, string> names = new Dictionary<int, string>();
 
-            Player.Message(p, "Retrieving block change records..");
+            p.Message("Retrieving block change records..");
+
             bool foundAny = false;
             ListFromDatabase(p, ref foundAny, x, y, z);
             using (IDisposable rLock = p.level.BlockDB.Locker.AccquireRead(30 * 1000)) {
@@ -57,54 +57,53 @@ namespace MCGalaxy.Commands.Info {
                     p.level.BlockDB.FindChangesAt(x, y, z,
                                                   entry => OutputEntry(p, ref foundAny, names, entry));
                 } else {
-                    Player.Message(p, "&cUnable to accquire read lock on BlockDB after 30 seconds, aborting.");
+                    p.Message("&WUnable to accquire read lock on BlockDB after 30 seconds, aborting.");
                     return false;
                 }
             }
             
-            if (!foundAny) Player.Message(p, "No block change records found for this block.");            
+            if (!foundAny) p.Message("No block change records found for this block.");
             BlockID raw = Block.IsPhysicsType(block) ? block : Block.ToRaw(block);
             string blockName = Block.GetName(p, block);
-            Player.Message(p, "Block ({0}, {1}, {2}): &f{3} = {4}%S.", x, y, z, raw, blockName);
+            p.Message("Block ({0}, {1}, {2}): &f{3} = {4}&S.", x, y, z, raw, blockName);
             
-            if (HasExtraPerm(p, 1)) {
+            CommandData data = (CommandData)state;
+            if (HasExtraPerm(p, data.Rank, 1)) {
                 BlockDBChange.OutputMessageBlock(p, block, x, y, z);
                 BlockDBChange.OutputPortal(p, block, x, y, z);
             }
             Server.DoGC();
             return true;
         }
-        
+
         static void ListFromDatabase(Player p, ref bool foundAny, ushort x, ushort y, ushort z) {
             if (!Database.TableExists("Block" + p.level.name)) return;
-            using (DataTable Blocks = Database.Backend.GetRows("Block" + p.level.name, "*",
-                                                               "WHERE X=@0 AND Y=@1 AND Z=@2", x, y, z)) {
-                BlockDBEntry entry = default(BlockDBEntry);
-                entry.OldRaw = Block.Invalid;
+            
+            List<string[]> entries = Database.GetRows("Block" + p.level.name, "Username,TimePerformed,Deleted,Type",
+                                                      "WHERE X=@0 AND Y=@1 AND Z=@2", x, y, z);
+            
+            if (entries.Count > 0) foundAny = true;
+            BlockDBEntry entry = default(BlockDBEntry);
+            entry.OldRaw = Block.Invalid;
+            
+            foreach (string[] row in entries) {
+                DateTime time = row[1].ParseDBDate();
+                TimeSpan delta = time - BlockDB.Epoch;
+                entry.TimeDelta = (int)delta.TotalSeconds;
+                entry.Flags = BlockDBFlags.ManualPlace;
                 
-                for (int i = 0; i < Blocks.Rows.Count; i++) {
-                    foundAny = true;
-                    DataRow row = Blocks.Rows[i];
-                    string name = row["Username"].ToString().Trim();
-                    
-                    DateTime time = DateTime.Parse(row["TimePerformed"].ToString());
-                    TimeSpan delta = time - BlockDB.Epoch;
-                    entry.TimeDelta = (int)delta.TotalSeconds;
-                    entry.Flags = BlockDBFlags.ManualPlace;
-                    
-                    byte flags = ParseFlags(row["Deleted"].ToString());
-                    if ((flags & 1) == 0) { // block was placed
-                        entry.NewRaw = byte.Parse(row["Type"].ToString());
-                        if ((flags & 2) != 0) entry.Flags |= BlockDBFlags.NewExtended;
-                    }
-                    BlockDBChange.Output(p, name, entry);
+                byte flags = ParseFlags(row[2]);
+                if ((flags & 1) == 0) { // block was placed
+                    entry.NewRaw = byte.Parse(row[3]);
+                    if ((flags & 2) != 0) entry.Flags |= BlockDBFlags.NewExtended;
                 }
+                BlockDBChange.Output(p, row[0], entry);
             }
         }
         
         static byte ParseFlags(string value) {
             // This used to be a 'deleted' boolean, so we need to make sure we account for that
-            if (value.CaselessEq("true")) return 1;
+            if (value.CaselessEq("true"))  return 1;
             if (value.CaselessEq("false")) return 0;
             return byte.Parse(value);
         }
@@ -121,8 +120,8 @@ namespace MCGalaxy.Commands.Info {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/About");
-            Player.Message(p, "%HOutputs the change/edit history for a block.");
+            p.Message("&T/About");
+            p.Message("&HOutputs the change/edit history for a block.");
         }
     }
 }

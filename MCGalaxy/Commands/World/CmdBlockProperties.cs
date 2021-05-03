@@ -16,231 +16,182 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using System.Collections.Generic;
 using MCGalaxy.Blocks;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdBlockProperties : Command {
+    public sealed class CmdBlockProperties : Command2 {
         public override string name { get { return "BlockProperties"; } }
         public override string shortcut { get { return "BlockProps"; } }
         public override string type { get { return CommandTypes.World; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             string[] args = message.SplitSpaces(4);
-            if (args.Length < 3) { Help(p); return; }
+            if (args.Length < 2) { Help(p); return; }
             
-            BlockProps[] scope = GetScope(p, args[0]);
-            if (scope == null) return;
-            
-            Player pScope = scope == Block.Props ? null : p;
-            BlockID block = Block.Parse(pScope, args[1]);
-            if (block == Block.Invalid) {
-                Player.Message(p, "&cThere is no block \"{0}\".", args[1]); return;
+            BlockProps[] scope = GetScope(p, data, args[0]);
+            if (scope == null) return;           
+            if (IsListCommand(args[1]) && (args.Length == 2 || IsListModifier(args[2]))) {
+            	ListProps(p, scope, args); return;
             }
             
-            string prop = args[2].ToLower();
-            SetProperty(p, scope, block, prop, args);
+            BlockID block = GetBlock(p, scope, args[1]);
+            if (block == Block.Invalid) return;
+            if (args.Length < 3) { Help(p); return; }            
+            string opt = args[2];
+            
+            if (opt.CaselessEq("copy")) {
+                CopyProps(p, scope, block, args);
+            } else if (opt.CaselessEq("reset") || IsDeleteCommand(opt)) {
+                ResetProps(p, scope, block);
+            } else {
+                SetProps(p, scope, block, args);
+            }
         }
         
-        static BlockProps[] GetScope(Player p, string scope) {
+        static BlockProps[] GetScope(Player p, CommandData data, string scope) {
             if (scope.CaselessEq("core") || scope.CaselessEq("global")) return Block.Props;
 
             if (scope.CaselessEq("level")) {
-                if (Player.IsSuper(p)) {
-                    string src = p == null ? "console" : "IRC";
-                    Player.Message(p, "Cannot use level scope from {0}.",  src);
-                    return null;
-                }
-                
-                if (!LevelInfo.ValidateAction(p, p.level.name, "change block properties in this level")) return null;
+                if (p.IsSuper) { p.Message("Cannot use level scope from {0}.", p.SuperName); return null; }
+                if (!LevelInfo.Check(p, data.Rank, p.level, "change properties of blocks in this level")) return null;
                 return p.level.Props;
             }
             
-            Player.Message(p, "&cScope must be: core/global, or level");
+            p.Message("&WScope must be: global or level");
             return null;
         }
-
         
-        void SetProperty(Player p, BlockProps[] scope, BlockID block,
-                         string prop, string[] args) {
-            string text = args.Length > 3 ? args[3] : null;
+        static BlockID GetBlock(Player p, BlockProps[] scope, string str) {
+        	Player pScope = scope == Block.Props ? Player.Console : p;
+            BlockID block = Block.Parse(pScope, str);
             
-            if (prop == "portal") {
-                Toggle(p, scope, block, "a portal", ref scope[block].IsPortal);
-            } else if (prop == "mb" || prop == "messageblock") {
-                Toggle(p, scope, block, "a message block", ref scope[block].IsMessageBlock);
-            } else if (prop == "rails") {
-                Toggle(p, scope, block, "train rails", ref scope[block].IsRails);
-            } else if (prop == "waterkills") {
-                Toggle(p, scope, block, "killed by water", ref scope[block].WaterKills);
-            } else if (prop == "lavakills") {
-                Toggle(p, scope, block, "killed by lava", ref scope[block].LavaKills);
-            } else if (prop == "door") {
-                Toggle(p, scope, block, "a door", ref scope[block].IsDoor);
-            } else if (prop == "tdoor") {
-                Toggle(p, scope, block, "a tdoor", ref scope[block].IsTDoor);
-            } else if (prop == "killer" || prop == "death") {
-                Toggle(p, scope, block, "a killer block", ref scope[block].KillerBlock);
-            } else if (prop == "deathmsg" || prop == "deathmessage") {
-                SetDeathMessage(p, scope, block, text);
-            } else if (prop == "animalai" || prop == "animal") {
-                SetEnum(p, scope, block, text);
-            }  else if (prop == "stackid" || prop == "stackblock") {
-                SetStackId(p, scope, block, text);
-            } else if (prop == "opblock" || prop == "op") {
-                Toggle(p, scope, block, "an OP block", ref scope[block].OPBlock);
-            } else if (prop == "odoor") {
-                SetBlock(p, scope, block, text, ref scope[block].oDoorBlock, "oDoor");
-            } else if (prop == "grass") {
-                SetBlock(p, scope, block, text, ref scope[block].GrassBlock, "Grass form");
-            } else if (prop == "dirt") {
-                SetBlock(p, scope, block, text, ref scope[block].DirtBlock, "Dirt form");
-            } else if (prop == "drownable" || prop == "drown") {
-                Toggle(p, scope, block, "drowns players", ref scope[block].Drownable);
-            } else {
-                Help(p);
+            if (block == Block.Invalid) {
+                p.Message("&WThere is no block \"{0}\".", str);
             }
+            return block;
         }
-
         
-        static void Toggle(Player p, BlockProps[] scope, BlockID block, string type, ref bool on) {
-            on = !on;
+        internal static void Detail(Player p, BlockProps[] scope, BlockID block) {
+            BlockProps props = scope[block];
+            string name = BlockProps.ScopedName(scope, p, block);
+            p.Message("&TProperties of {0}:", name);
             
-            string blockName = BlockName(scope, p, block);
-            Player.Message(p, "Block {0} is {1}: {2}", blockName, type, on ? "&aYes" : "&cNo");
-            OnPropsChanged(scope, p, block);
-        }
-        
-        static void SetEnum(Player p, BlockProps[] scope, BlockID block, string msg) {
-            AnimalAI ai = AnimalAI.None;
-            if (!CommandParser.GetEnum(p, msg, "Animal AI", ref ai)) return;
-            scope[block].AnimalAI = ai;
+            if (props.KillerBlock)          p.Message("  Kills players who collide with this block");
+            if (props.DeathMessage != null) p.Message("  Death message: &S" + props.DeathMessage);
             
-            string blockName = BlockName(scope, p, block);
-            Player.Message(p, "Animal AI for {0} set to: {1}", blockName, ai);
-            OnPropsChanged(scope, p, block);
-        }
-        
-        static void SetDeathMessage(Player p, BlockProps[] scope, BlockID block, string msg) {
-            scope[block].DeathMessage = msg;
+            if (props.IsDoor)  p.Message("  Is an ordinary door");
+            if (props.IsTDoor) p.Message("  Is a tdoor (allows other blocks through when open)");
+            if (props.oDoorBlock != Block.Invalid) 
+                p.Message("  Is an odoor (can be toggled by doors, and toggles other odoors)");
             
-            string blockName = BlockName(scope, p, block);
-            if (msg == null) {
-                Player.Message(p, "Death message for {0} removed.", blockName);
-            } else {
-                Player.Message(p, "Death message for {0} set to: {1}", blockName, msg);
-            }
-            OnPropsChanged(scope, p, block);
-        }
-        
-        static void SetStackId(Player p, BlockProps[] scope, BlockID block, string msg) {
-            BlockID stackBlock;
-            if (msg == null) {
-                stackBlock = Block.Air;
-            } else {
-                if (!CommandParser.GetBlock(p, msg, out stackBlock)) return;
-            }
-            scope[block].StackBlock = stackBlock;
+            if (props.IsPortal)       p.Message("  Can be used as a &T/Portal");
+            if (props.IsMessageBlock) p.Message("  Can be used as a &T/MessageBlock");
             
-            string blockName = BlockName(scope, p, block);
-            if (stackBlock == Block.Air) {
-                Player.Message(p, "Removed stack block for {0}", blockName);
-            } else {
-                Player.Message(p, "Stack block for {0} set to: {1}",
-                               blockName, BlockName(scope, p, stackBlock));
+            if (props.WaterKills) p.Message("  Is destroyed by flooding water");
+            if (props.LavaKills)  p.Message("  Is destroyed by flooding lava");
+            
+            if (props.OPBlock) p.Message("  Is not affected by explosions");
+            if (props.IsRails) p.Message("  Can be used as rails for &T/Train");
+            
+            if (props.AnimalAI != AnimalAI.None) {
+                p.Message("  Has the {0} AI behaviour", props.AnimalAI);
             }
-            OnPropsChanged(scope, p, block);
-        }
-        
-        static void SetBlock(Player p, BlockProps[] scope, BlockID block,
-                             string msg, ref BlockID target, string type) {
-            string blockName = BlockName(scope, p, block);
-            if (msg == null) {
-                target = Block.Invalid;
-                Player.Message(p, "{1} for {0} removed.", blockName, type);
-            } else {
-                BlockID other;
-                if (!CommandParser.GetBlock(p, msg, out other)) return;
-                if (other == block) { Player.Message(p, "ID of {0} must be different.", type); return; }
-                
-                target = other;
-                Player.Message(p, "{2} for {0} set to: {1}", blockName, BlockName(scope, p, other), type);
+            if (props.StackBlock != Block.Air) {
+                p.Message("  Stacks as {0} when placed on top of itself", 
+                          BlockProps.ScopedName(scope, p, props.StackBlock));
             }
-            OnPropsChanged(scope, p, block);
-        }
-
-        static void OnPropsChanged(BlockProps[] scope, Player p, BlockID block) {
-            if (scope == Block.Props) {
-                scope[block].ChangedScope |= 1;
-                BlockProps.Save("default", Block.Props, Block.PropsLock, 1);
-                Block.ChangeGlobalProps(block, scope[block]);
-            } else {
-                scope[block].ChangedScope |= 2;
-                BlockProps.Save("_" + p.level.name, scope, p.level.PropsLock, 2);
-                p.level.UpdateBlockHandler(block);
+            if (props.Drownable) p.Message("&H  Players can drown in this block");
+            
+            if (props.GrassBlock != Block.Invalid) {
+                p.Message("  Grows into {0} when in sunlight", 
+                          BlockProps.ScopedName(scope, p, props.GrassBlock));
+            }
+            if (props.DirtBlock != Block.Invalid) {
+                p.Message("  Decays into {0} when in shadow", 
+                          BlockProps.ScopedName(scope, p, props.DirtBlock));
             }
         }
         
-        static string BlockName(BlockProps[] scope, Player p, BlockID block) {
-            return scope == Block.Props ? Block.GetName(null, block) : Block.GetName(p, block);
+        static List<BlockID> FilterProps(BlockProps[] scope) {
+            int changed = BlockProps.ScopeId(scope);
+            List<BlockID> filtered = new List<BlockID>();
+            
+            for (int b = 0; b < scope.Length; b++) {
+                if ((scope[b].ChangedScope & changed) == 0) continue;                
+                filtered.Add((BlockID)b);
+            }
+            return filtered;
         }
         
-        
-        public override void Help(Player p) {
-            Player.Message(p, "%T/BlockProps [scope] [id/name] [property] <value>");
-            Player.Message(p, "%HSets various properties for blocks.");
-            Player.Message(p, "%H[scope] can be: %Score, global, level");
+        void ListProps(Player p, BlockProps[] scope, string[] args) {
+            List<BlockID> filtered = FilterProps(scope);
+            string cmd      = "BlockProps " + args[0] + " list";
+            string modifier = args.Length > 2 ? args[2] : "";
             
-            Player.Message(p, "%Hproperties: %Sportal, messageblock, rails, waterkills, lavakills, door, tdoor, " +
-                           "killer, deathmessage, animalai, stackblock, opblock, odoor, drownable, grass, dirt");
-            Player.Message(p, "%HType %T/Help BlockProps [property] %Hfor more details");
+            MultiPageOutput.Output(p, filtered, b => BlockProps.ScopedName(scope, p, b),
+                                   cmd, "modified blocks", modifier, false);
+        }
+        
+        void CopyProps(Player p, BlockProps[] scope, BlockID block, string[] args) {
+        	if (args.Length < 4) { Help(p); return; }
+        	BlockID dst = GetBlock(p, scope, args[3]);
+        	if (dst == Block.Invalid) return;
+        	
+        	scope[dst] = scope[block];
+        	scope[dst].ChangedScope |= BlockProps.ScopeId(scope);
+            
+            p.Message("Copied properties of {0} to {1}",
+                      BlockProps.ScopedName(scope, p, block),
+                      BlockProps.ScopedName(scope, p, dst));
+            BlockProps.ApplyChanges(scope, p.level, block, true);
+        }
+        
+        void ResetProps(Player p, BlockProps[] scope, BlockID block) {
+            scope[block] = BlockProps.MakeDefault(scope, p.level, block);
+            string name  = BlockProps.ScopedName(scope, p, block);
+            
+            p.Message("Reset properties of {0} to default", name);
+            BlockProps.ApplyChanges(scope, p.level, block, true);
+        }
+        
+        void SetProps(Player p, BlockProps[] scope, BlockID block, string[] args) {
+            BlockOption opt = BlockOptions.Find(args[2]);
+            if (opt == null) { Help(p); return; }
+            string value = args.Length > 3 ? args[3] : "";
+            
+            opt.SetFunc(p, scope, block, value);
+            scope[block].ChangedScope |= BlockProps.ScopeId(scope);
+            BlockProps.ApplyChanges(scope, p.level, block, true);
+        }
+        
+        public override void Help(Player p) {                	
+            p.Message("&T/BlockProps global/level list");
+            p.Message("&HLists blocks which have non-default properties");
+            p.Message("&T/BlockProps global/level [id/name] copy [new id]");
+            p.Message("&HCopies properties of that block to another");
+            p.Message("&T/BlockProps global/level [id/name] reset");
+            p.Message("&HResets properties of that block to their default");
+            p.Message("&T/BlockProps global/level [id/name] [property] <value>");
+            p.Message("&HSets various properties of that block");
+            p.Message("&H  Use &T/Help BlockProps props &Hfor a list of properties");
         }
         
         public override void Help(Player p, string message) {
-            if (message.CaselessEq("portal")) {
-                Player.Message(p, "%HToggles whether the block is a %T/Portal");
-            } else if (message.CaselessEq("messageblock")) {
-                Player.Message(p, "%HToggles whether the block is a %T/MessageBlock");
-            } else if (message.CaselessEq("rails")) {
-                Player.Message(p, "%HToggles whether %Strain %Hblocks can run over this block");
-            } else if (message.CaselessEq("waterkills")) {
-                Player.Message(p, "%HToggles whether flooding water kills this block");
-            } else if (message.CaselessEq("lavakills")) {
-                Player.Message(p, "%HToggles whether flooding lava kills this block");
-            } else if (message.CaselessEq("door")) {
-                Player.Message(p, "%HToggles whether this block is a Door block");
-            } else if (message.CaselessEq("tdoor")) {
-                Player.Message(p, "%HToggles whether this block is a TDoor block");
-            } else if (message.CaselessEq("killer")) {
-                Player.Message(p, "%HToggles whether this block kills players who collide with it");
-            } else if (message.CaselessEq("deathmessage")) {
-                Player.Message(p, "%HSets or removes the death message for this block");
-                Player.Message(p, "%H  Note: %S@p %His a placeholder for the player's name");
-            } else if (message.CaselessEq("animalai")) {
-                Player.Message(p, "%HSets the flying or swimming animal AI for this block.");
-                string[] aiNames = Enum.GetNames(typeof(AnimalAI));
-                Player.Message(p, "%H  Types: &f{0}", aiNames.Join());
-            } else if (message.CaselessEq("stackblock")) {
-                Player.Message(p, "%HSets the block this block is converted into, when placed on top of " +
-                               "another of the same block. (e.g. placing two slabs on each other becomes a double slab)");
-            } else if (message.CaselessEq("opblock")) {
-                Player.Message(p, "%HMarks the block as being on OP block. OP blocks can't be blown up by explosions, " +
-                               "and can't be replaced in games when build type is ModifyOnly.");
-            } else if (message.CaselessEq("odoor")) {
-                Player.Message(p, "%HSets the block that this block is changed into, when activated by a neighbouring door.");
-            } else if (message.CaselessEq("drownable")) {
-                Player.Message(p, "%HSets whether this block can drown players.");
-                Player.Message(p, "%T/Map death %Hmust be enabled for players to drown.");
-            } else if (message.CaselessEq("grass")) {
-                Player.Message(p, "%HSets the block that this block is changed into, when exposed to sunlight");
-                Player.Message(p, "%HLeave block blank to remove this behaviour.");
-            } else if (message.CaselessEq("dirt")) {
-                Player.Message(p, "%HSets the block that this block is changed into, when no longer exposed to sunlight");
-                Player.Message(p, "%HLeave block blank to remove this behaviour.");
-            }  else {
-                Player.Message(p, "&cUnrecognised property \"{0}\"", message);
+            if (message.CaselessEq("props") || message.CaselessEq("properties")) {
+                p.Message("&HProperties: &f{0}", BlockOptions.Options.Join(o => o.Name));
+                p.Message("&HUse &T/Help BlockProps [property] &Hfor more details");
+                return;
+            }
+            
+            BlockOption opt = BlockOptions.Find(message);
+            if (opt != null) {
+                p.Message(opt.Help);
+            } else {
+                p.Message("&WUnrecognised property \"{0}\"", message);
             }
         }
     }

@@ -19,43 +19,43 @@ using System;
 using System.Collections.Generic;
 
 namespace MCGalaxy.Commands.Moderation {
-    public class CmdNotes : Command {
+    public class CmdNotes : Command2 {
         public override string name { get { return "Notes"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
-            if (!ServerConfig.LogNotes) {
-                Player.Message(p, "The server does not have notes logging enabled."); return;
+        public override void Use(Player p, string name, CommandData data) {
+            if (!Server.Config.LogNotes) {
+                p.Message("The server does not have notes logging enabled."); return;
             }
             
-            if (CheckSuper(p, message, "player name")) return;
-            if (message.Length == 0) message = p.name;
-            string name = PlayerInfo.FindMatchesPreferOnline(p, message);
+            if (CheckSuper(p, name, "player name")) return;
+            if (name.Length == 0) name = p.name;
+            
+            name = PlayerInfo.FindMatchesPreferOnline(p, name);
             if (name == null) return;
             
-            List<string> notes = new List<string>();
-            foreach (string note in Server.Notes.Find(name)) {
-                notes.Add(note);
-            }
+            List<string> notes = Server.Notes.FindAllExact(name);
+            string nick = p.FormatNick(name);
             
-            string target = PlayerInfo.GetColoredName(p, name);
             if (notes.Count == 0) {
-                Player.Message(p, "{0} %Shas no notes.", target); return;
+                p.Message("{0} &Shas no notes.", nick); return;
             } else {
-                Player.Message(p, "  Notes for {0}:",  target);
+                p.Message("  Notes for {0}:", nick);
             }
             
             foreach (string line in notes) {
                 string[] args = line.SplitSpaces();
                 if (args.Length <= 3) continue;
                 
-                if (args.Length == 4) {
-                    Player.Message(p, Action(args[1]) + " by " + args[2] + " on " + args[3]);
-                } else {
-                    Player.Message(p, Action(args[1]) + " by " + args[2] + " on " + args[3]
-                                   + " - " + args[4].Replace("%20", " "));
-                }
+                string reason = args.Length > 4 ? args[4] : "";
+                long duration = 0;
+                if (args.Length > 5) long.TryParse(args[5], out duration);
+                
+                p.Message("{0} by {1} &Son {2}{3}{4}",
+                          Action(args[1]), p.FormatNick(args[2]), args[3],
+                          duration      == 0 ? "" : " for " + TimeSpan.FromTicks(duration).Shorten(true),
+                          reason.Length == 0 ? "" : " - "   + reason.Replace("%20", " "));
             }
         }
         
@@ -71,22 +71,24 @@ namespace MCGalaxy.Commands.Moderation {
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Notes [name] %H- views that player's notes.");
-            Player.Message(p, "%HNotes are things such as bans, kicks, warns, mutes.");
+            p.Message("&T/Notes [name] &H- views that player's notes.");
+            p.Message("&HNotes are things such as bans, kicks, warns, mutes.");
         }
     }
     
     public sealed class CmdMyNotes : CmdNotes {
         public override string name { get { return "MyNotes"; } }
         public override string type { get { return CommandTypes.Other; } }
-
         public override bool SuperUseable { get { return false; } }
-
-        public override void Use(Player p, string message) { base.Use(p, p.name); }
+        public override LevelPermission defaultRank { get { return LevelPermission.Guest; } }
+        
+        public override void Use(Player p, string message, CommandData data) { 
+            base.Use(p, p.name, data); 
+        }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/MyNotes %H- views your own notes.");
-            Player.Message(p, "%HNotes are things such as bans, kicks, warns, mutes.");
+            p.Message("&T/MyNotes &H- views your own notes.");
+            p.Message("&HNotes are things such as bans, kicks, warns, mutes.");
         }
     }
 }

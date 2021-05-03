@@ -17,14 +17,24 @@
  */
 using System;
 using System.Collections.Generic;
+using MCGalaxy.SQL;
 
 namespace MCGalaxy {
+
+    /// <summary> Extension methods relating to dates. </summary>
     public static class DateExts {
         
-        public static TimeSpan ParseDBTime(this string value) {
+        public static TimeSpan ParseOldDBTimeSpent(this string value) {
             string[] parts = value.SplitSpaces();
             return new TimeSpan(int.Parse(parts[0]), int.Parse(parts[1]),
                                 int.Parse(parts[2]), int.Parse(parts[3]));
+        }
+        
+        public static DateTime ParseDBDate(this string value) {
+            DateTime date;
+            // prefer the exact format
+            if (DateTime.TryParseExact(value, Database.DateFormat, null, 0, out date)) return date;
+            return DateTime.Parse(value);
         }
         
         public static DateTime UnixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -37,7 +47,7 @@ namespace MCGalaxy {
             return (long)(time.ToUniversalTime() - UnixEpoch).TotalSeconds;
         }
         
-        public static bool AddSpamEntry(this List<DateTime> log, int maxEntries, int checkInterval) {
+        public static bool AddSpamEntry(this List<DateTime> log, int maxEntries, TimeSpan checkInterval) {
             DateTime now = DateTime.UtcNow;
             if (log.Count > 0 && log.Count >= maxEntries)
                 log.RemoveAt(0);
@@ -45,7 +55,7 @@ namespace MCGalaxy {
             
             if (log.Count < maxEntries) return true;
             TimeSpan oldestDelta = now - log[0];
-            return oldestDelta.TotalSeconds > checkInterval;
+            return oldestDelta > checkInterval;
         }
     }
 }

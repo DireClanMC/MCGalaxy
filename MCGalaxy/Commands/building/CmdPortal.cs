@@ -19,12 +19,14 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using MCGalaxy.Blocks;
+using MCGalaxy.Blocks.Extended;
+using MCGalaxy.Maths;
 using MCGalaxy.SQL;
 using MCGalaxy.Util;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Building {
-    public sealed class CmdPortal : Command {
+    public sealed class CmdPortal : Command2 {
         public override string name { get { return "Portal"; } }
         public override string shortcut { get { return "o"; } }
         public override string type { get { return CommandTypes.Building; } }
@@ -32,26 +34,26 @@ namespace MCGalaxy.Commands.Building {
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
-            PortalArgs data = new PortalArgs();
-            data.Multi = false;
+        public override void Use(Player p, string message, CommandData data) {
+            PortalArgs pArgs = new PortalArgs();
+            pArgs.Multi = false;
             string[] args = message.SplitSpaces();
             string block = message.Length == 0 ? "" : args[0].ToLower();
 
             if (args.Length >= 2 && args[1].CaselessEq("multi")) {
-                data.Multi = true;
+                pArgs.Multi = true;
             } else if (args.Length >= 2) {
                 Help(p); return;
             }
 
-            data.Block = GetBlock(p, block);
-            if (data.Block == Block.Invalid) return;
-            if (!CommandParser.IsBlockAllowed(p, "place a portal of", data.Block)) return;
-            data.Entries = new List<PortalPos>();
+            pArgs.Block = GetBlock(p, block);
+            if (pArgs.Block == Block.Invalid) return;
+            if (!CommandParser.IsBlockAllowed(p, "place a portal of", pArgs.Block)) return;
+            pArgs.Entries = new List<PortalPos>();
             
-            Player.Message(p, "Place an &aEntry block %Sfor the portal");
+            p.Message("Place an &aEntry block &Sfor the portal");
             p.ClearBlockchange();
-            p.blockchangeObject = data;
+            p.blockchangeObject = pArgs;
             p.Blockchange += EntryChange;
         }
         
@@ -76,7 +78,7 @@ namespace MCGalaxy.Commands.Building {
         void EntryChange(Player p, ushort x, ushort y, ushort z, BlockID block) {
             PortalArgs args = (PortalArgs)p.blockchangeObject;
             BlockID old = p.level.GetBlock(x, y, z);
-            if (!p.level.CheckAffectPermissions(p, x, y, z, old, args.Block)) {
+            if (!p.level.CheckAffect(p, x, y, z, old, args.Block)) {
                 p.RevertBlock(x, y, z); return;
             }
             p.ClearBlockchange();
@@ -96,10 +98,10 @@ namespace MCGalaxy.Commands.Building {
 
             if (!args.Multi) {
                 p.Blockchange += ExitChange;
-                Player.Message(p, "&aEntry block placed");
+                p.Message("&aEntry block placed");
             } else {
                 p.Blockchange += EntryChange;
-                Player.Message(p, "&aEntry block placed. &c{0} block for exit",
+                p.Message("&aEntry block placed. &c{0} block for exit",
                               Block.GetName(p, Block.Red));
             }
         }
@@ -107,37 +109,21 @@ namespace MCGalaxy.Commands.Building {
         void ExitChange(Player p, ushort x, ushort y, ushort z, BlockID block) {
             p.ClearBlockchange();
             p.RevertBlock(x, y, z);
+            
             PortalArgs args = (PortalArgs)p.blockchangeObject;
-            string dstMap = p.level.name.UnicodeToCp437();
+            string exitMap = p.level.name;
 
             foreach (PortalPos P in args.Entries) {
-                string lvlName = P.Map;
-                object locker = ThreadSafeCache.DBCache.GetLocker(lvlName);
+                string map = P.Map;
+                if (map == p.level.name) p.RevertBlock(P.x, P.y, P.z);
+                object locker = ThreadSafeCache.DBCache.GetLocker(map);
                 
                 lock (locker) {
-                    Database.Backend.CreateTable("Portals" + lvlName, LevelDB.createPortals);
-                    Level map = LevelInfo.FindExact(P.Map);
-                    if (map != null) map.hasPortals = true;
-
-                    int count = 0;
-                    using (DataTable portals = Database.Backend.GetRows("Portals" + lvlName, "*",
-                                                                        "WHERE EntryX=@0 AND EntryY=@1 AND EntryZ=@2", P.x, P.y, P.z)) {
-                        count = portals.Rows.Count;
-                    }
-                    
-                    if (count == 0) {
-                        Database.Backend.AddRow("Portals" + lvlName, "EntryX, EntryY, EntryZ, ExitX, ExitY, ExitZ, ExitMap",
-                                                P.x, P.y, P.z, x, y, z, dstMap);
-                    } else {
-                        Database.Backend.UpdateRows("Portals" + lvlName, "ExitMap=@6, ExitX=@3, ExitY=@4, ExitZ=@5",
-                                                    "WHERE EntryX=@0 AND EntryY=@1 AND EntryZ=@2", P.x, P.y, P.z, x, y, z, dstMap);
-                    }
+                    Portal.Set(map, P.x, P.y, P.z, x, y, z, exitMap);
                 }
-                if (P.Map == p.level.name)
-                    p.SendBlockchange(P.x, P.y, P.z, args.Block);
             }
 
-            Player.Message(p, "&3Exit %Sblock placed");
+            p.Message("&3Exit &Sblock placed");
             if (!p.staticCommands) return;
             args.Entries.Clear();
             p.blockchangeObject = args;
@@ -148,39 +134,32 @@ namespace MCGalaxy.Commands.Building {
         struct PortalPos { public ushort x, y, z; public string Map; }
 
         
-        void ShowPortals(Player p) {
+        static void ShowPortals(Player p) {
             p.showPortals = !p.showPortals;
-            int count = 0;
+            List<Vec3U16> coords = Portal.GetAllCoords(p.level.MapName);
             
-            if (p.level.hasPortals) {
-                using (DataTable table = Database.Backend.GetRows("Portals" + p.level.name, "*")) {
-                    count = table.Rows.Count;
-                    if (p.showPortals) { ShowPortals(p, table); } 
-                    else { HidePortals(p, table); }
+            foreach (Vec3U16 pos in coords) {
+                if (p.showPortals) {
+                    p.SendBlockchange(pos.X, pos.Y, pos.Z, Block.Green);
+                } else {
+                    p.RevertBlock(pos.X, pos.Y, pos.Z);
                 }
-            }            
-            Player.Message(p, "Now {0} %Sportals.", p.showPortals ? "showing &a" + count : "hiding");
-        }
-        
-        static void ShowPortals(Player p, DataTable table) {
-            foreach (DataRow row in table.Rows) {
-                if (row["ExitMap"].ToString() == p.level.name) {
-                    p.SendBlockchange(U16(row["ExitX"]), U16(row["ExitY"]), U16(row["ExitZ"]), Block.Red);
-                }
-                p.SendBlockchange(U16(row["EntryX"]), U16(row["EntryY"]), U16(row["EntryZ"]), Block.Green);
             }
-        }
-        
-        static void HidePortals(Player p, DataTable table) {
-            foreach (DataRow row in table.Rows) {
-                if (row["ExitMap"].ToString() == p.level.name) {
-                    p.RevertBlock(U16(row["ExitX"]), U16(row["ExitY"]), U16(row["ExitZ"]));
+            
+            List<PortalExit> exits = Portal.GetAllExits(p.level.MapName);
+            foreach (PortalExit exit in exits) {
+                if (exit.Map != p.level.MapName) continue;
+                
+                if (p.showPortals) {
+                    p.SendBlockchange(exit.X, exit.Y, exit.Z, Block.Red);
+                } else {
+                    p.RevertBlock(exit.X, exit.Y, exit.Z);
                 }
-                p.RevertBlock(U16(row["EntryX"]), U16(row["EntryY"]), U16(row["EntryZ"]));
             }
+            
+            p.Message("Now {0} &Sportals.", 
+                           p.showPortals ? "showing &a" + coords.Count : "hiding");
         }
-        
-        static ushort U16(object x) { return Convert.ToUInt16(x); }
         
         
         static string Format(BlockID block, Player p, BlockProps[] props) {
@@ -197,7 +176,7 @@ namespace MCGalaxy.Commands.Building {
         
         static List<string> SupportedBlocks(Player p) {
             List<string> names = new List<string>();
-            BlockProps[] props = Player.IsSuper(p) ? Block.Props : p.level.Props;
+            BlockProps[] props = p.IsSuper ? Block.Props : p.level.Props;
             
             for (int i = 0; i < props.Length; i++) {
                 string name = Format((BlockID)i, p, props);
@@ -207,14 +186,14 @@ namespace MCGalaxy.Commands.Building {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Portal [block]");
-            Player.Message(p, "%HPlace a block for the entry, then another block for exit.");
-            Player.Message(p, "%T/Portal [block] multi");
-            Player.Message(p, "%HPlace multiple blocks for entries, then a red block for exit.");
-            Player.Message(p, "%H  Note: The exit can be on a different level.");
+            p.Message("&T/Portal [block]");
+            p.Message("&HPlace a block for the entry, then another block for exit.");
+            p.Message("&T/Portal [block] multi");
+            p.Message("&HPlace multiple blocks for entries, then a {0} block for exit.", Block.GetName(p, Block.Red));
+            p.Message("&H  Note: The exit can be on a different level.");
             List<string> names = SupportedBlocks(p); 
-            Player.Message(p, "%H  Supported blocks: %S{0}", names.Join());
-            Player.Message(p, "%T/Portal show %H- Shows portals (green = entry, red = exit)");
+            p.Message("&H  Supported blocks: &S{0}", names.Join());
+            p.Message("&T/Portal show &H- Shows portals (green = entry, red = exit)");
         }
     }
 }

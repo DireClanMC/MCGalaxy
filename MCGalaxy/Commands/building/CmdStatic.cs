@@ -16,7 +16,7 @@
     permissions and limitations under the Licenses.
  */
 namespace MCGalaxy.Commands.Building {   
-    public sealed class CmdStatic : Command {      
+    public sealed class CmdStatic : Command2 {      
         public override string name { get { return "Static"; } }
         public override string shortcut { get { return "t"; } }
         public override string type { get { return CommandTypes.Building; } }
@@ -27,33 +27,23 @@ namespace MCGalaxy.Commands.Building {
             get { return new[] { new CommandAlias("zz", "cuboid") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             p.staticCommands = !p.staticCommands;
             p.ClearBlockchange();
-            p.ModeBlock = Block.Air;
 
-            Player.Message(p, "Static mode: &a" + p.staticCommands);
+            p.Message("Static mode: &a" + p.staticCommands);
             if (message.Length == 0 || !p.staticCommands) return;
+            data.Context = CommandContext.Static;
 
             string[] parts = message.SplitSpaces(2);
-            string cmdName = parts[0], cmdArgs = parts.Length > 1 ? parts[1] : "";
-            Command.Search(ref cmdName, ref cmdArgs);
-            
-            Command cmd = Command.all.FindByName(cmdName);
-            if (cmd == null) {
-                Player.Message(p, "Unknown command \"" + cmdName + "\"."); return;
-            }
-            
-            if (!p.group.CanExecute(cmd)) {
-                Player.Message(p, "Cannot use the \"{0}\" command.", cmdName); return;
-            }
-            cmd.Use(p, cmdArgs);
+            string cmd = parts[0], args = parts.Length > 1 ? parts[1] : "";
+            p.HandleCommand(cmd, args, data);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Static [command]");
-            Player.Message(p, "%HMakes every command a toggle.");
-            Player.Message(p, "%HIf [command] is given, then that command is used");
+            p.Message("&T/Static [command]");
+            p.Message("&HMakes every command a toggle.");
+            p.Message("&HIf [command] is given, then that command is used");
         }
     }
 }

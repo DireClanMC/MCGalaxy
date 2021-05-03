@@ -28,6 +28,7 @@ namespace MCGalaxy.Levels.IO {
     public unsafe sealed class LvlImporter : IMapImporter {
 
         public override string Extension { get { return ".lvl"; } }
+        public override string Description { get { return "MCDzienny/MCForge/MCGalaxy map"; } }
         
         public override Vec3U16 ReadDimensions(Stream src) {
             using (Stream gs = new GZipStream(src, CompressionMode.Decompress, true)) {
@@ -50,12 +51,12 @@ namespace MCGalaxy.Levels.IO {
                 lvl.rotx = header[offset + 10];
                 lvl.roty = header[offset + 11];
                 
-                gs.Read(lvl.blocks, 0, lvl.blocks.Length);
-                ReadCustomBlocksSection(lvl, gs);             
+                ReadFully(gs, lvl.blocks, lvl.blocks.Length);
+                ReadCustomBlocksSection(lvl, gs);
                 if (!metadata) return lvl;
                 
                 for (;;) {
-                    int section = gs.ReadByte();                    
+                    int section = gs.ReadByte();
                     if (section == 0xFC) { // 'ph'ysics 'c'hecks
                         ReadPhysicsSection(lvl, gs); continue;
                     }
@@ -68,16 +69,16 @@ namespace MCGalaxy.Levels.IO {
         }
         
         static Vec3U16 ReadHeader(Stream gs, byte[] header, out int offset) {
-            gs.Read(header, 0, 2);
+            ReadFully(gs, header, 2);
             Vec3U16 dims = default(Vec3U16);
             dims.X = BitConverter.ToUInt16(header, 0);
 
             if (dims.X == 1874) { // version field, width is next ushort
-                gs.Read(header, 0, 16);
+                ReadFully(gs, header, 16);
                 dims.X = BitConverter.ToUInt16(header, 0);
                 offset = 2;
             } else {
-                gs.Read(header, 0, 12);
+                ReadFully(gs, header, 12);
                 offset = 0;
             }
             
@@ -99,7 +100,7 @@ namespace MCGalaxy.Levels.IO {
                 read = gs.Read(data, 0, 1);
                 if (read > 0 && data[0] == 1) {
                     byte[] chunk = new byte[16 * 16 * 16];
-                    gs.Read(chunk, 0, chunk.Length);
+                    ReadFully(gs, chunk, chunk.Length);
                     lvl.CustomBlocks[index] = chunk;
                 }
                 index++;
@@ -129,7 +130,7 @@ namespace MCGalaxy.Levels.IO {
                 
                 int* ptrInt = (int*)ptr;
                 for (int j = 0; j < entries; j++) {
-                    C.Index = *ptrInt; ptrInt++;
+                    C.Index    = *ptrInt;         ptrInt++;
                     C.data.Raw = (uint)(*ptrInt); ptrInt++;
                     lvl.ListCheck.Items[i + j] = C;
                 }
@@ -142,43 +143,47 @@ namespace MCGalaxy.Levels.IO {
             if (count == 0) return;
             
             for (int i = 0; i < count; i++) {
-                Zone z = new Zone(lvl);
-                if (!TryRead_U16(buffer, gs, ref z.MinX) || !TryRead_U16(buffer, gs, ref z.MaxX)) return;
-                if (!TryRead_U16(buffer, gs, ref z.MinY) || !TryRead_U16(buffer, gs, ref z.MaxY)) return;
-                if (!TryRead_U16(buffer, gs, ref z.MinZ) || !TryRead_U16(buffer, gs, ref z.MaxZ)) return;
-                
-                int metaCount = TryRead_I32(buffer, gs);
-                ConfigElement[] elems = Server.zoneConfig;
-                
-                for (int j = 0; j < metaCount; j++) {
-                    ushort size = 0;
-                    if (!TryRead_U16(buffer, gs, ref size)) return;
-                    if (size > buffer.Length) buffer = new byte[size + 16];
-                    gs.Read(buffer, 0, size);
-                    
-                    string line = Encoding.UTF8.GetString(buffer, 0, size), key, value;
-                    PropertiesFile.ParseLine(line, '=', out key, out value);
-                    if (key == null) continue;
-                    
-                    value = value.Trim();
-                    ConfigElement.Parse(elems, key, value, z.Config);
+                try {
+                    ParseZone(lvl, ref buffer, gs);
+                } catch (Exception ex) {
+                    Logger.LogError("Error importing zone #" + i + " from MCSharp map", ex);
                 }
-                
-                z.AddTo(lvl);
             }
+        }
+        
+        static void ParseZone(Level lvl, ref byte[] buffer, Stream gs) {
+            Zone z = new Zone();
+            z.MinX = Read_U16(buffer, gs); z.MaxX = Read_U16(buffer, gs);
+            z.MinY = Read_U16(buffer, gs); z.MaxY = Read_U16(buffer, gs);
+            z.MinZ = Read_U16(buffer, gs); z.MaxZ = Read_U16(buffer, gs);
+            
+            int metaCount = TryRead_I32(buffer, gs);
+            ConfigElement[] elems = Server.zoneConfig;
+            
+            for (int j = 0; j < metaCount; j++) {
+                int size = Read_U16(buffer, gs);
+                if (size > buffer.Length) buffer = new byte[size + 16];
+                ReadFully(gs, buffer, size);
+                
+                string line = Encoding.UTF8.GetString(buffer, 0, size), key, value;
+                PropertiesFile.ParseLine(line, '=', out key, out value);
+                if (key == null) continue;
+                
+                value = value.Trim();
+                ConfigElement.Parse(elems, z.Config, key, value);
+            }
+            z.AddTo(lvl);
         }
         
         static int TryRead_I32(byte[] buffer, Stream gs) {
             int read = gs.Read(buffer, 0, sizeof(int));
             if (read < sizeof(int)) return 0;
-            return NetUtils.ReadI32(buffer, 0); 
+            return NetUtils.ReadI32(buffer, 0);
         }
         
-        static bool TryRead_U16(byte[] buffer, Stream gs, ref ushort value) {
-            int read = gs.Read(buffer, 0, sizeof(ushort));
-            if (read < sizeof(ushort)) return false;
-            value = NetUtils.ReadU16(buffer, 0);
-            return true;
+        static ushort Read_U16(byte[] buffer, Stream gs) {
+            ReadFully(gs, buffer, sizeof(ushort));
+            return NetUtils.ReadU16(buffer, 0);
         }
     }
 }

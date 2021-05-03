@@ -18,10 +18,9 @@
     permissions and limitations under the Licenses.
 */
 using System;
-using System.IO;
 
 namespace MCGalaxy.Commands.World {   
-    public class CmdCopyLVL : Command {        
+    public class CmdCopyLVL : Command2 {        
         public override string name { get { return "CopyLvl"; } }
         public override string type { get { return CommandTypes.World; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
@@ -30,37 +29,29 @@ namespace MCGalaxy.Commands.World {
         }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             string[] args = message.ToLower().SplitSpaces();
             if (args.Length < 2) {
-                Player.Message(p, "You did not specify the destination level name."); return;
+                p.Message("You did not specify the destination level name."); return;
             }
+            LevelConfig cfg;
             
-            string src = args[0];
-            src = Matcher.FindMaps(p, src);
+            string src = Matcher.FindMaps(p, args[0]);
             if (src == null) return;
-            if (!LevelInfo.ValidateAction(p, src, "copy this level")) return;
+            if (!LevelInfo.Check(p, data.Rank, src, "copy this map", out cfg)) return;
             
             string dst = args[1];
-            if (!Formatter.ValidName(p, dst, "level")) return;
-            if (LevelInfo.MapExists(dst)) { Player.Message(p, "Level \"" + dst + "\" already exists."); return; }
+            if (!Formatter.ValidMapName(p, dst)) return;
 
-            try {
-                LevelActions.CopyLevel(src, dst);
-            } catch (IOException) {
-                Player.Message(p, "Level &c" + dst + " %Salready exists!"); return;
-            }
-            
-            Level ignored;
-            LevelConfig cfg = LevelInfo.GetConfig(src, out ignored);
-            Player.Message(p, "Level {0} %Shas been copied to {1}", cfg.Color + src, cfg.Color + dst);
+            if (!LevelActions.Copy(p, src, dst)) return;
+            Chat.MessageGlobal("Level {0} &Swas copied to {1}", cfg.Color + src, cfg.Color + dst);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/CopyLvl [level] [copied level]");
-            Player.Message(p, "%HMakes a copy of [level] called [copied Level].");
-            Player.Message(p, "%HNote: The level's BlockDB is not copied.");
+            p.Message("&T/CopyLvl [level] [copied level]");
+            p.Message("&HMakes a copy of [level] called [copied level].");
+            p.Message("&HNote: The level's BlockDB is not copied.");
         }
     }
 }

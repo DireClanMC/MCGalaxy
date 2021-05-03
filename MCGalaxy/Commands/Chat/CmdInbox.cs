@@ -16,88 +16,87 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using System.Collections.Generic;
 using System.Data;
 using MCGalaxy.SQL;
 
 namespace MCGalaxy.Commands.Chatting {
-    public sealed class CmdInbox : Command {
+    public sealed class CmdInbox : Command2 {
         public override string name { get { return "Inbox"; } }
         public override string type { get { return CommandTypes.Chat; } }
         public override bool SuperUseable { get { return false; } }
-
-        public override void Use(Player p, string message) {          
+        const int i_text = 0, i_sent = 1, i_from = 2;
+        
+        public override void Use(Player p, string message, CommandData data) {
             if (!Database.TableExists("Inbox" + p.name)) {
-                Player.Message(p, "Your inbox is empty."); return;
+                p.Message("Your inbox is empty."); return;
+            }
+            
+            List<string[]> entries = Database.GetRows("Inbox" + p.name, "Contents,TimeSent,PlayerFrom", 
+                                                      "ORDER BY TimeSent");
+            if (entries.Count == 0) {
+                p.Message("Your inbox is empty."); return;
             }
 
             string[] args = message.SplitSpaces(2);
             if (message.Length == 0) {
-                using (DataTable Inbox = Database.Backend.GetRows("Inbox" + p.name, "*", "ORDER BY TimeSent")) {
-                    if (Inbox.Rows.Count == 0) { Player.Message(p, "No messages found."); return; }
-                    foreach (DataRow row in Inbox.Rows) {
-                        OutputMessage(p, row);
-                    }
-                }
-            } else if (args[0].CaselessEq("del") || args[0].CaselessEq("delete")) {
+                foreach (string[] entry in entries) { Output(p, entry); }
+            } else if (IsDeleteCommand(args[0])) {
                 if (args.Length == 1) {
-                    Player.Message(p, "You need to provide either \"all\" or a number."); return;
+                    p.Message("You need to provide either \"all\" or a number."); return;
                 } else if (args[1].CaselessEq("all")) {
-                    Database.Backend.ClearTable("Inbox" + p.name);
-                    Player.Message(p, "Deleted all messages.");
+                    Database.DeleteRows("Inbox" + p.name);
+                    p.Message("Deleted all messages.");
                 } else {
-                    DeleteMessageByID(p, args[1]);
+                    DeleteByID(p, args[1], entries);
                 }
             } else {
-                OutputMessageByID(p, message);
+                OutputByID(p, message, entries);
             }
         }
         
-        static void DeleteMessageByID(Player p, string value) {
-            int num = 0;
-            if (!CommandParser.GetInt(p, value, "Message number", ref num, 0)) return;
+        static void DeleteByID(Player p, string value, List<string[]> entries) {
+            int num = 1;
+            if (!CommandParser.GetInt(p, value, "Message number", ref num, 1)) return;
             
-            using (DataTable Inbox = Database.Backend.GetRows("Inbox" + p.name, "*", "ORDER BY TimeSent")) {
-                if (num >= Inbox.Rows.Count) {
-                    Player.Message(p, "Message #{0} does not exist.", num); return;
-                }
-
-                DataRow row = Inbox.Rows[num];
-                string time = Convert.ToDateTime(row["TimeSent"]).ToString("yyyy-MM-dd HH:mm:ss");
-                Database.Backend.DeleteRows("Inbox" + p.name,
-                                            "WHERE PlayerFrom=@0 AND TimeSent=@1", row["PlayerFrom"], time);
-
-                Player.Message(p, "Deleted message #{0}", num);
+            if (num > entries.Count) {
+                p.Message("Message #{0} does not exist.", num);
+            } else {
+                string[] entry = entries[num - 1];
+                Database.DeleteRows("Inbox" + p.name,
+                                    "WHERE PlayerFrom=@0 AND TimeSent=@1", entry[i_from], entry[i_sent]);
+                p.Message("Deleted message #{0}", num);
             }
         }
         
-        static void OutputMessageByID(Player p, string value) {
-            int num = 0;
-            if (!CommandParser.GetInt(p, value, "Message number", ref num, 0)) return;
-
-            using (DataTable Inbox = Database.Backend.GetRows("Inbox" + p.name, "*", "ORDER BY TimeSent")) {
-                if (num >= Inbox.Rows.Count) {
-                    Player.Message(p, "Message #{0} does not exist.", num); return;
-                }
-                
-                OutputMessage(p, Inbox.Rows[num]);
+        static void OutputByID(Player p, string value, List<string[]> entries) {
+            int num = 1;
+            if (!CommandParser.GetInt(p, value, "Message number", ref num, 1)) return;
+            
+            if (num > entries.Count) {
+                p.Message("Message #{0} does not exist.", num);
+            } else {
+                Output(p, entries[num - 1]);
             }
         }
         
-        static void OutputMessage(Player p, DataRow row) {
-            DateTime time = Convert.ToDateTime(row["TimeSent"]);
+        static void Output(Player p, string[] entry) {
+            DateTime time = entry[i_sent].ParseDBDate();
             TimeSpan delta = DateTime.Now - time;
-            string sender = PlayerInfo.GetColoredName(p, row["PlayerFrom"].ToString());
-            Player.Message(p, "From {0} &a{1} ago:", sender, delta.Shorten());
-            Player.Message(p, row["Contents"].ToString());
+            string sender = p.FormatNick(entry[i_from]);
+            
+            p.Message("From {0} &a{1} ago:", sender, delta.Shorten());
+            p.Message(entry[i_text]);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Inbox");
-            Player.Message(p, "%HDisplays all your messages.");
-            Player.Message(p, "%T/Inbox [num]");
-            Player.Message(p, "%HDisplays the message at [num]");
-            Player.Message(p, "%T/Inbox del [num]/all");
-            Player.Message(p, "%HDeletes the message at [num], deletes all messages if \"all\".");
+            p.Message("&T/Inbox");
+            p.Message("&HDisplays all your messages.");
+            p.Message("&T/Inbox [num]");
+            p.Message("&HDisplays the message at [num]");
+            p.Message("&T/Inbox del [num]/all");
+            p.Message("&HDeletes the message at [num], deletes all messages if \"all\"");
+            p.Message("  &HUse &T/Send &Hto reply to a message");
         }
     }
 }

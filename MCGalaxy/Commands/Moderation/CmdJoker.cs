@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2011 MCForge
         
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -19,12 +19,12 @@ using MCGalaxy.Events.PlayerEvents;
 using MCGalaxy.Commands.Chatting;
 
 namespace MCGalaxy.Commands.Moderation {
-    public sealed class CmdJoker : Command {       
+    public sealed class CmdJoker : Command2 {       
         public override string name { get { return "Joker"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             bool stealth = false;
             if (message[0] == '#') {
@@ -35,34 +35,30 @@ namespace MCGalaxy.Commands.Moderation {
 
             Player who = PlayerInfo.FindMatches(p, message);
             if (who == null) return;
-            if (p != null && who.Rank > p.Rank) { 
-                MessageTooHighRank(p, "joker", true); return;
-            }
+            if (!CheckRank(p, data, who, "joker", true)) return;
             if (!MessageCmd.CanSpeak(p, name)) return;
 
             if (!who.joker) {
                 if (stealth) { 
-                    Chat.MessageOps(who.ColoredName + " %Sis now STEALTH jokered."); 
+                    Chat.MessageFromOps(who, "λNICK &Sis now STEALTH jokered."); 
                 } else {
-                    Chat.MessageGlobal(who, who.ColoredName + " %Sis now a &aJ&bo&ck&5e&9r%S.", false);              
+                    Chat.MessageFrom(who, "λNICK &Sis now a &aJ&bo&ck&5e&9r&S.", null, true);
                 }
-                OnPlayerActionEvent.Call(p, PlayerAction.Joker, null, stealth);
             } else {
                 if (stealth) { 
-                    Chat.MessageOps(who.ColoredName + " %Sis now STEALTH unjokered.");
+                    Chat.MessageFromOps(who, "λNICK &Sis now STEALTH unjokered.");
                 } else {
-                    Chat.MessageGlobal(who, who.ColoredName + " %Sis no longer a &aJ&bo&ck&5e&9r%S.", false);
+                    Chat.MessageFrom(who, "λNICK &Sis no longer a &aJ&bo&ck&5e&9r&S.", null, true);
                 }
-                OnPlayerActionEvent.Call(p, PlayerAction.Unjoker, null, stealth);
             }
             who.joker = !who.joker;
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Joker [player]");
-            Player.Message(p, "%HMakes that player become a joker!");
-            Player.Message(p, "%T/Joker #[player]");
-            Player.Message(p, "%HMakes that player silently become a joker!");
+            p.Message("&T/Joker [player]");
+            p.Message("&HMakes that player become a joker!");
+            p.Message("&T/Joker #[player]");
+            p.Message("&HMakes that player silently become a joker!");
         }
     }
 }

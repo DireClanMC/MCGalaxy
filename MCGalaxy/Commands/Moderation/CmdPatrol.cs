@@ -21,49 +21,49 @@ using System;
 using System.Collections.Generic;
 
 namespace MCGalaxy.Commands.Moderation {
-    public sealed class CmdPatrol : Command {
+    public sealed class CmdPatrol : Command2 {
         public override string name { get { return "Patrol"; } }
         public override string type { get { return CommandTypes.Moderation; } }
-        public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool SuperUseable { get { return false; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Guest, " and below are patrolled") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Builder, "are not patrolled") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length > 0) { Help(p); return; }
 
-            List<Player> candidates = GetPatrolCandidates(p);
+            List<Player> candidates = GetPatrolCandidates(p, data);
             if (candidates.Count == 0) {
-                Player.Message(p, "&cNo players to patrol.");
+                p.Message("&WNo players to patrol.");
             } else {
                 Player target = candidates[new Random().Next(candidates.Count)];
                 target.LastPatrol = DateTime.UtcNow;
-                Command.all.FindByName("TP").Use(p, target.name);
-                Player.Message(p, "Now visiting " + target.ColoredName + "%S.");
+                
+                Command.Find("TP").Use(p, target.name, data);
+                p.Message("Now visiting {0}&S.", p.FormatNick(target));
             }
         }
         
-        List<Player> GetPatrolCandidates(Player p) {
+        List<Player> GetPatrolCandidates(Player p, CommandData data) {
             List<Player> candidates = new List<Player>();
-            LevelPermission perm = CommandExtraPerms.MinPerm(name);
-            Player[] online = PlayerInfo.Online.Items;
-            DateTime cutoff = DateTime.UtcNow.AddSeconds(-15);
+            ItemPerms except = CommandExtraPerms.Find(name, 1);
+            Player[] players = PlayerInfo.Online.Items;
+            DateTime cutoff  = DateTime.UtcNow.AddSeconds(-15);
             
-            foreach (Player target in online) {
-                if (target.Rank > perm || target == p || !Entities.CanSee(p, target)) continue;
-                if (target.LastPatrol > cutoff) continue;
+            foreach (Player target in players) {
+                if (except.UsableBy(target.Rank) || !p.CanSee(target, data.Rank)) continue;
+                if (target == p || target.LastPatrol > cutoff) continue;
                 candidates.Add(target);
             }
             return candidates;
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Patrol");
-            LevelPermission perm = CommandExtraPerms.MinPerm(name);
-            Player.Message(p, "%HTeleports you to a random {0} %Hor lower", Group.GetColoredName(perm));
-            Player.Message(p, "%HPlayers patrolled within the last 15 seconds are ignored");
+            p.Message("&T/Patrol");
+            ItemPerms except = CommandExtraPerms.Find(name, 1);
+            p.Message("&HTeleports you to a random player. {0} &Hare not patrolled", except.Describe());
+            p.Message("&HPlayers patrolled within the last 15 seconds are ignored");
         }
     }
 }

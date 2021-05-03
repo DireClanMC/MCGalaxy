@@ -15,46 +15,37 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
 */
+using MCGalaxy.DB;
 using MCGalaxy.Events;
 
 namespace MCGalaxy.Commands.Moderation {    
-    public sealed class CmdWarn : Command {        
+    public sealed class CmdWarn : Command2 {        
         public override string name { get { return "Warn"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             string[] args = message.SplitSpaces(2);
-            Player who = PlayerInfo.FindMatches(p, args[0]);
-            
+
             string reason = args.Length == 1 ? "you know why." : args[1];
+            string target = ModActionCmd.FindName(p, "warn", "Warn", "", args[0], ref reason);
+            if (target == null) return;
+            
             reason = ModActionCmd.ExpandReason(p, reason);
             if (reason == null) return;
-            
-            if (who == null) { WarnOffline(p, args, reason); return; }
-            if (who == p) { Player.Message(p, "you can't warn yourself"); return; }
-            if (p != null && p.Rank <= who.Rank) {
-                MessageTooHighRank(p, "warn", false); return;
-            }           
+
+            Group group = ModActionCmd.CheckTarget(p, data, "warn", target);
+            if (group == null) return;
                         
-            ModAction action = new ModAction(who.name, p, ModActionType.Warned, reason);
-            OnModActionEvent.Call(action);
-        }
-        
-        static void WarnOffline(Player p, string[] args, string reason) {
-            Player.Message(p, "Searching PlayerDB..");
-            string offName = PlayerInfo.FindOfflineNameMatches(p, args[0]);
-            if (offName == null) return;
-      
-            ModAction action = new ModAction(offName, p, ModActionType.Warned, reason);
+            ModAction action = new ModAction(target, p, ModActionType.Warned, reason);
             OnModActionEvent.Call(action);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Warn [player] <reason>");
-            Player.Message(p, "%HWarns a player. Players are kicked after 3 warnings.");
-            Player.Message(p, "%HFor <reason>, @number can be used as a shortcut for that rule.");
+            p.Message("&T/Warn [player] <reason>");
+            p.Message("&HWarns a player. Players are kicked after 3 warnings.");
+            p.Message("&HFor <reason>, @number can be used as a shortcut for that rule.");
         }
     }
 }

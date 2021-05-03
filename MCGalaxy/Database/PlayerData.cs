@@ -23,23 +23,26 @@ namespace MCGalaxy.DB {
     
     /// <summary> Retrieves or sets player stats in the database. </summary>
     public class PlayerData {
-        
-        public const string DBTable = "Players";
+
         public const string ColumnDeaths = "totalDeaths";
         public const string ColumnLogins = "totalLogin";
-        public const string ColumnMoney = "Money";
+        public const string ColumnMoney  = "Money";
         public const string ColumnKicked = "totalKicked";
         
-        public const string ColumnColor = "color";
-        public const string ColumnTitle = "title";
+        public const string ColumnColor  = "color";
+        public const string ColumnTitle  = "title";
         public const string ColumnTColor = "title_color";
         
-        public const string ColumnFirstLogin = "FirstLogin";
-        public const string ColumnLastLogin = "LastLogin";
-        public const string ColumnTimeSpent = "TimeSpent";
+        public const string ColumnName = "Name";
+        public const string ColumnIP   = "IP";
+        public const string ColumnID   = "ID";
         
-        public const string ColumnTotalBlocks = "totalBlocks";
-        public const string ColumnTotalCuboided = "totalCuboided";
+        public const string ColumnFirstLogin = "FirstLogin";
+        public const string ColumnLastLogin  = "LastLogin";
+        public const string ColumnTimeSpent  = "TimeSpent";
+        
+        public const string ColumnBlocks   = "totalBlocks";
+        public const string ColumnDrawn    = "totalCuboided";
         public const string ColumnMessages = "Messages";
         
         public string Name, Color, Title, TitleColor, IP;
@@ -48,86 +51,89 @@ namespace MCGalaxy.DB {
         public long TotalModified, TotalDrawn, TotalPlaced, TotalDeleted;
         public TimeSpan TotalTime;
         
+        static object ReadID(IDataRecord record, object arg) { return record.GetInt32(0); }
         internal static void Create(Player p) {
             p.prefix = "";
-            p.color = p.group.Color;         
+            p.SetColor(p.group.Color);
             p.FirstLogin = DateTime.Now;
             p.TimesVisited = 1;
             
-            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");            
-            Database.Backend.AddRow(DBTable, "Name, IP, FirstLogin, LastLogin, totalLogin, Title, " +
-                                    "totalDeaths, Money, totalBlocks, totalKicked, Messages, TimeSpent",
-                                    p.name, p.ip, now, now, 1, "", 0, 0, 0, 0, 0, (long)p.TotalTime.TotalSeconds);
+            string now = DateTime.Now.ToString(Database.DateFormat);
+            Database.AddRow("Players", "Name, IP, FirstLogin, LastLogin, totalLogin, Title, " +
+                            "totalDeaths, Money, totalBlocks, totalKicked, Messages, TimeSpent",
+                            p.name, p.ip, now, now, 1, "", 0, 0, 0, 0, 0, (long)p.TotalTime.TotalSeconds);
             
-            using (DataTable ids = Database.Backend.GetRows(DBTable,
-                                                            "ID", "WHERE Name = @0", p.name)) {
-                if (ids.Rows.Count > 0) {
-                    string id = ids.Rows[0]["ID"].ToString();
-                    p.DatabaseID = PlayerData.ParseInt(id);
-                } else {
-                    p.DatabaseID = NameConverter.InvalidNameID(p.name);
-                }
+            object id = Database.ReadRows("Players", "ID", null, ReadID, "WHERE Name=@0", p.name);
+            if (id != null) {
+                p.DatabaseID = (int)id;
+            } else {
+                p.DatabaseID = NameConverter.InvalidNameID(p.name);
             }
         }
         
-        internal static void Load(DataTable playerDb, Player p) {
-            PlayerData data = PlayerData.Fill(playerDb.Rows[0]);
-            p.TimesVisited = data.Logins + 1;
-            p.TotalTime = data.TotalTime;
-            p.DatabaseID = data.DatabaseID;
-            p.FirstLogin = data.FirstLogin;
+        /// <summary> Initialises the given player's stats from this instance. </summary>
+        public void ApplyTo(Player p) {
+            p.TimesVisited = Logins + 1;
+            p.TotalTime = TotalTime;
+            p.DatabaseID = DatabaseID;
+            p.FirstLogin = FirstLogin;
             
-            p.title = data.Title;
-            p.titlecolor = data.TitleColor;
-            p.color = data.Color;
-            if (p.color.Length == 0) p.color = p.group.Color;
-                       
-            p.TotalModified = data.TotalModified;
-            p.TotalDrawn = data.TotalDrawn;
-            p.TotalPlaced = data.TotalPlaced;
-            p.TotalDeleted = data.TotalDeleted;
+            p.title = Title;
+            p.titlecolor = TitleColor;
             
-            p.TimesDied = data.Deaths;
-            p.TotalMessagesSent = data.Messages;            
-            p.money = data.Money;
-            p.TimesBeenKicked = data.Kicks;
+            string col = Color;
+            if (col.Length == 0) col = p.group.Color;
+            p.SetColor(col);
+            
+            p.TotalModified = TotalModified;
+            p.TotalDrawn = TotalDrawn;
+            p.TotalPlaced = TotalPlaced;
+            p.TotalDeleted = TotalDeleted;
+            
+            p.TimesDied = Deaths;
+            p.TotalMessagesSent = Messages;
+            p.money = Money;
+            p.TimesBeenKicked = Kicks;
         }
         
-        public static PlayerData Fill(DataRow row) {
+        internal static PlayerData Parse(IDataRecord record) {
             PlayerData data = new PlayerData();
-            data.Name = row["Name"].ToString().Trim();
-            data.IP = row["IP"].ToString().Trim();
-            data.DatabaseID = ParseInt(row["ID"].ToString());
+            data.Name = record.GetText(ColumnName);
+            data.IP   = record.GetText(ColumnIP);
+            data.DatabaseID = record.GetInt(ColumnID);
             
+            // Backwards compatibility with old format
+            string rawTime = record.GetText(ColumnTimeSpent);
             try {
-                long secs = PlayerData.ParseLong(row[ColumnTimeSpent].ToString());
+                long secs = long.Parse(rawTime);
                 data.TotalTime = TimeSpan.FromSeconds(secs);
             } catch {
-                data.TotalTime = row[ColumnTimeSpent].ToString().ParseDBTime();
+                data.TotalTime = rawTime.ParseOldDBTimeSpent();
             }
-            data.FirstLogin = DateTime.Parse(row[ColumnFirstLogin].ToString());
-            data.LastLogin = DateTime.Parse(row[ColumnLastLogin].ToString());
             
-            data.Title = row[ColumnTitle].ToString().Trim();
-            data.Title.Cp437ToUnicodeInPlace();
-            data.TitleColor = ParseColor(row[ColumnTColor]);
-            data.Color = ParseColor(row[ColumnColor]);
+            data.FirstLogin = ParseDateTime(record, ColumnFirstLogin);
+            data.LastLogin  = ParseDateTime(record, ColumnLastLogin);
             
-            data.Money = ParseInt(row[ColumnMoney].ToString());
-            data.Deaths = ParseInt(row[ColumnDeaths].ToString());
-            data.Logins = ParseInt(row[ColumnLogins].ToString());
-            data.Kicks = ParseInt(row[ColumnKicked].ToString());
-            data.Messages = ParseInt(row[ColumnMessages].ToString());
+            data.Title = record.GetText(ColumnTitle);
+            data.Title = data.Title.Cp437ToUnicode();
+            data.TitleColor = ParseColor(record.GetText(ColumnTColor));
+            data.Color = ParseColor(record.GetText(ColumnColor));
             
-            long blocks = ParseLong(row[ColumnTotalBlocks].ToString());
-            long cuboided = ParseLong(row[ColumnTotalCuboided].ToString());
-            data.TotalModified = blocks & LowerBitsMask;
-            data.TotalPlaced = blocks >> LowerBits;
-            data.TotalDrawn = cuboided & LowerBitsMask;
-            data.TotalDeleted = cuboided >> LowerBits;
+            data.Money    = record.GetInt(ColumnMoney);
+            data.Deaths   = record.GetInt(ColumnDeaths);
+            data.Logins   = record.GetInt(ColumnLogins);
+            data.Kicks    = record.GetInt(ColumnKicked);
+            data.Messages = record.GetInt(ColumnMessages);
+            
+            long blocks = record.GetLong(ColumnBlocks);
+            long drawn  = record.GetLong(ColumnDrawn);
+            data.TotalModified = UnpackLo(blocks);
+            data.TotalPlaced   = UnpackHi(blocks);
+            data.TotalDrawn    = UnpackLo(drawn);
+            data.TotalDeleted  = UnpackHi(drawn);
             return data;
         }
-        
+        internal static object Read(IDataRecord record, object arg) { return Parse(record); }
         
         internal static long ParseLong(string value) {
             return (value.Length == 0 || value.CaselessEq("null")) ? 0 : long.Parse(value);
@@ -137,38 +143,45 @@ namespace MCGalaxy.DB {
             return (value.Length == 0 || value.CaselessEq("null")) ? 0 : int.Parse(value);
         }
         
-        static string ParseColor(object value) {
-            string col = value.ToString().Trim();
-            if (col.Length == 0) return col;
+        internal static string ParseColor(string raw) {
+            if (raw.Length == 0) return raw;
             
             // Try parse color name, then color code
-            string parsed = Colors.Parse(col);
-            if (parsed.Length > 0) return parsed;
-            return Colors.Name(col).Length == 0 ? "" : col;
+            string col = Colors.Parse(raw);
+            if (col.Length > 0) return col;
+            return Colors.Name(raw).Length == 0 ? "" : raw;
         }
         
-        
-        internal static long BlocksPacked(long placed, long modified) {
-            return placed << LowerBits | modified;
-        }
-        
-        internal static long CuboidPacked(long deleted, long drawn) {
-            return deleted << LowerBits | drawn;
-        }
-
-        public const int LowerBits = 38;
-        public const long LowerBitsMask = (1L << LowerBits) - 1;
-        
-        
-        public static string FindDBColor(Player p) {
-             using (DataTable colors = Database.Backend.GetRows(DBTable,
-                                                            "Color", "WHERE ID = @0", p.DatabaseID)) {
-                if (colors.Rows.Count > 0) {
-                    string col = ParseColor(colors.Rows[0]["Color"]);
-                    if (col.Length > 0) return col;
+        static DateTime ParseDateTime(IDataRecord record, string name) {
+            int i = record.GetOrdinal(name);
+            // dates are a major pain
+            try {
+                string raw = record.GetStringValue(i);
+                return DateTime.ParseExact(raw, Database.DateFormat, null);
+            } catch {
+                try {
+                    return record.GetDateTime(i);
+                } catch (Exception ex) {
+                    Logger.LogError("Error parsing date", ex);
+                    return DateTime.MinValue;
                 }
-                return "";
             }
         }
+        
+        
+        internal static long UnpackHi(long value) {
+            return (value >> HiBitsShift) & HiBitsMask;
+        }
+        internal static long UnpackLo(long value) {
+            return value & LoBitsMask;
+        }
+        internal static long Pack(long hi, long lo) {
+            return hi << HiBitsShift | lo; 
+        }
+
+        public const int HiBitsShift = 38;
+        public const long LoBitsMask = (1L << HiBitsShift) - 1;
+        // convert negative to positive after shifting
+        public const long HiBitsMask = (1L << 26) - 1;
     }
 }

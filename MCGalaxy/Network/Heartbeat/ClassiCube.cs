@@ -16,17 +16,19 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using Newtonsoft.Json;
+using MCGalaxy.Config;
+using MCGalaxy.Events.ServerEvents;
 
 namespace MCGalaxy.Network {
     
     /// <summary> Heartbeat to ClassiCube.net's web server. </summary>
     public sealed class ClassiCubeBeat : Heartbeat {
         string proxyUrl;
-        public override string URL { get { return ServerConfig.HeartbeatURL; } }
+        public override string URL { get { return Server.Config.HeartbeatURL; } }
         
         public override void Init() {
             try {
@@ -34,8 +36,7 @@ namespace MCGalaxy.Network {
                 IPAddress[] addresses = Dns.GetHostAddresses(hostUrl);
                 EnsureIPv4Url(addresses);
             } catch (Exception ex) {
-                Logger.Log(LogType.Warning, "Error while trying to retrieve DNS information for classicube.net");
-                Logger.LogError(ex);
+                Logger.LogError("Error retrieving DNS information for classicube.net", ex);
             }
         }
         
@@ -58,61 +59,72 @@ namespace MCGalaxy.Network {
         }
 
         public override string GetHeartbeatData()  {
-            string name = ServerConfig.Name;
-            Server.zombie.OnHeartbeat(ref name);
-            name = Colors.Strip(name);
+            string name = Server.Config.Name;
+            OnSendingHeartbeatEvent.Call(this, ref name);
+            name = Colors.StripUsed(name);
             
-            return 
-                "&port="     + ServerConfig.Port +
-                "&max="      + ServerConfig.MaxPlayers +
+            return
+                "&port="     + Server.Config.Port +
+                "&max="      + Server.Config.MaxPlayers +
                 "&name="     + Uri.EscapeDataString(name) +
-                "&public="   + ServerConfig.Public +
+                "&public="   + Server.Config.Public +
                 "&version=7" +
                 "&salt="     + Server.salt +
-                "&users="    + PlayerInfo.NonHiddenCount() +
-                "&software=" + Uri.EscapeDataString(Server.SoftwareNameVersioned);
+                "&users="    + PlayerInfo.NonHiddenUniqueIPCount() +
+                "&software=" + Uri.EscapeDataString(Server.SoftwareNameVersioned) +
+                "&web="      + Server.Config.WebClient;
         }
         
         public override void OnRequest(HttpWebRequest request) {
             if (proxyUrl == null) return;
             request.Proxy = new WebProxy(proxyUrl);
-        }   
+        }
         
         public override void OnResponse(string response) {
             if (String.IsNullOrEmpty(response)) return;
             
             // in form of http://www.classicube.net/server/play/<hash>/
-            if (response.EndsWith("/")) 
+            if (response.EndsWith("/"))
                 response = response.Substring(0, response.Length - 1);
             string hash = response.Substring(response.LastIndexOf('/') + 1);
 
-            // Run this code if we don't already have a hash or if the hash has changed
-            if (String.IsNullOrEmpty(Server.Hash) || hash != Server.Hash) {
-                Server.Hash = hash;
-                Server.URL = response;
+            // only need to do this when contents have changed
+            if (hash == Server.Hash) return;
+            Server.Hash = hash;
+            Server.URL = response;
+            
+            if (!response.Contains("\"errors\":")) {
+                Server.UpdateUrl(Server.URL);
+                File.WriteAllText("text/externalurl.txt", Server.URL);
+                Logger.Log(LogType.SystemActivity, "ClassiCube URL found: " + Server.URL);
+            } else {
+                string error = GetError(response);
+                if (error == null) error = "Error while finding URL. Is the port open?";
                 
-                if (!response.Contains("\"errors\": [")) {
-                    Server.UpdateUrl(Server.URL);
-                    File.WriteAllText("text/externalurl.txt", Server.URL);
-                    Logger.Log(LogType.SystemActivity, "ClassiCube URL found: " + Server.URL);
-                } else {
-                    Response resp = JsonConvert.DeserializeObject<Response>(Server.URL);
-                    if (resp.errors != null && resp.errors.Length > 0 && resp.errors[0].Length > 0)
-                        Server.URL = resp.errors[0][0];
-                    else
-                        Server.URL = "Error while finding URL. Is the port open?";
-                    Server.UpdateUrl(Server.URL);
-                    Logger.Log(LogType.Warning, response);
-                }
+                Server.URL = error;
+                Server.UpdateUrl(Server.URL);
+                Logger.Log(LogType.Warning, response);
             }
-        }        
-        
-        #pragma warning disable 0649
-        class Response {
-            public string[][] errors;
-            public string response;
-            public string status;
         }
-        #pragma warning restore 0649
+        
+        static string GetError(string json) {
+            JsonReader reader = new JsonReader(json);
+            string error = null;
+            
+            // silly design, but form of json is: "errors": [ ["Error1"], ["Error2"] ]
+            reader.OnMember = (obj, key, value) => {
+                if (key != "errors") return;                
+                JsonArray errors = value as JsonArray;
+                if (errors == null) return;
+                
+                foreach (object raw in errors) {
+                    JsonArray err = raw as JsonArray;
+                    if (err != null && err.Count > 0) error = (string)err[0];
+                }                
+            };
+            
+            reader.Parse();
+            return error;
+        }
     }
 }

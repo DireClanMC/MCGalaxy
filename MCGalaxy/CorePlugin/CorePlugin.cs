@@ -20,29 +20,30 @@ using MCGalaxy.Events;
 using MCGalaxy.Events.EconomyEvents;
 using MCGalaxy.Events.GroupEvents;
 using MCGalaxy.Events.PlayerEvents;
+using MCGalaxy.Events.ServerEvents;
 using MCGalaxy.Tasks;
 
 namespace MCGalaxy.Core {
 
-    public sealed class CorePlugin : Plugin_Simple {
+    public sealed class CorePlugin : Plugin {
         public override string creator { get { return Server.SoftwareName + " team"; } }
-        public override string MCGalaxy_Version { get { return Server.VersionString; } }
+        public override string MCGalaxy_Version { get { return Server.Version; } }
         public override string name { get { return "CorePlugin"; } }
         SchedulerTask clearTask;
 
         public override void Load(bool startup) {
             OnPlayerConnectEvent.Register(ConnectHandler.HandleConnect, Priority.Critical);
             OnPlayerCommandEvent.Register(ChatHandler.HandleCommand, Priority.Critical);
-            OnPlayerConnectingEvent.Register(ConnectingHandler.HandleConnecting, Priority.Critical);
+            OnChatEvent.Register(ChatHandler.HandleOnChat, Priority.Critical);
+            OnPlayerStartConnectingEvent.Register(ConnectingHandler.HandleConnecting, Priority.Critical);
             
-            OnJoinedLevelEvent.Register(MiscHandlers.HandleOnJoinedLevel, Priority.Critical);
+            OnSentMapEvent.Register(MiscHandlers.HandleSentMap, Priority.Critical);
             OnPlayerMoveEvent.Register(MiscHandlers.HandlePlayerMove, Priority.Critical);
             OnPlayerClickEvent.Register(MiscHandlers.HandlePlayerClick, Priority.Critical);
+            OnChangedZoneEvent.Register(MiscHandlers.HandleChangedZone, Priority.Critical);
             
             OnEcoTransactionEvent.Register(EcoHandlers.HandleEcoTransaction, Priority.Critical);
             OnModActionEvent.Register(ModActionHandler.HandleModAction, Priority.Critical);
-            OnGroupLoadEvent.Register(MiscHandlers.HandleGroupLoad, Priority.Critical);
-            
             clearTask = Server.Background.QueueRepeat(IPThrottler.CleanupTask, null, 
                                                       TimeSpan.FromMinutes(10));
         }
@@ -50,16 +51,16 @@ namespace MCGalaxy.Core {
         public override void Unload(bool shutdown) {
             OnPlayerConnectEvent.Unregister(ConnectHandler.HandleConnect);
             OnPlayerCommandEvent.Unregister(ChatHandler.HandleCommand);
-            OnPlayerConnectingEvent.Unregister(ConnectingHandler.HandleConnecting);
+            OnChatEvent.Unregister(ChatHandler.HandleOnChat);
+            OnPlayerStartConnectingEvent.Unregister(ConnectingHandler.HandleConnecting);
             
-            OnJoinedLevelEvent.Unregister(MiscHandlers.HandleOnJoinedLevel);
+            OnSentMapEvent.Unregister(MiscHandlers.HandleSentMap);
             OnPlayerMoveEvent.Unregister(MiscHandlers.HandlePlayerMove);
             OnPlayerClickEvent.Unregister(MiscHandlers.HandlePlayerClick);
+            OnChangedZoneEvent.Unregister(MiscHandlers.HandleChangedZone);
             
             OnEcoTransactionEvent.Unregister(EcoHandlers.HandleEcoTransaction);
-            OnModActionEvent.Unregister(ModActionHandler.HandleModAction);
-            OnGroupLoadEvent.Unregister(MiscHandlers.HandleGroupLoad);
-            
+            OnModActionEvent.Unregister(ModActionHandler.HandleModAction);            
             Server.Background.Cancel(clearTask);
         }
     }
