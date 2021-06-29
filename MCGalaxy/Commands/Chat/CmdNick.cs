@@ -61,12 +61,12 @@ namespace MCGalaxy.Commands.Chatting {
             Player who = PlayerInfo.FindExact(target);
             
             if (nick.Length == 0) {
-                MessageFrom(target, who, "had their custom nick reset");
+                MessageAction(p, target, who, "λACTOR &Sremoved λTARGET nick");
                 nick = target.RemoveLastPlus();
             } else {
                 // TODO: select color from database?
                 string color = who != null ? who.color : Group.GroupIn(target).Color;
-                MessageFrom(target, who, "had their nick set to " + color + nick);
+                MessageAction(p, target, who, "λACTOR &Schanged λTARGET nick to " + color + nick);
             }
             
             if (who != null) who.DisplayName = nick;

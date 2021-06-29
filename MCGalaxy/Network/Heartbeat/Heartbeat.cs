@@ -87,28 +87,19 @@ namespace MCGalaxy.Network {
                     req.ContentType = "application/x-www-form-urlencoded";
                     req.CachePolicy = new RequestCachePolicy(RequestCacheLevel.NoCacheNoStore);
                     req.Timeout = 10000;
-                    beat.OnRequest(req);
-
-                    req.ContentLength = data.Length;
-                    using (Stream w = req.GetRequestStream()) {
-                        w.Write(data, 0, data.Length);
-                    }
-
-                    using (StreamReader r = new StreamReader(req.GetResponse().GetResponseStream())) {
-                        string response = r.ReadToEnd().Trim();
-                        beat.OnResponse(response);
-                    }
-                    return;
-                } catch (Exception ex) {
-                    // Make sure to dispose response to prevent resource leak on mono
-                    if (ex is WebException) {
-                        WebException webEx = (WebException)ex;
-                        if (webEx.Response != null) webEx.Response.Close();                        
-                    }
                     
+                    beat.OnRequest(req);
+                    HttpUtil.SetRequestData(req, data);
+                    WebResponse res = req.GetResponse();
+                    
+                    string response = HttpUtil.GetResponseText(res);
+                    beat.OnResponse(response);
+                    return;
+            	} catch (Exception ex) {
+                    HttpUtil.DisposeErrorResponse(ex);
                     lastEx = ex;
                     continue;
-                }            
+                }
             }
             
             string hostUrl = new Uri(beat.URL).Host;

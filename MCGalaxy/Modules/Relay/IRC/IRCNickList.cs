@@ -25,10 +25,10 @@ using MCGalaxy.Modules.Relay;
 using MCGalaxy.Network;
 using Sharkbite.Irc;
 
-namespace MCGalaxy {
+namespace MCGalaxy.Modules.Relay.IRC {
     
     /// <summary> Manages a list of IRC nicks and asssociated permissions </summary>
-    public sealed class IRCNickList {
+    sealed class IRCNickList {
         Dictionary<string, List<string>> userMap = new Dictionary<string, List<string>>();     
         public IRCBot bot;
         
@@ -53,7 +53,7 @@ namespace MCGalaxy {
                     chans.Value[index] = prefix + newNick;
                 } else {
                     // should never happen, but just in case
-                    bot.connection.Sender.Names(chans.Key);
+                    bot.connection.SendNames(chans.Key);
                 }
             }
         }

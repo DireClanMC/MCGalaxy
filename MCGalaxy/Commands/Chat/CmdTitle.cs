@@ -35,13 +35,13 @@ namespace MCGalaxy.Commands.Chatting {
         }
         
         protected override void SetPlayerData(Player p, string target, string title) {
-            if (title.Length >= 20) { p.Message("Title must be under 20 letters."); return; }
+            if (title.Length >= 20) { p.Message("Title must be under 20 letters."); return; } 
             Player who = PlayerInfo.FindExact(target);
             
             if (title.Length == 0) {
-                MessageFrom(target, who, "had their title removed");
+                MessageAction(p, target, who, "λACTOR &Sremoved λTARGET title");
             } else {
-                MessageFrom(target, who, "had their title changed to &b[" + title + "&b]");
+            	MessageAction(p, target, who, "λACTOR &Schanged λTARGET title to &b[" + title + "&b]");
             }
             
             if (who != null) who.title = title;

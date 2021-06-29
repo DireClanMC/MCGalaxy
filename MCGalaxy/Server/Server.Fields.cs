@@ -31,8 +31,6 @@ namespace MCGalaxy {
         public static event MessageEventHandler OnURLChange;
         public static event VoidHandler OnSettingsUpdate;
         public static ServerConfig Config = new ServerConfig();
-        
-        public static IRCBot IRC;
         public static DateTime StartTime;
         
         public static PlayerExtList AutoloadMaps;
@@ -40,7 +38,7 @@ namespace MCGalaxy {
         public static PlayerMetaList Notes = new PlayerMetaList("text/notes.txt");
         
         /// <summary> *** DO NOT USE THIS! *** Use VersionString, as this field is a constant and is inlined if used. </summary>
-        public const string InternalVersion = "1.9.3.0";
+        public const string InternalVersion = "1.9.3.2";
         public static string Version { get { return InternalVersion; } }
         
         public static string SoftwareName = "MCGalaxy";
@@ -58,7 +56,7 @@ namespace MCGalaxy {
         //Other
         public static bool SetupFinished, CLIMode;
         
-        public static PlayerList bannedIP, whiteList, ircControllers, invalidIds;
+        public static PlayerList bannedIP, whiteList, invalidIds;
         public static PlayerList ignored, hidden, agreed, vip, noEmotes, lockdown;
         public static PlayerExtList models, skins, reach, rotations, modelScales;
         public static PlayerExtList frozen, muted, tempBans, tempRanks;
@@ -72,10 +70,6 @@ namespace MCGalaxy {
 
         public static PlayerList reviewlist = new PlayerList();
         static string[] announcements = new string[0];
-        [Obsolete("Use &S or Server.Config.DefaultColor")]
-        public static string DefaultColor;
-        [Obsolete("Use Server.Config.Currency")]
-        public static string moneys;
         public static string RestartPath;
 
         // Extra storage for custom commands

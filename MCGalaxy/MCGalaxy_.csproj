@@ -287,7 +287,6 @@
     <Compile Include="Commands\Moderation\CmdFreeze.cs" />
     <Compile Include="Commands\Moderation\CmdHide.cs" />
     <Compile Include="Commands\Moderation\CmdHighlight.cs" />
-    <Compile Include="Commands\Moderation\CmdIrcControllers.cs" />
     <Compile Include="Commands\Moderation\CmdJoker.cs" />
     <Compile Include="Commands\Moderation\CmdKick.cs" />
     <Compile Include="Commands\Moderation\CmdLocation.cs" />
@@ -517,6 +516,9 @@
     <Compile Include="Games\ZombieSurvival\ZSGame.Plugin.cs" />
     <Compile Include="Games\ZombieSurvival\ZSConfig.cs" />
     <Compile Include="Generator\AdvNoiseGen.cs" />
+    <Compile Include="Generator\Classic\ClassicGenerator.cs" />
+    <Compile Include="Generator\Classic\ClassicGenerator.Utils.cs" />
+    <Compile Include="Generator\Classic\Noise.cs" />
     <Compile Include="Generator\fCraft\MapGen.cs" />
     <Compile Include="Generator\fCraft\MapGenArgs.cs" />
     <Compile Include="Generator\fCraft\Noise.cs" />
@@ -582,15 +584,16 @@
     <Compile Include="Blocks\Physics\TntPhysics.cs" />
     <Compile Include="Blocks\Physics\ZombiePhysics.cs" />
     <Compile Include="Levels\Zone.cs" />
-    <Compile Include="Modules\Relay\Discord\CmdDiscordBot.cs" />
+    <Compile Include="Modules\Relay\BotControllersCmd.cs" />
     <Compile Include="Modules\Relay\Discord\DiscordApiClient.cs" />
     <Compile Include="Modules\Relay\Discord\DiscordBot.cs" />
     <Compile Include="Modules\Relay\Discord\DiscordPlugin.cs" />
     <Compile Include="Modules\Relay\Discord\DiscordWebsocket.cs" />
-    <Compile Include="Modules\Relay\IRC\CmdIRCBot.cs" />
     <Compile Include="Modules\Relay\IRC\IRCNickList.cs" />
+    <Compile Include="Modules\Relay\IRC\IRCPlugin.cs" />
     <Compile Include="Modules\Relay\RelayBot.cs" />
     <Compile Include="Modules\Relay\RelayBotCmd.cs" />
+    <Compile Include="Modules\Relay\RelayBotSender.cs" />
     <Compile Include="Network\BaseWebSocket.cs" />
     <Compile Include="Network\Heartbeat\ClassiCube.cs" />
     <Compile Include="Network\Heartbeat\Heartbeat.cs" />
@@ -601,6 +604,7 @@
     <Compile Include="Network\Sockets.cs" />
     <Compile Include="Network\Utils\BufferedBlockSender.cs" />
     <Compile Include="Network\Utils\HttpUtil.cs" />
+    <Compile Include="Network\Utils\IPUtil.cs" />
     <Compile Include="Network\Utils\LevelChunkStream.cs" />
     <Compile Include="Network\Utils\NetUtils.cs" />
     <Compile Include="Network\Utils\PingList.cs" />
@@ -628,6 +632,7 @@
     <Compile Include="Games\CTF\CtfGame.cs" />
     <Compile Include="Levels\BlockQueue.cs" />
     <Compile Include="Levels\Level.cs" />
+    <Compile Include="Server\Authenticator.cs" />
     <Compile Include="Server\FileLogger.cs" />
     <Compile Include="Server\Logger.cs" />
     <Compile Include="Player\Player.cs" />
@@ -668,13 +673,10 @@
     <Compile Include="util\UIHelpers.cs" />
     <Compile Include="util\Utils.cs" />
     <Compile Include="sharkbite.thresher\Connection.cs" />
-    <Compile Include="sharkbite.thresher\ConnectionArgs.cs" />
-    <Compile Include="sharkbite.thresher\Delegates.cs" />
     <Compile Include="sharkbite.thresher\Listener.cs" />
     <Compile Include="sharkbite.thresher\NameGenerator.cs" />
     <Compile Include="sharkbite.thresher\ReplyCode.cs" />
     <Compile Include="sharkbite.thresher\Rfc2812Util.cs" />
-    <Compile Include="sharkbite.thresher\Sender.cs" />
     <Compile Include="sharkbite.thresher\UserInfo.cs" />
     <Compile Include="util\ExtrasCollection.cs" />
     <Compile Include="properties\AssemblyInfo.cs" />
@@ -724,6 +726,7 @@
     <Folder Include="Games\Weapons" />
     <Folder Include="Games\RoundsGame" />
     <Folder Include="Generator\LibNoise" />
+    <Folder Include="Generator\Classic" />
     <Folder Include="Generator\Realistic" />
     <Folder Include="Modules\Relay\Discord" />
     <Folder Include="Modules\Relay" />

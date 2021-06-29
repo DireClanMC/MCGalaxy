@@ -48,6 +48,8 @@ namespace MCGalaxy {
             Level.LoadMetadata(mainLevel);
             LevelInfo.Add(mainLevel);
         }
+
+        static void LoadAllPlugins(SchedulerTask task) { Plugin.LoadAll(); }
         
         static void InitPlayerLists(SchedulerTask task) {
             try {
@@ -65,8 +67,7 @@ namespace MCGalaxy {
             invalidIds = PlayerList.Load("extra/invalidids.txt");
             Player.Console.DatabaseID = NameConverter.InvalidNameID("(console)");
             
-            bannedIP       = PlayerList.Load("ranks/banned-ip.txt");
-            ircControllers = PlayerList.Load("ranks/IRC_Controllers.txt");
+            bannedIP = PlayerList.Load("ranks/banned-ip.txt");
             hidden   = PlayerList.Load("ranks/hidden.txt");
             vip      = PlayerList.Load("text/vip.txt");
             noEmotes = PlayerList.Load("text/emotelist.txt");
@@ -122,9 +123,6 @@ namespace MCGalaxy {
         }
         
         static void InitRest(SchedulerTask task) {
-            IRC = new IRCBot();
-            if (Server.Config.UseIRC) IRC.Connect();
-             
             CountdownGame.Instance.AutoStart();
             ZSGame.Instance.AutoStart();
             LSGame.Instance.AutoStart();

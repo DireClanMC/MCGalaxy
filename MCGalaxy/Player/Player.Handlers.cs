@@ -61,7 +61,7 @@ namespace MCGalaxy {
             bool deletingBlock = !painting && !placing;
 
             if (Unverified) {
-                Message("&WYou must first verify with &T/Pass [Password]");
+                Authenticator.Current.RequiresVerification(this, "modify blocks");
                 RevertBlock(x, y, z); return;
             }
 
@@ -205,7 +205,9 @@ namespace MCGalaxy {
                 ClientHeldBlock = held;
                 
                 if ((action == 0 || held == Block.Air) && !level.Config.Deletable) {
-                    Message("Deleting blocks is disabled in this level.");
+                    // otherwise if you're holding air and try to place a block, this message would show
+                    if (!level.IsAirAt(x, y, z)) Message("Deleting blocks is disabled in this level.");
+                    
                     RevertBlock(x, y, z); return;
                 } else if (action == 1 && !level.Config.Buildable) {
                     Message("Placing blocks is disabled in this level.");
@@ -450,8 +452,8 @@ namespace MCGalaxy {
                     CheckVote(text, this, "n", "no", ref Server.NoVotes)) return;
             }
 
-            if (LSGame.Instance.HandlesChatMessage(this, text)) return;
-            if (ZSGame.Instance.HandlesChatMessage(this, text)) return;
+            IGame game = IGame.GameOn(level);
+            if (game != null && game.HandlesChatMessage(this, text)) return;
             
             // Put this after vote collection so that people can vote even when chat is moderated
             if (!CheckCanSpeak("speak")) return;
@@ -611,7 +613,8 @@ namespace MCGalaxy {
                 Message("You cannot use any commands while jailed."); return false;
             }
             if (Unverified && !(cmd == "pass" || cmd == "setpass")) {
-                Message("&WYou must verify first with &T/Pass [Password]"); return false;
+                Authenticator.Current.RequiresVerification(this, "use /" + cmd);
+                return false;
             }
             
             TimeSpan delta = cmdUnblocked - DateTime.UtcNow;
@@ -646,7 +649,7 @@ namespace MCGalaxy {
                     command = Command.Find("Mode");
                 } else {
                     Logger.Log(LogType.CommandUsage, "{0} tried to use unknown command: /{1} {2}", name, cmdName, cmdArgs);
-                    Message("Unknown command \"" + cmdName + "\"."); return null;
+                    Message("Unknown command \"{0}\".", cmdName); return null;
                 }
             }
 
@@ -698,6 +701,9 @@ namespace MCGalaxy {
         bool UseCommands(List<Command> commands, List<string> messages, CommandData data) {
             for (int i = 0; i < messages.Count; i++) {
                 if (!UseCommand(commands[i], messages[i], data)) return false;
+                
+                // No point running commands after disconnected
+                if (leftServer) return false;
             }
             return true;
         }

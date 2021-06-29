@@ -19,6 +19,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 using MCGalaxy.Events.LevelEvents;
@@ -34,12 +35,39 @@ namespace MCGalaxy.Gui {
         delegate void VoidDelegate();
         bool mapgen, loaded;
 
-        public NotifyIcon notifyIcon = new NotifyIcon();
+        NotifyIcon notifyIcon = new NotifyIcon();
         Player curPlayer;
 
         public Window() {
             logCallback = LogMessage;
             InitializeComponent();
+        }
+        
+        // warn user if they're using the GUI with a DLL for different server version
+        static void CheckVersions() {
+            string gui_version = Server.InternalVersion;
+            string dll_version = Server.Version;
+            if (gui_version.CaselessEq(dll_version)) return;
+            
+            const string fmt = 
+@"Currently you are using:
+  {2} for {0} {1}
+  {4} for {0} {3}
+
+Trying to mix two versions is unsupported - you may experience issues";
+            string msg = string.Format(fmt, Server.SoftwareName, 
+                                       gui_version, AssemblyFile(typeof(Window), "MCGalaxy.exe"),
+                                       dll_version, AssemblyFile(typeof(Server), "MCGalaxy_.dll"));
+            RunAsync(() => Popup.Warning(msg));
+        }
+        
+        static string AssemblyFile(Type type, string defPath) {
+            try {
+                string path = type.Assembly.CodeBase;
+                return Path.GetFileName(path);
+            } catch {
+                return defPath;
+            }
         }
 
         void Window_Load(object sender, EventArgs e) {
@@ -53,6 +81,7 @@ namespace MCGalaxy.Gui {
             Show();
             BringToFront();
             WindowState = FormWindowState.Normal;
+            CheckVersions();
 
             InitServer();
             foreach (MapGen gen in MapGen.Generators) {
@@ -69,7 +98,7 @@ namespace MCGalaxy.Gui {
         
         void LoadIcon() {
             // Normally this code would be in InitializeComponent method in Window.Designer.cs,
-        	//  however that doesn't work properly with some WINE versions (you get WINE icon instead)
+            //  however that doesn't work properly with some WINE versions (you get WINE icon instead)
             try {
                 ComponentResourceManager resources = new ComponentResourceManager(typeof(Window));
                 Icon = (Icon)(resources.GetObject("$this.Icon"));
@@ -122,7 +151,8 @@ namespace MCGalaxy.Gui {
             
             switch (type) {
                 case LogType.Error:
-                    main_txtLog.AppendLog("!!!Error! See " + FileLogger.ErrorLogPath + " for more information." + newline);
+                    main_txtLog.AppendLog("&c!!!Error" + ExtractErrorMessage(message) 
+                                          + " - See Logs tab for more details" + newline);
                     message = FormatError(message);
                     logs_txtError.AppendText(message + newline);
                     break;
@@ -144,17 +174,39 @@ namespace MCGalaxy.Gui {
             string date = "----" + DateTime.Now + "----";
             return date + Environment.NewLine + message + Environment.NewLine + "-------------------------";
         }
+        
+        static string msgPrefix = Environment.NewLine + "Message: ";
+        static string ExtractErrorMessage(string raw) {
+            // Error messages are usually structured like so:
+            //   Type: whatever
+            //   Message: whatever
+            //   Something: whatever
+            // this code extracts the Message line from the raw message
+            int beg = raw.IndexOf(msgPrefix);
+            if (beg == -1) return "";
+            
+            beg += msgPrefix.Length;
+            int end = raw.IndexOf(Environment.NewLine, beg);
+            if (end == -1) return "";
+            
+            return " (" + raw.Substring(beg, end - beg) + ")";
+        }
+        
 
         static volatile bool msgOpen = false;
         static void LogNewerVersionDetected(object sender, EventArgs e) {
             if (msgOpen) return;
             // don't want message box blocking background scheduler thread
-            Thread thread = new Thread(ShowUpdateMessageAsync);
-            thread.Name = "MCGalaxy_UpdateMsgBox";
+            RunAsync(ShowUpdateMessageBox);
+        }
+        
+        static void RunAsync(ThreadStart func) {
+            Thread thread = new Thread(func);
+            thread.Name = "MCGalaxy_MsgBox";
             thread.Start();
         }
         
-        static void ShowUpdateMessageAsync() {
+        static void ShowUpdateMessageBox() {
             msgOpen = true;
             if (Popup.YesNo("New version found. Would you like to update?", "Update?")) {
                 Updater.PerformUpdate();
