@@ -16,91 +16,45 @@
     permissions and limitations under the Licenses.
 */
 using MCGalaxy.Blocks;
-using MCGalaxy.Network;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Moderation {
-    public sealed class CmdBlockSet : Command {
+    public sealed class CmdBlockSet : ItemPermsCmd {
         public override string name { get { return "BlockSet"; } }
-        public override string type { get { return CommandTypes.Moderation; } }
-        public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         
-        public override void Use(Player p, string message) {
-            string[] args = message.SplitSpaces();
-            if (args.Length == 1) { Help(p); return; }
+        public override void Use(Player p, string message, CommandData data) {
+            string[] args = message.SplitSpaces(2);
+            if (args.Length < 2) { Help(p); return; }
             
             BlockID block;
             if (!CommandParser.GetBlock(p, args[0], out block)) return;
             if (!CommandParser.IsBlockAllowed(p, "change permissions of", block)) return;
 
-            if (args.Length == 2 && args[1][0] == '+') {
-                Group grp = GetGroup(p, args[1].Substring(1));
-                if (grp == null) return;
-                BlockPerms perms = BlockPerms.List[block];
-
-                if (perms.Disallowed.Contains(grp.Permission)) {
-                    perms.Disallowed.Remove(grp.Permission);
-                } else if (!perms.Allowed.Contains(grp.Permission)) {
-                    perms.Allowed.Add(grp.Permission);
-                }
-                
-                UpdatePermissions(block, p, " can now be used by " + grp.ColoredName);
-            } else if (args.Length == 2 && args[1][0] == '-') {
-                Group grp = GetGroup(p, args[1].Substring(1));
-                if (grp == null) return;
-                BlockPerms perms = BlockPerms.List[block];
-                
-                if (p != null && p.Rank == grp.Permission) {
-                    Player.Message(p, "You cannot disallow your own rank from using a block."); return;
-                }
-                
-                if (perms.Allowed.Contains(grp.Permission)) {
-                    perms.Allowed.Remove(grp.Permission);
-                } else if (!perms.Disallowed.Contains(grp.Permission)) {
-                    perms.Disallowed.Add(grp.Permission);
-                }
-                
-                UpdatePermissions(block, p, " is no longer usable by " + grp.ColoredName);
-            } else if (args.Length == 2) {
-                Group grp = GetGroup(p, args[1]);
-                if (grp == null) return;
-                BlockPerms perms = BlockPerms.List[block];
-                
-                perms.MinRank = grp.Permission;
-                UpdatePermissions(block, p, "'s permission was set to " + grp.ColoredName);
-            }
+            BlockPerms perms = BlockPerms.Find(block);
+            SetPerms(p, args, data, perms, "block");
         }
         
-        static Group GetGroup(Player p, string grpName) {
-            Group grp = Matcher.FindRanks(p, grpName);
-            if (grp == null) return null;
-            
-            if (p != null && grp.Permission > p.Rank) {
-                Player.Message(p, "Cannot set permissions to a rank higher than yours."); return null;
-            }
-            return grp;
-        }
-        
-        static void UpdatePermissions(BlockID block, Player p, string message) {
+        protected override void UpdatePerms(ItemPerms perms, Player p, string msg) {
             BlockPerms.Save();
-            BlockPerms.Load();
+            BlockPerms.ApplyChanges();
+            
+            BlockID block = ((BlockPerms)perms).ID;
             if (!Block.IsPhysicsType(block)) {
                 BlockPerms.ResendAllBlockPermissions();
             }
             
             string name = Block.GetName(p, block);
-            Chat.MessageGlobal("&d{0}%S{1}", name, message);
-            if (Player.IsSuper(p)) Player.Message(p, name + message);
+            Announce(p, name + msg);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/BlockSet [block] [rank]");
-            Player.Message(p, "%HSets lowest rank that can modify/use [block] to [rank]");
-            Player.Message(p, "%T/BlockSet [block] +[rank]");
-            Player.Message(p, "%HAllows a specific rank to modify/use [block]");
-            Player.Message(p, "%T/BlockSet [block] -[rank]");
-            Player.Message(p, "%HPrevents a specific rank from modifying/using [block]");
-            Player.Message(p, "%HTo see available ranks, type %T/ViewRanks");
+            p.Message("&T/BlockSet [block] [rank]");
+            p.Message("&HSets lowest rank that can modify/use [block] to [rank]");
+            p.Message("&T/BlockSet [block] +[rank]");
+            p.Message("&HAllows a specific rank to modify/use [block]");
+            p.Message("&T/BlockSet [block] -[rank]");
+            p.Message("&HPrevents a specific rank from modifying/using [block]");
+            p.Message("&HTo see available ranks, type &T/ViewRanks");
         }
     }
 }

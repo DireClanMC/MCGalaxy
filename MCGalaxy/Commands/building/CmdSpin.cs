@@ -19,36 +19,35 @@ using System.Collections.Generic;
 using MCGalaxy.Drawing;
 
 namespace MCGalaxy.Commands.Building {
-    public sealed class CmdSpin : Command {
+    public sealed class CmdSpin : Command2 {
         public override string name { get { return "Spin"; } }
         public override string type { get { return CommandTypes.Building; } }
-        public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool SuperUseable { get { return false; } }
         public override CommandAlias[] Aliases {
             get { return new [] { new CommandAlias("Mirror", "mirror"), new CommandAlias("Rotate") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) message = "y";
-            if (p.CurrentCopySlot >= p.CopySlots.Count || p.CopySlots[p.CurrentCopySlot] == null) { 
-                Player.Message(p, "You haven't copied anything yet"); return; 
+            if (p.CurrentCopy == null) { 
+                p.Message("You haven't copied anything yet"); return; 
             }
             
-            CopyState cState = p.CopySlots[p.CurrentCopySlot];
+            CopyState cState = p.CurrentCopy;
             string opt = message.ToLower();
             BlockDefinition[] defs = p.level.CustomBlockDefs;
             
             // Mirroring
             if (opt == "mirrorx" || opt == "mirror x") {
                 Flip.MirrorX(cState, defs);
-                Player.Message(p, "Flipped copy across the X (east/west) axis.");
+                p.Message("Flipped copy across the X (east/west) axis.");
             } else if (opt == "mirrory" || opt == "mirror y" || opt == "u") {
                 Flip.MirrorY(cState, defs);
-                Player.Message(p, "Flipped copy across the Y (vertical) axis.");
+                p.Message("Flipped copy across the Y (vertical) axis.");
             } else if (opt == "mirrorz" || opt == "mirror z" || opt == "m") {
                 Flip.MirrorZ(cState, defs);
-                Player.Message(p, "Flipped copy across the Z (north/south) axis.");
+                p.Message("Flipped copy across the Z (north/south) axis.");
             } else {
                 string[] args = opt.SplitSpaces();
                 char axis = 'Y';
@@ -67,9 +66,9 @@ namespace MCGalaxy.Commands.Building {
                 }
 
                 newState.CopySource = cState.CopySource;
-                newState.CopyTime = cState.CopyTime;
-                p.SetCurrentCopy(newState);
-                Player.Message(p, "Rotated copy {0} degrees around the {1} axis", angle, axis);
+                newState.CopyTime   = cState.CopyTime;
+                p.CurrentCopy = newState;
+                p.Message("Rotated copy {0} degrees around the {1} axis", angle, axis);
             }            
         }
         
@@ -88,10 +87,10 @@ namespace MCGalaxy.Commands.Building {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Spin mirrorx/mirrory/mirrorz");
-            Player.Message(p, "%HFlips/Mirrors the copied object around that axis.");
-            Player.Message(p, "%T/Spin X/Y/Z 90/180/270");
-            Player.Message(p, "%HRotates the copied object around that axis by the given angle. " +
+            p.Message("&T/Spin mirrorx/mirrory/mirrorz");
+            p.Message("&HFlips/Mirrors the copied object around that axis.");
+            p.Message("&T/Spin X/Y/Z 90/180/270");
+            p.Message("&HRotates the copied object around that axis by the given angle. " +
                            "If no angle is given, 90 degrees is used.");
         }
     }

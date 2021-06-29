@@ -21,14 +21,11 @@ using System.IO;
 
 namespace MCGalaxy.Commands {
     
-    /// <summary> Describes an alias so that when the user types /trigger,
-    /// it is treated as /target &lt;args given by user&gt; </summary>
-    /// <remarks>Note \"target\" can be in the form of either "cmdname" or "cmdname args".</remarks>
     public class Alias {
         
         public static List<Alias> coreAliases = new List<Alias>();
         public static List<Alias> aliases = new List<Alias>();
-        public string Trigger, Target, Prefix, Suffix;
+        public string Trigger, Target, Format;
 
         public Alias(string trigger, string target) {
             Trigger = trigger;
@@ -39,16 +36,15 @@ namespace MCGalaxy.Commands {
                 Target = target;
             } else {
                 Target = target.Substring(0, space);
-                Prefix = target.Substring(space + 1);
+                Format = target.Substring(space + 1);
             }
         }
         
-        public Alias(string trigger, string target, string prefix, string suffix) {
-            Trigger = trigger; Target = target;
-            Prefix = prefix; Suffix = suffix;
+        public Alias(string trigger, string target, string format) {
+            Trigger = trigger; Target = target; Format = format;
         }
 
-        public static void Load(){
+        public static void Load() {
             aliases.Clear();
             coreAliases.Clear();
             
@@ -62,17 +58,21 @@ namespace MCGalaxy.Commands {
 
         public static void Save() {
             using (StreamWriter sw = new StreamWriter(Paths.AliasesFile)) {
-                sw.WriteLine("# The format goes trigger : command");
-                sw.WriteLine("# For example, \"y : help me\" means that when /y is typed,");
-                sw.WriteLine("# it is treated as /Help me <args given by user>.");
+                sw.WriteLine("# Aliases can be in one of three formats:");
+                sw.WriteLine("# trigger : command");
+                sw.WriteLine("#    e.g. \"xyz : help\" means /xyz is treated as /help <args given by user>");
+                sw.WriteLine("# trigger : command [prefix]");
+                sw.WriteLine("#    e.g. \"xyz : help me\" means /xyz is treated as /help me <args given by user>");
+                sw.WriteLine("# trigger : command <prefix> {args} <suffix>");
+                sw.WriteLine("#    e.g. \"mod : setrank {args} mod\" means /mod is treated as /setrank <args given by user> mod");
                 
                 foreach (Alias a in aliases) {
-                    if (a.Prefix == null) {
+                    if (a.Format == null) {
                         sw.WriteLine(a.Trigger + " : " + a.Target);
                     } else {
-                        sw.WriteLine(a.Trigger + " : " + a.Target + " " + a.Prefix);
+                        sw.WriteLine(a.Trigger + " : " + a.Target + " " + a.Format);
                     }
-                }                   
+                }
             }
         }
 
@@ -84,6 +84,22 @@ namespace MCGalaxy.Commands {
                 if (alias.Trigger.CaselessEq(cmd)) return alias;
             }
             return null;
+        }
+        
+        /// <summary> Registers default aliases specified by a command. </summary>
+        internal static void RegisterDefaults(Command cmd) {
+            CommandAlias[] aliases = cmd.Aliases;
+            if (aliases == null) return;
+            
+            foreach (CommandAlias a in aliases) {
+                Alias alias = new Alias(a.Trigger, cmd.name, a.Format);
+                coreAliases.Add(alias);
+            }
+        }
+        
+        internal static void UnregisterDefaults(Command cmd) {
+            if (cmd.Aliases == null) return;
+            coreAliases.RemoveAll(a => a.Target == cmd.name);
         }
     }
 }

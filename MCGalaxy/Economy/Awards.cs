@@ -107,55 +107,48 @@ namespace MCGalaxy.Eco {
         
         /// <summary> Adds the given award to that player's list of awards. </summary>
         public static bool GiveAward(string playerName, string name) {
-            foreach (PlayerAward pl in PlayerAwards) {
-                if (!pl.Name.CaselessEq(playerName)) continue;
-                
-                foreach (string award in pl.Awards) {
-                    if (award.CaselessEq(name)) return false;
-                }
-                pl.Awards.Add(name);
-                return true;
+            List<string> awards = GetPlayerAwards(playerName);
+            if (awards == null) {
+                awards = new List<string>();                
+                PlayerAward item; item.Name = playerName; item.Awards = awards;
+                PlayerAwards.Add(item);
             }
             
-            PlayerAward newPl;
-            newPl.Name = playerName;
-            newPl.Awards = new List<string>();
-            newPl.Awards.Add(name);
-            PlayerAwards.Add(newPl);
+            if (awards.CaselessContains(name)) return false;
+            awards.Add(name);
             return true;
         }
         
-        /// <summary> Removes the given award from that player's list of awards. </summary>
         public static bool TakeAward(string playerName, string name) {
-            foreach (PlayerAward pl in PlayerAwards) {
-                if (!pl.Name.CaselessEq(playerName)) continue;
-                
-                for (int i = 0; i < pl.Awards.Count; i++) {
-                    if (!pl.Awards[i].CaselessEq(name)) continue;
-                    pl.Awards.RemoveAt(i); 
-                    return true;
-                }
-                return false;
-            }
-            return false;
+            List<string> awards = GetPlayerAwards(playerName);
+            return awards != null && awards.CaselessRemove(name);
         }
         
-        /// <summary> Returns the percentage of all the awards that the given player has. </summary>
         public static string AwardAmount(string playerName) {
-            int numAwards = AwardsList.Count;
-            foreach (PlayerAward pl in PlayerAwards) {
-                if (!pl.Name.CaselessEq(playerName)) continue;
-                double percentage = Math.Round(((double)pl.Awards.Count / numAwards) * 100, 2);
-                return "&f" + pl.Awards.Count + "/" + numAwards + " (" + percentage + "%)";
-            }
-            return "&f0/" + numAwards + " (0%)";
+            int total = AwardsList.Count;
+            List<string> awards = GetCurrentPlayerAwards(playerName);
+            if (awards == null || total == 0) return "&f0/" + total + " (0%)";
+            
+            double percentHas = Math.Round(((double)awards.Count / total) * 100, 2);
+            return "&f" + awards.Count + "/" + total + " (" + percentHas + "%)";
         }
         
-        /// <summary> Finds the list of awards that the given player has. </summary>
         public static List<string> GetPlayerAwards(string name) {
-            foreach (PlayerAward pl in PlayerAwards)
+            foreach (PlayerAward pl in PlayerAwards) {
                 if (pl.Name.CaselessEq(name)) return pl.Awards;
-            return new List<string>();
+            }
+            return null;
+        }
+        
+        public static List<string> GetCurrentPlayerAwards(string name) {
+            List<string> awards = GetPlayerAwards(name);
+            if (awards == null) return null;
+            
+            // Some awards may have been deleted
+            for (int i = awards.Count - 1; i >= 0; i--) {
+                if (!Exists(awards[i])) awards.RemoveAt(i);
+            }
+            return awards;
         }
         #endregion
         
@@ -183,9 +176,9 @@ namespace MCGalaxy.Eco {
         public static bool Exists(string name) { return FindExact(name) != null; }
         
         public static Award FindExact(string name) {
-        	foreach (Award award in AwardsList) {
+            foreach (Award award in AwardsList) {
                 if (award.Name.CaselessEq(name)) return award;
-        	}
+            }
             return null;
         }
 

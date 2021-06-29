@@ -15,7 +15,6 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
  */
-using System.IO;
 using MCGalaxy.DB;
 
 namespace MCGalaxy.Commands.Chatting {
@@ -25,30 +24,26 @@ namespace MCGalaxy.Commands.Chatting {
         public override string type { get { return CommandTypes.Chat; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Operator, "+ can change the login message of others") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can change the login message of others") }; }
         }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (!MessageCmd.CanSpeak(p, name)) return;
-            UsePlayer(p, message, "login message");
+            UsePlayer(p, data, message, "login message");
         }
         
-        protected override void SetPlayerData(Player p, Player who, string loginMsg) {
-            if (loginMsg.Length == 0) {
-                string path = PlayerDB.LoginPath(who.name);
-                if (File.Exists(path)) File.Delete(path);
-                Player.Message(p, "Login message of {0} %Swas removed.",
-                               who.ColoredName);
+        protected override void SetPlayerData(Player p, string target, string msg) {
+            PlayerDB.SetLoginMessage(target, msg);
+            if (msg.Length == 0) {
+                p.Message("Login message of {0} &Swas removed.", p.FormatNick(target));
             } else {
-                PlayerDB.SetLoginMessage(who.name, loginMsg);
-                Player.Message(p, "Login message of {0} %Swas changed to: {1}",
-                               who.ColoredName, loginMsg);
+                p.Message("Login message of {0} &Swas changed to: {1}", p.FormatNick(target), msg);
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/LoginMessage [player] [message]");
-            Player.Message(p, "%HSets the login message shown for that player.");
+            p.Message("&T/LoginMessage [player] [message]");
+            p.Message("&HSets the login message shown for that player.");
         }
     }
 }

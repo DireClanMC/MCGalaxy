@@ -25,13 +25,13 @@ namespace MCGalaxy.SQL {
         bool gottenRows;
         string table, insertCols;
         internal StreamWriter sql;
-        Type[] rowTypes;
+        Type[] colTypes;
         
         public void DumpTable(StreamWriter sql, string table) {
             gottenRows = false;
             this.sql = sql;
             this.table = table;
-            Database.ExecuteReader("SELECT * FROM `" + table + "`", DumpRow);
+            Database.ReadRows(table, "*", null, DumpRow);
             
             if (!gottenRows) {
                 sql.WriteLine("-- No data in table `{0}`!", table);
@@ -39,45 +39,47 @@ namespace MCGalaxy.SQL {
             }
         }
         
-        void MakeInsertFormat(IDataReader reader) {
+        void MakeInsertFormat(IDataRecord record) {
             sql.WriteLine("--");
             sql.WriteLine("-- Dumping data for table `{0}`", table);
             sql.WriteLine("--");
             sql.WriteLine();
 
-            string[] colNames = new string[reader.FieldCount];
-            rowTypes = new Type[reader.FieldCount];
-            for (int i = 0; i < reader.FieldCount; i++) {
-                colNames[i] = reader.GetName(i);
-                rowTypes[i] = reader.GetFieldType(i);
+            string[] colNames = new string[record.FieldCount];
+            colTypes = new Type[record.FieldCount];
+            for (int i = 0; i < record.FieldCount; i++) {
+                colNames[i] = record.GetName(i);
+                colTypes[i] = record.GetFieldType(i);
             }
             insertCols = FormatInsertColumns(colNames, table);
             gottenRows = true;
         }
         
-        void DumpRow(IDataReader reader) {
-            if (!gottenRows) MakeInsertFormat(reader);
+        object DumpRow(IDataRecord record, object arg) {
+            if (!gottenRows) MakeInsertFormat(record);
             sql.WriteLine(insertCols);
 
             //The values themselves can be integers or strings, or null
-            for (int col = 0; col < rowTypes.Length; col++) {
-                if (reader.IsDBNull(col)) {
+            for (int col = 0; col < colTypes.Length; col++) {
+                if (record.IsDBNull(col)) {
                     sql.Write("NULL");
-                } else if (rowTypes[col] == typeof(string)) {
-                    string value = reader.GetString(col);
+                } else if (colTypes[col] == typeof(string)) {
+                    string value = record.GetString(col);
                     if (value.IndexOf('\'') >= 0) // escape '
                         value = value.Replace("'", "''");
                     sql.Write("'" + value + "'");
-                } else if (rowTypes[col] == typeof(DateTime)) {
-                    string date = Database.Backend.FastGetDateTime(reader, col);
+                } else if (colTypes[col] == typeof(DateTime)) {
+                    string date = Database.Backend.RawGetDateTime(record, col);
                     sql.Write("'" + date + "'");
                 } else {
-                    long value = reader.GetInt64(col); // TODO: try to use GetInt32 where possible
+                    long value = record.GetInt64(col); // TODO: try to use GetInt32 where possible
                     sql.Write(value);
                 }
-                sql.Write((col < rowTypes.Length - 1 ? ", " : ");"));
+                sql.Write((col < colTypes.Length - 1 ? ", " : ");"));
             }
+            
             sql.WriteLine();
+            return arg;
         }
         
         static string FormatInsertColumns(string[] cols, string name) {

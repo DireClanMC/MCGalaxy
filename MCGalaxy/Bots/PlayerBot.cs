@@ -21,6 +21,7 @@ using System.IO;
 using MCGalaxy.Bots;
 using MCGalaxy.Maths;
 using MCGalaxy.Network;
+using MCGalaxy.Commands;
 
 namespace MCGalaxy {
     
@@ -32,6 +33,7 @@ namespace MCGalaxy {
         public string name, DisplayName;
         public string ClickedOnText;
         public string DeathMessage;
+        public string Owner;
         public string ColoredName { get { return color + DisplayName; } }
         
         public byte id;
@@ -44,13 +46,13 @@ namespace MCGalaxy {
         public Position TargetPos;
         public bool movement = false;
         public int movementSpeed = 3;
-        internal sbyte curJump = 0;
+        internal int curJump = 0;
         
         public PlayerBot(string n, Level lvl) {
             name = n; DisplayName = n; SkinName = n;
-            color = "&1";
-            ModelBB = AABB.ModelAABB(this, lvl);
+            color = "&1";      
             level = lvl;
+            SetModel(Model);
             hasExtPositions = true;
             BotsScheduler.Activate();
         }
@@ -58,6 +60,22 @@ namespace MCGalaxy {
         public override bool CanSeeEntity(Entity other) { return true; }
         public override byte EntityID { get { return id; } }
         public override Level Level { get { return level; } }
+        public override bool RestrictsScale { get { return false; } }
+        
+        public bool EditableBy(Player p, string attemptedAction = "modify") {
+            if (CanEditAny(p)) { return true; }
+            if (Owner == p.name) { return true; }
+            
+            p.Message("&WYou are not allowed to {0} bots that you did not create.", attemptedAction);
+            return false;
+        }
+        
+        public static bool CanEditAny(Player p) {
+            if (LevelInfo.IsRealmOwner(p.level, p.name)) { return true; }
+            ItemPerms perms = CommandExtraPerms.Find("Bot", 1) ?? new ItemPerms(LevelPermission.Operator);
+            if (perms.UsableBy(p.Rank)) { return true; }
+            return false;
+        }
         
         public static void Add(PlayerBot bot, bool save = true) {
             // Lock to ensure that no two bots can end up with the same playerid
@@ -76,11 +94,24 @@ namespace MCGalaxy {
             if (save) BotsFile.Save(bot.level);
         }
         
-        internal static void RemoveLoadedBots(Level lvl, bool save) {
+        internal static int RemoveLoadedBots(Level lvl, bool save) {
             PlayerBot[] bots = lvl.Bots.Items;
             for (int i = 0; i < bots.Length; i++) {
                 Remove(bots[i], save);
             }
+            return bots.Length;
+        }
+        
+        internal static int RemoveBotsOwnedBy(Player p, string ownerName, Level lvl, bool save) {
+            PlayerBot[] bots = lvl.Bots.Items;
+            int removedCount = 0;
+            for (int i = 0; i < bots.Length; i++) {
+                if (ownerName.CaselessEq(bots[i].Owner)) {
+                    Remove(bots[i], save);
+                    removedCount++;
+                }
+            }
+            return removedCount;
         }
         
 
@@ -198,7 +229,7 @@ namespace MCGalaxy {
         }
         
         void PerformMovement() {
-            double scale = Math.Ceiling(ServerConfig.PositionUpdateInterval / 25.0);
+            double scale = Math.Ceiling(Server.Config.PositionUpdateInterval / 25.0);
             int steps = movementSpeed * (int)scale;
             
             downsCount = -1;
@@ -260,6 +291,27 @@ namespace MCGalaxy {
                 }
                 bb.Min.Y++; bb.Max.Y++;
             }
+        }
+        
+        public void DisplayInfo(Player p) {
+            p.Message("Bot {0} &S({1}) has:", ColoredName, name);
+            p.Message("  Owner: &f{0}", string.IsNullOrEmpty(Owner) ? "no one" : p.FormatNick(Owner));
+            if (!String.IsNullOrEmpty(AIName)) { p.Message("  AI: &f{0}", AIName); }
+            if (hunt || kill)                  { p.Message("  Hunt: &f{0}&S, Kill: %f{1}", hunt, kill); }
+            if (SkinName != name)              { p.Message("  Skin: &f{0}", SkinName); }
+            if (Model != "humanoid")           { p.Message("  Model: &f{0}", Model); }
+            if (!(ScaleX == 0 && ScaleY == 0 && ScaleZ == 0)) {
+                p.Message("  X scale: &a{0}&S, Y scale: &a{1}&S, Z scale: &a{2}",
+                         ScaleX == 0 ? "none" : ScaleX.ToString(),
+                         ScaleY == 0 ? "none" : ScaleY.ToString(),
+                         ScaleZ == 0 ? "none" : ScaleZ.ToString()
+                        );
+            }
+            
+            if (String.IsNullOrEmpty(ClickedOnText)) return;
+            ItemPerms perms = CommandExtraPerms.Find("About", 1) ?? new ItemPerms(LevelPermission.AdvBuilder);
+            if (!perms.UsableBy(p.Rank)) return; //don't show bot's ClickedOnText if player isn't allowed to see message block contents
+            p.Message("  Clicked-on text: {0}", ClickedOnText);
         }
         
         

@@ -18,14 +18,14 @@
 using System;
 
 namespace MCGalaxy.Commands.Moderation {
-    public sealed class CmdFollow : Command {
+    public sealed class CmdFollow : Command2 {
         public override string name { get { return "Follow"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
-            if (!p.canBuild) { Player.Message(p, "You're currently being &4possessed%S!"); return; }
+        public override void Use(Player p, string message, CommandData data) {
+            if (p.possessed) { p.Message("You're currently being &4possessed&S!"); return; }
             string[] args = message.SplitSpaces(2);
             string name = args[0];
             
@@ -38,52 +38,58 @@ namespace MCGalaxy.Commands.Moderation {
                 name = args[1];
             }
             
-            if (name.Length == 0 && p.following.Length == 0) { Help(p); return; }
-            if (name.CaselessEq(p.following) || (name.Length == 0 && p.following.Length > 0))
-                Unfollow(p, stealth);
-            else
-                Follow(p, name, stealth);
-        }
-        
-        static void Unfollow(Player p, bool stealth) {
-            Player who = PlayerInfo.FindExact(p.following);
-            Player.Message(p, "Stopped following ", who == null ? p.following : who.ColoredName);
-            p.following = "";
-            if (who != null) Entities.Spawn(p, who);
-            
-            if (!p.hidden) return;
-            if (!stealth) {
-                Command.all.FindByName("Hide").Use(p, "");
+            if (name.Length == 0 && p.following.Length == 0) { Help(p); return; }            
+            if (name.CaselessEq(p.following) || (name.Length == 0 && p.following.Length > 0)) {
+                Unfollow(p, data, stealth);
             } else {
-                Player.Message(p, "You are still hidden.");
+                Follow(p, name, data, stealth);
             }
         }
         
-        static void Follow(Player p, string name, bool stealth) {
-            Player who = PlayerInfo.FindMatches(p, name);
-            if (who == null) return;
-            if (who == p) { Player.Message(p, "Cannot follow yourself."); return; }
-            if (who.Rank >= p.Rank) { MessageTooHighRank(p, "follow", false); return;}
-            if (who.following.Length > 0) { Player.Message(p, who.DisplayName + " is already following " + who.following); return; }
+        static void Unfollow(Player p, CommandData data, bool stealth) {
+            p.Message("Stopped following " + p.FormatNick(p.following));
+            p.following = "";
+            
+            Player target = PlayerInfo.FindExact(p.following);
+            if (target != null) Entities.Spawn(p, target);
+            
+            if (!p.hidden) return;
+            if (!stealth) {
+                Command.Find("Hide").Use(p, "", data);
+            } else {
+                p.Message("You are still hidden.");
+            }
+        }
+        
+        static void Follow(Player p, string name, CommandData data, bool stealth) {
+            Player target = PlayerInfo.FindMatches(p, name);
+            if (target == null) return;
+            if (target == p) { p.Message("Cannot follow yourself."); return; }
+            if (!CheckRank(p, data, target, "follow", false)) return;
+            
+            if (target.following.Length > 0) { 
+                p.Message("{0} &Sis already following {1}", 
+            	          p.FormatNick(target), p.FormatNick(target.following)); return;
+            }
 
-            if (!p.hidden) Command.all.FindByName("Hide").Use(p, "");
+            if (!p.hidden) Command.Find("Hide").Use(p, "", data);
 
-            if (p.level != who.level) Command.all.FindByName("TP").Use(p, who.name);
+            if (p.level != target.level) Command.Find("TP").Use(p, target.name, data);
             if (p.following.Length > 0) {
                 Player old = PlayerInfo.FindExact(p.following);
                 if (old != null) Entities.Spawn(p, old);
             }
             
-            p.following = who.name;
-            Player.Message(p, "Following " + who.ColoredName + "%S. Use %T/Follow %Sto stop.");
-            Entities.Despawn(p, who);
+            p.following = target.name;
+            p.Message("Following {0}&S. Use &T/Follow &Sto stop.", p.FormatNick(target));
+            Entities.Despawn(p, target);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Follow [name]");
-            Player.Message(p, "%HFollows <name> until the command is cancelled");
-            Player.Message(p, "%T/Follow # [name]");
-            Player.Message(p, "%HWill cause %T/Hide %Hnot to be toggled");
+            p.Message("&T/Follow [name]");
+            p.Message("&HFollows <name> until the command is cancelled");
+            p.Message("&T/Follow # [name]");
+            p.Message("&HWill cause &T/Hide &Hnot to be toggled");
         }
     }
 }

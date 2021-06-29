@@ -23,14 +23,14 @@ namespace MCGalaxy.Blocks {
 
     /// <summary> Handles the player deleting a block at the given coordinates. </summary>
     /// <remarks> Use p.ChangeBlock to do a normal player block change (adds to BlockDB, updates dirt/grass beneath) </remarks>
-    public delegate void HandleDelete(Player p, BlockID oldBlock, ushort x, ushort y, ushort z);
+    public delegate ChangeResult HandleDelete(Player p, BlockID oldBlock, ushort x, ushort y, ushort z);
 
     /// <summary> Handles the player placing a block at the given coordinates. </summary>
     /// <remarks> Use p.ChangeBlock to do a normal player block change (adds to BlockDB, updates dirt/grass beneath) </remarks>
-    public delegate void HandlePlace(Player p, BlockID newBlock, ushort x, ushort y, ushort z);
+    public delegate ChangeResult HandlePlace(Player p, BlockID newBlock, ushort x, ushort y, ushort z);
 
     /// <summary> Returns whether this block handles the player walking through this block at the given coordinates. </summary>
-    /// <remarks> If this returns true, the usual 'death check' behaviour is skipped. </remarks>
+    /// <remarks> If this returns false, continues trying other walkthrough blocks the player is touching. </remarks>
     public delegate bool HandleWalkthrough(Player p, BlockID block, ushort x, ushort y, ushort z);
 
     /// <summary> Called to handle the physics for this particular block. </summary>
@@ -47,7 +47,7 @@ namespace MCGalaxy.Blocks {
             
             if (props[block].GrassBlock != Block.Invalid) return PlaceBehaviour.DirtGrow;
             if (props[block].DirtBlock  != Block.Invalid) return PlaceBehaviour.GrassDie;
-            if (props[block].StackBlock != Block.Air)        return PlaceBehaviour.Stack;
+            if (props[block].StackBlock != Block.Air)     return PlaceBehaviour.Stack;
             return null;
         }
         
@@ -62,6 +62,7 @@ namespace MCGalaxy.Blocks {
                 case Block.Door_Green_air: return DeleteBehaviour.RevertDoor;
             }
             
+        	// NOTE: If this gets changed, make sure to change BlockOptions.cs too
             if (props[block].IsMessageBlock)              return DeleteBehaviour.DoMessageBlock;
             if (props[block].IsPortal)                    return DeleteBehaviour.DoPortal;            
             if (props[block].IsTDoor)                     return DeleteBehaviour.RevertDoor;
@@ -123,6 +124,7 @@ namespace MCGalaxy.Blocks {
                     
                 case Block.Air: return AirPhysics.DoAir;
                 case Block.Leaves: return LeafPhysics.DoLeaf;
+                case Block.Log: return LeafPhysics.DoLog;
                 case Block.Sapling: return OtherPhysics.DoShrub;
                 case Block.Fire: return FirePhysics.Do;
                 case Block.LavaFire: return FirePhysics.Do;
@@ -146,15 +148,13 @@ namespace MCGalaxy.Blocks {
                     AirPhysics.DoFlood(lvl, ref C, AirFlood.Up, Block.Air_FloodUp);
                     
                 case Block.TNT_Small: return TntPhysics.DoSmallTnt;
-                case Block.TNT_Big: return (Level lvl, ref PhysInfo C) =>
-                    TntPhysics.DoLargeTnt(lvl, ref C, 1);
-                case Block.TNT_Nuke: return (Level lvl, ref PhysInfo C) => 
-                    TntPhysics.DoLargeTnt(lvl, ref C, 4);
+                case Block.TNT_Big: return TntPhysics.DoBigTnt;
+                case Block.TNT_Nuke: return TntPhysics.DoNukeTnt;
                 case Block.TNT_Explosion: return TntPhysics.DoTntExplosion;
                 case Block.Train: return TrainPhysics.Do;
             }
 
-            HandlePhysics animalAI = AnimalAIHandler(props[block].AnimalAI);
+        	HandlePhysics animalAI = AnimalAIHandler(props[block].AnimalAI);
             if (animalAI != null) return animalAI;
             if (props[block].oDoorBlock != Block.Invalid) return DoorPhysics.oDoor;
             if (props[block].GrassBlock != Block.Invalid) return OtherPhysics.DoDirtGrow;

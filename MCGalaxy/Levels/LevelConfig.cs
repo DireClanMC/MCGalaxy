@@ -23,29 +23,8 @@ using MCGalaxy.Games;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy {
-    public abstract class AreaConfig {
-        [ConfigString("MOTD", "General", "ignore", true, null, 128)]
-        public string MOTD = "ignore";
-
-        // Permission settings
-        [ConfigBool("Buildable", "Permissions", true)]
-        public bool Buildable = true;
-        [ConfigBool("Deletable", "Permissions", true)]
-        public bool Deletable = true;
-
-        [ConfigPerm("PerBuild", "Permissions", LevelPermission.Guest)]
-        public LevelPermission BuildMin = LevelPermission.Guest;
-        [ConfigPerm("PerBuildMax", "Permissions", LevelPermission.Nobody)]
-        public LevelPermission BuildMax = LevelPermission.Nobody;
-        
-        // Other blacklists/whitelists
-        [ConfigStringList("BuildWhitelist", "Permissions")]
-        public List<string> BuildWhitelist = new List<string>();
-        [ConfigStringList("BuildBlacklist", "Permissions")]
-        public List<string> BuildBlacklist = new List<string>();
-        
-
-        // Environment settings
+	public abstract class EnvConfig {
+		// Environment settings
         const int envRange = 0xFFFFFF;
         [ConfigInt("Weather", "Env", 0, -1, 2)]
         public int Weather = -1;
@@ -79,59 +58,58 @@ namespace MCGalaxy {
         public int SkyboxVerSpeed = -1;
         
         /// <summary> The block which will be displayed on the horizon. </summary>
-        [ConfigBlock("HorizonBlock", "Env", Block.Water)]
+        [ConfigBlock("HorizonBlock", "Env", Block.Invalid)]
         public BlockID HorizonBlock = Block.Invalid;
         /// <summary> The block which will be displayed on the edge of the map. </summary>
-        [ConfigBlock("EdgeBlock", "Env", Block.Bedrock)]
+        [ConfigBlock("EdgeBlock", "Env", Block.Invalid)]
         public BlockID EdgeBlock = Block.Invalid;
         /// <summary> Whether exponential fog mode is used client-side. </summary>
-        [ConfigBoolInt("ExpFog", "Env", 0)]
+        [ConfigBoolInt("ExpFog", "Env")]
         public int ExpFog = -1;
-        [ConfigString("Texture", "Env", "", true, null, NetUtils.StringSize)]
-        public string Terrain = "";
-        [ConfigString("TexturePack", "Env", "", true, null, NetUtils.StringSize)]
-        public string TexturePack = "";
         
-        /// <summary> Color of the clouds (RGB packed into an int). Set to -1 to use client defaults. </summary>
+        /// <summary> Color of the clouds (Hex RGB color). Set to -1 to use client defaults. </summary>
         [ConfigString("CloudColor", "Env", "", true)]
         public string CloudColor = "";
-        /// <summary> Color of the fog (RGB packed into an int). Set to -1 to use client defaults. </summary>
+        /// <summary> Color of the fog (Hex RGB color). Set to -1 to use client defaults. </summary>
         [ConfigString("FogColor", "Env", "", true)]
         public string FogColor = "";
-        /// <summary> Color of the sky (RGB packed into an int). Set to -1 to use client defaults. </summary>
+        /// <summary> Color of the sky (Hex RGB color). Set to -1 to use client defaults. </summary>
         [ConfigString("SkyColor", "Env", "", true)]
         public string SkyColor = "";
-        /// <summary> Color of the blocks in shadows (RGB packed into an int). Set to -1 to use client defaults. </summary>
+        /// <summary> Color of the blocks in shadows (Hex RGB color). Set to -1 to use client defaults. </summary>
         [ConfigString("ShadowColor", "Env", "", true)]
         public string ShadowColor = "";
-        /// <summary> Color of the blocks in the light (RGB packed into an int). Set to -1 to use client defaults. </summary>
+        /// <summary> Color of the blocks in the light (Hex RGB color). Set to -1 to use client defaults. </summary>
         [ConfigString("LightColor", "Env", "", true)]
         public string LightColor = "";
+        /// <summary> Color of the skybox (Hex RGB color). Set to -1 to use client defaults. </summary>
+        [ConfigString("SkyboxColor", "Env", "", true)]
+        public string SkyboxColor = "";
         
-        public void Reset(int height) {
-            Weather = 0;
-            EdgeLevel = height / 2;
-            SidesOffset = -2;
-            CloudsHeight = height + 2;
+        public void ResetEnv() {
+            // TODO: Rewrite using ConfigElement somehow
+            Weather      = -1;
+            EdgeLevel    = -1;
+            SidesOffset  = -1;
+            CloudsHeight = -1;
             
-            MaxFogDistance = 0;
-            CloudsSpeed = 256;
-            WeatherSpeed = 256;
-            WeatherFade = 128;
-            SkyboxHorSpeed = 0;
-            SkyboxVerSpeed = 0;
+            MaxFogDistance = -1;
+            CloudsSpeed    = -1;
+            WeatherSpeed   = -1;
+            WeatherFade    = -1;
+            SkyboxHorSpeed = -1;
+            SkyboxVerSpeed = -1;
             
-            HorizonBlock = Block.Water;
-            EdgeBlock = Block.Bedrock;
-            ExpFog = 0;
+            HorizonBlock = Block.Invalid;
+            EdgeBlock    = Block.Invalid;
+            ExpFog       = -1;
             
-            Terrain = "";
-            TexturePack = "";
-            CloudColor = "";
-            FogColor = "";
-            SkyColor = "";
+            CloudColor  = "";
+            FogColor    = "";
+            SkyColor    = "";
             ShadowColor = "";
-            LightColor = "";
+            LightColor  = "";
+            SkyboxColor = "";
         }
         
         public string GetColor(int i) {
@@ -140,6 +118,7 @@ namespace MCGalaxy {
             if (i == 2) return FogColor;
             if (i == 3) return ShadowColor;
             if (i == 4) return LightColor;
+            if (i == 5) return SkyboxColor;
             return null;
         }
         
@@ -156,8 +135,44 @@ namespace MCGalaxy {
             if (i == EnvProp.SidesOffset)    return SidesOffset;
             if (i == EnvProp.SkyboxHorSpeed) return SkyboxHorSpeed;
             if (i == EnvProp.SkyboxVerSpeed) return SkyboxVerSpeed;
+            if (i == EnvProp.Weather)        return Weather;
             return -1;
         }
+        
+        public int DefaultEnvProp(EnvProp i, int height) {
+            if (i == EnvProp.SidesBlock)     return Block.Bedrock;
+            if (i == EnvProp.EdgeBlock)      return Block.Water;
+            if (i == EnvProp.EdgeLevel)      return height / 2;
+            if (i == EnvProp.CloudsLevel)    return height + 2;
+
+            if (i == EnvProp.CloudsSpeed)    return 256;
+            if (i == EnvProp.WeatherSpeed)   return 256;
+            if (i == EnvProp.WeatherFade)    return 128;
+            if (i == EnvProp.SidesOffset)    return -2;
+            return 0;
+        }
+	}
+	
+	public abstract class AreaConfig : EnvConfig {
+        [ConfigString("MOTD", "General", "ignore", true)]
+        public string MOTD = "ignore";
+
+        // Permission settings
+        [ConfigBool("Buildable", "Permissions", true)]
+        public bool Buildable = true;
+        [ConfigBool("Deletable", "Permissions", true)]
+        public bool Deletable = true;
+
+        [ConfigPerm("PerBuild", "Permissions", LevelPermission.Guest)]
+        public LevelPermission BuildMin = LevelPermission.Guest;
+        [ConfigPerm("PerBuildMax", "Permissions", LevelPermission.Nobody)]
+        public LevelPermission BuildMax = LevelPermission.Nobody;
+        
+        // Other blacklists/whitelists
+        [ConfigStringList("BuildWhitelist", "Permissions")]
+        public List<string> BuildWhitelist = new List<string>();
+        [ConfigStringList("BuildBlacklist", "Permissions")]
+        public List<string> BuildBlacklist = new List<string>();
     }
     
     public sealed class LevelConfig : AreaConfig {
@@ -177,6 +192,11 @@ namespace MCGalaxy {
         public bool UseBlockDB = true;
         [ConfigInt("LoadDelay", "Other", 0, 0, 2000)]
         public int LoadDelay = 0;
+
+        [ConfigString("Texture", "Env", "", true)]
+        public string Terrain = "";
+        [ConfigString("TexturePack", "Env", "", true)]
+        public string TexturePack = "";
         
         public byte jailrotx, jailroty;
         [ConfigInt("JailX", "Jail", 0, 0, 65535)]
@@ -225,12 +245,12 @@ namespace MCGalaxy {
         // Survival settings
         [ConfigInt("Drown", "Survival", 70)]
         public int DrownTime = 70;
-        [ConfigBool("Edge water", "Survival", true)]
+        [ConfigBool("Edge water", "Survival", false)]
         public bool EdgeWater;
         [ConfigInt("Fall", "Survival", 9)]
         public int FallHeight = 9;
         [ConfigBool("Guns", "Survival", false)]
-        public bool Guns = false;
+        public bool Guns;
         [ConfigBool("Survival death", "Survival", false)]
         public bool SurvivalDeath;
         [ConfigBool("Killer blocks", "Survival", true)]
@@ -244,23 +264,21 @@ namespace MCGalaxy {
         [ConfigString("Authors", "Game", "", true)]
         public string Authors = "";
         [ConfigBool("Pillaring", "Game", false)]
-        public bool Pillaring = !ZSConfig.NoPillaring;
+        public bool Pillaring = !ZSGame.Config.NoPillaring;
         
         [ConfigEnum("BuildType", "Game", BuildType.Normal, typeof(BuildType))]
         public BuildType BuildType = BuildType.Normal;
         
-        [ConfigInt("MinRoundTime", "Game", 4)]
-        public int MinRoundTime = 4;
-        [ConfigInt("MaxRoundTime", "Game", 7)]
-        public int MaxRoundTime = 7;
+        [ConfigTimespan("MinRoundTime", "Game", 4, true)]
+        public TimeSpan RoundTime = TimeSpan.FromMinutes(5);
         [ConfigBool("DrawingAllowed", "Game", true)]
-        public bool DrawingAllowed = true;
+        public bool Drawing = true;
         [ConfigInt("RoundsPlayed", "Game", 0)]
         public int RoundsPlayed = 0;
         [ConfigInt("RoundsHumanWon", "Game", 0)]
         public int RoundsHumanWon = 0;
         
-        
+        readonly object saveLock = new object();
         public string Color {
             get {
                 LevelPermission maxPerm = VisitMin;
@@ -270,26 +288,22 @@ namespace MCGalaxy {
         }
         
         
-        public static bool Load(string path, LevelConfig config) {
-            return PropertiesFile.Read(path, ref config, LineProcessor);
+        public bool Load(string path) {
+            return ConfigElement.ParseFile(Server.levelConfig, path, this);
         }
         
-        static void LineProcessor(string key, string value, ref LevelConfig config) {
-            if (!ConfigElement.Parse(Server.levelConfig, key, value, config)) {
-                Logger.Log(LogType.Warning, "\"{0}\" was not a recognised level property key.", key);
-            }
-        }
-        
-        public static void Save(string path, LevelConfig config, string lvlname) {
+        public void SaveFor(string map) { Save(LevelInfo.PropsPath(map), map); }
+        public void Save(string path, string map) {
             try {
-                using (StreamWriter w = new StreamWriter(path)) {
-                    w.WriteLine("#Level properties for " + lvlname);
-                    w.WriteLine("#Drown-time in seconds is [drown time] * 200 / 3 / 1000");
-                    ConfigElement.Serialise(Server.levelConfig, " settings", w, config);
+                lock (saveLock) {
+                    using (StreamWriter w = new StreamWriter(path)) {
+                        w.WriteLine("#Level properties for " + map);
+                        w.WriteLine("#Drown-time is in tenths of a second");
+                        ConfigElement.Serialise(Server.levelConfig, w, this);
+                    }
                 }
             } catch (Exception ex) {
-                Logger.Log(LogType.Warning, "Failed to save level properties!");
-                Logger.LogError(ex);
+                Logger.LogError("Error saving level properties for " + map, ex);
             }
         }
     }

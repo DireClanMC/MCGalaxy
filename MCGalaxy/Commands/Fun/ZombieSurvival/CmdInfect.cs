@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2011 MCForge
     
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -15,28 +15,30 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
 */
+using MCGalaxy.Games;
+
 namespace MCGalaxy.Commands.Fun {    
-    public sealed class CmdInfect : Command {        
+    public sealed class CmdInfect : Command2 {        
         public override string name { get { return "Infect"; } }
         public override string type { get { return CommandTypes.Games; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override CommandEnable Enabled { get { return CommandEnable.Zombie; } }      
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             Player who = message.Length == 0 ? p : PlayerInfo.FindMatches(p, message);
             if (who == null) return;
             
-            if (who.Game.Infected || !Server.zombie.RoundInProgress) {
-                Player.Message(p, "Cannot infect player");
+            if (!ZSGame.Instance.RoundInProgress || ZSGame.Get(who).Infected) {
+                p.Message("Cannot infect player");
             } else if (!who.Game.Referee) {
-                Server.zombie.InfectPlayer(who, p);
-                Chat.MessageGlobal("{0} %Swas infected.", who.ColoredName);
+                ZSGame.Instance.InfectPlayer(who, p);
+                Chat.MessageFrom(who, "λNICK &Swas infected.");
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Infect [name]");
-            Player.Message(p, "%HTurns [name] into a zombie");
+            p.Message("&T/Infect [name]");
+            p.Message("&HTurns [name] into a zombie");
         }
     }
 }

@@ -16,17 +16,19 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using MCGalaxy.Games;
 
 namespace MCGalaxy.Commands.Fun {
     
-    public sealed class CmdAka : Command {        
+    public sealed class CmdAka : Command2 {
         public override string name { get { return "AKA"; } }
         public override string type { get { return CommandTypes.Games; } }
         
-        public override void Use(Player p, string message) {
-            p.Game.Aka = !p.Game.Aka;
+        public override void Use(Player p, string message, CommandData data) {
+            ZSData data_ = ZSGame.Get(p);
+            data_.AkaMode = !data_.AkaMode;
             Player[] players = PlayerInfo.Online.Items;
-            Player.Message(p, "AKA mode is now: " + (p.Game.Aka ? "&aOn" : "&cOff"));
+            p.Message("AKA mode is now: " + (data_.AkaMode ? "&aOn" : "&cOff"));
             
             foreach (Player other in players) {
                 if (other.level != p.level || p == other || !p.CanSeeEntity(other)) continue;
@@ -38,8 +40,8 @@ namespace MCGalaxy.Commands.Fun {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/AKA");
-            Player.Message(p, "%HToggles whether infected players show their actual names.");
+            p.Message("&T/AKA");
+            p.Message("&HToggles whether infected players show their actual names.");
         }
     }
 }

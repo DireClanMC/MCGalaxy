@@ -25,37 +25,31 @@ namespace MCGalaxy.Levels.IO {
     /// <summary> Reads/Loads block data (and potentially metadata) encoded in a particular format. </summary>
     public abstract class IMapImporter {
         
-        /// <summary> The file extension of this format. </summary>
         public abstract string Extension { get; }
+        public abstract string Description { get; }
         
-        /// <summary> Reads the data for a level from a file containing data encoded in this format. </summary>
-        /// <param name="metadata"> Whether metadata should be loaded. </param>
         public Level Read(string path, string name, bool metadata) {
             using (FileStream fs = File.OpenRead(path))
                 return Read(fs, name, metadata);
         }
         
-        /// <summary> Reads the data for a level from a file containing data encoded in this format. </summary>
-        /// <param name="metadata"> Whether metadata should be loaded. </param>
         public abstract Level Read(Stream src, string name, bool metadata);
 
-        /// <summary> Reads the dimensions for a level from a file containing data encoded in this format. </summary>
         public Vec3U16 ReadDimensions(string path) {
             using (FileStream fs = File.OpenRead(path))
                 return ReadDimensions(fs);
         }
         
-        /// <summary> Reads the dimensions for a level from a file containing data encoded in this format. </summary>
         public abstract Vec3U16 ReadDimensions(Stream src);
         
         public static List<IMapImporter> Formats = new List<IMapImporter>() {
             new LvlImporter(), new CwImporter(), new FcmImporter(), new McfImporter(), 
-            new DatImporter(), new BinVoxImporter(), new McLevelImporter(),
+            new DatImporter(), new McLevelImporter(),
         };
         
-        protected void ConvertCustom(Level lvl) {
+        protected static void ConvertCustom(Level lvl) {
             ushort x, y, z;
-            byte[] blocks = lvl.blocks;
+            byte[] blocks = lvl.blocks; // local var to avoid JIT bounds check
             for (int i = 0; i < blocks.Length; i++) {
                 byte raw = blocks[i];
                 if (raw <= Block.CpeMaxBlock) continue;
@@ -65,22 +59,29 @@ namespace MCGalaxy.Levels.IO {
                 lvl.FastSetExtTile(x, y, z, raw);
             }
         }
+        
+        protected static void ReadFully(Stream s, byte[] data, int count) {
+            int offset = 0;
+            while (count > 0) {
+                int read = s.Read(data, offset, count);
+                
+                if (read == 0) throw new EndOfStreamException("End of stream reading data");
+                offset += read; count -= read;
+            }
+        }
     }
 
     /// <summary> Writes/Saves block data (and potentially metadata) encoded in a particular format. </summary>
     public abstract class IMapExporter {
 
-        /// <summary> The file extension of this format. </summary>
         public abstract string Extension { get; }
         
-        /// <summary> Saves the data encoded in this format for a level to a file. </summary>
         public void Write(string path, Level lvl) {
             using (FileStream fs = File.Create(path)) {
                 Write(fs, lvl);
             }
         }
         
-        /// <summary> Saves the data encoded in this format for a level to a file. </summary>
         public abstract void Write(Stream dst, Level lvl);
         
         public static List<IMapExporter> Formats = new List<IMapExporter>() {

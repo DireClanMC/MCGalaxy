@@ -30,36 +30,36 @@ namespace MCGalaxy.Bots {
             bot.countdown--;
 
             Orientation rot = bot.Rot;
-            rot.RotY += meta.Speed;
+            rot.RotY += (byte)meta.Speed;
             bot.Rot = rot;
 
             if (bot.countdown == 0) { bot.NextInstruction(); return false; }
             return true;
         }
         
-        protected struct Metadata { public short Seconds; public byte Speed; }
+        protected struct Metadata { public short Seconds, Speed; }
         
         public override InstructionData Parse(string[] args) {
             InstructionData data = default(InstructionData);
             Metadata meta;
-            meta.Seconds = short.Parse(args[1]);
-            meta.Speed = byte.Parse(args[2]);
+            meta.Seconds  = short.Parse(args[1]);
+            meta.Speed    = short.Parse(args[2]);
             data.Metadata = meta;
             return data;
         }
         
-       public override void Output(Player p, string[] args, StreamWriter w) {
-            string time = args.Length > 3 ? args[3] : "10";
+       public override void Output(Player p, string[] args, TextWriter w) {
+            string time  = args.Length > 3 ? args[3] : "10";
             string speed = args.Length > 4 ? args[4] : "2";
-            w.WriteLine(Name + " " + short.Parse(time) + " " + byte.Parse(speed));
+            w.WriteLine(Name + " " + short.Parse(time) + " " + short.Parse(speed));
         }
         
         public override string[] Help { get { return help; } }
-        static string[] help = new string[] { "%T/BotAI add [name] spin <interval> <speed>",
-            "%HCauses the bot to spin around for a period of time.",
-            "%H  <interval> is in tenths of a second, so an interval of 20 means " +
+        static string[] help = new string[] { "&T/BotAI add [name] spin <interval> <speed>",
+            "&HCauses the bot to spin around for a period of time.",
+            "&H  <interval> is in tenths of a second, so an interval of 20 means " +
             "spin for two seconds. (defaults to 1 second)",
-            "%H  <speed> sets how fast the bot spins. (defaults to 2)",
+            "&H  <speed> sets how fast the bot spins. (defaults to 2)",
         };
     }
     
@@ -72,7 +72,7 @@ namespace MCGalaxy.Bots {
             if (bot.countdown == 0) { bot.countdown = meta.Seconds; return true; }
             bot.countdown--;
 
-            byte speed = meta.Speed;
+            byte speed = (byte)meta.Speed;
             Orientation rot = bot.Rot;
             if (bot.nodUp) {
                 if (rot.HeadX > 32 && rot.HeadX < 128) {
@@ -96,11 +96,11 @@ namespace MCGalaxy.Bots {
         }
         
         public override string[] Help { get { return help; } }
-        static string[] help = new string[] { "%T/BotAI add [name] nod <interval> <speed>",
-            "%HCauses the bot to nod up and down for a period of time.",
-            "%H  <interval> is in tenths of a second, so an interval of 20 means " +
+        static string[] help = new string[] { "&T/BotAI add [name] nod <interval> <speed>",
+            "&HCauses the bot to nod up and down for a period of time.",
+            "&H  <interval> is in tenths of a second, so an interval of 20 means " +
             "nod for two seconds. (defaults to 1 second)",
-            "%H  <speed> sets how fast the bot nods. (defaults to 2)",
+            "&H  <speed> sets how fast the bot nods. (defaults to 2)",
         };
     }
 }

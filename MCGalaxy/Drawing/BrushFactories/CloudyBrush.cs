@@ -25,13 +25,13 @@ namespace MCGalaxy.Drawing.Brushes {
         public override string[] Help { get { return HelpString; } }
         
         static string[] HelpString = new string[] {
-            "%TArguments: [block1/frequency] [block2] <args>..",
-            "%HDraws by selecting blocks from the given [blocks] using perlin noise.",
-            "%Hfrequency is optional (defaults to 1), and specifies the number of times " +
+            "&TArguments: [block1/frequency] [block2] <args>..",
+            "&HDraws by selecting blocks from the given [blocks] using perlin noise.",
+            "&Hfrequency is optional (defaults to 1), and specifies the number of times " +
                 "the block should appear (as a fraction of the total of all the frequencies).",
-            "%HOptional args format: %T<first letter of argument>=<value>",
-            "%HArguments: %Ta%Hmplitude, %Tf%Hrequency (scale), %Ts%Heed, " +
-            "%To%Hctaves, %Tp%Hersistence (turbulence), %Tl%Hacunarity",
+            "&HOptional args format: &T<first letter of argument>=<value>",
+            "&HArguments: &Ta&Hmplitude, &Tf&Hrequency (scale), &Ts&Heed, " +
+            "&To&Hctaves, &Tp&Hersistence (turbulence), &Tl&Hacunarity",
         };
         
         public override Brush Construct(BrushArgs args) {
@@ -69,20 +69,15 @@ namespace MCGalaxy.Drawing.Brushes {
             } else if (opt == 's') {
                 if (!CommandParser.GetInt(p, arg, "Seed", ref args.Seed)) return false;
             } else {
-                Player.Message(p, "\"{0}\" was not a valid argument name.", opt);
+                p.Message("\"{0}\" was not a valid argument name.", opt);
                 return false;
             }
             return true;
         }
         
-        static bool ParseDecimal(Player p, string arg, ref float target, float baseValue) {
-            float temp;
-            if (!Utils.TryParseDecimal(arg, out temp)) {
-                Player.Message(p, "\"{0}\" was not a valid decimal.", arg); return false;
-            }
-            
-            target = temp * baseValue;
-            return true;
+        static bool ParseDecimal(Player p, string arg, ref float target, float scale) {
+            if (!CommandParser.GetReal(p, arg, "Value", ref target)) return false;           
+            target *= scale; return true;
         }
     }
     

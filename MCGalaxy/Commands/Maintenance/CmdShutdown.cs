@@ -23,16 +23,16 @@ using System.Threading;
 using MCGalaxy.Tasks;
 
 namespace MCGalaxy.Commands.Maintenance {
-    public sealed class CmdShutdown : Command {
+    public sealed class CmdShutdown : Command2 {
         public override string name { get { return "Shutdown"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
 
         static SchedulerTask shutdownTask;
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.CaselessEq("abort") || message.CaselessEq("cancel")) {
                 if (shutdownTask == null) {
-                    Player.Message(p, "No server shutdown is in progress."); return;
+                    p.Message("No server shutdown is in progress."); return;
                 }
                 
                 Log("Shutdown aborted.");
@@ -40,32 +40,37 @@ namespace MCGalaxy.Commands.Maintenance {
                 shutdownTask = null;
             } else {
                 if (shutdownTask != null) {
-                    Player.Message(p, "Server is already shutting down, use " +
-                                   "%T/Shutdown abort %Sto abort the shutdown."); return;
+                    p.Message("Server is already shutting down, use " +
+                                   "&T/Shutdown abort &Sto abort the shutdown."); return;
                 }
                 
-                string reason = "";
-                int secTime = 0;
+                if (message.Length == 0) message = "10";
+                string reason;
+                TimeSpan delay;
                 string[] args = message.SplitSpaces(2);
                 
-                if (int.TryParse(args[0], out secTime)) {
+                try {
+                    delay  = args[0].ParseShort("s");
                     reason = args.Length > 1 ? args[1] : "";
-                } else {
-                    reason = args[0]; secTime = 10;
+                } catch {
+                    delay  = TimeSpan.FromSeconds(10);
+                    reason = message;
                 }
-                if (secTime <= 0) { Player.Message(p, "Countdown time must be greater than zero"); return; } 
-                DoShutdown(secTime, reason);
+                
+                int delaySec = (int)delay.TotalSeconds;
+                if (delaySec <= 0) { p.Message("Countdown time must be greater than zero"); return; } 
+                DoShutdown(delaySec, reason);
             }
         }
         
-        static void DoShutdown(int secTime, string reason) {
+        static void DoShutdown(int delay, string reason) {
             ShutdownArgs args = new ShutdownArgs();
-            args.Delay = secTime - 1;
+            args.Delay  = delay - 1;
             args.Reason = reason;
             
             if (reason.Length > 0) reason = ": " + reason;
             Log("Server shutdown started" + reason);
-            Log("Server shutdown in " + secTime + " seconds");
+            Log("Server shutdown in " + delay + " seconds");
             
             shutdownTask = Server.MainScheduler.QueueRepeat(
                 ShutdownCallback, args, TimeSpan.FromSeconds(1));
@@ -80,7 +85,9 @@ namespace MCGalaxy.Commands.Maintenance {
         static void ShutdownCallback(SchedulerTask task) {
             ShutdownArgs args = (ShutdownArgs)task.State;
             if (args.Delay == 0) {
-                Server.Stop(false, args.Reason);
+                string reason = args.Reason;
+                if (reason.Length == 0) reason = Server.Config.DefaultShutdownMessage;
+                Server.Stop(false, reason);
             } else {
                 Log("Server shutdown in " + args.Delay + " seconds");
                 args.Delay--;
@@ -93,10 +100,12 @@ namespace MCGalaxy.Commands.Maintenance {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Shutdown [delay] <reason>");
-            Player.Message(p, "%HShuts the server down after [delay] seconds.");
-            Player.Message(p, "%T/Shutdown abort");
-            Player.Message(p, "%HAborts the current server shutdown.");
+            p.Message("&T/Shutdown [delay] <reason>");
+            p.Message("&HShuts the server down after [delay]");
+            p.Message("&T/Shutdown <reason>");
+            p.Message("&HShuts the server down after 10 seconds");
+            p.Message("&T/Shutdown abort");
+            p.Message("&HAborts the current server shutdown.");
         }
     }
 }

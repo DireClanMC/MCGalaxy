@@ -20,65 +20,43 @@ using System.Collections.Generic;
 using MCGalaxy.Eco;
 
 namespace MCGalaxy.Commands.Eco {
-    public sealed class CmdAwards : Command {        
+    public sealed class CmdAwards : Command2 {
         public override string name { get { return "Awards"; } }
         public override string type { get { return CommandTypes.Economy; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
             if (args.Length > 2) { Help(p); return; }
-            string plName = "", modifier = args[args.Length - 1];
-            int ignored;
-            
-            if (args.Length == 2) {
-                plName = PlayerInfo.FindMatchesPreferOnline(p, args[0]);
-                if (plName == null) return;
-            } else if (message.Length > 0 && !message.CaselessEq("all")) {
-                if (!int.TryParse(args[0], out ignored)) {
-                    modifier = "";
-                    plName = PlayerInfo.FindMatchesPreferOnline(p, args[0]);
-                    if (plName == null) return;
-                }
+            int offset = 0;           
+            string name = p.name;
+
+            if (args.Length == 2 || (message.Length > 0 && !IsListModifier(args[0]))) {
+                offset = 1;
+                name = PlayerInfo.FindMatchesPreferOnline(p, args[0]);               
+                if (name == null) return;
             }
 
-            List<Awards.Award> awards = GetAwards(plName);
-            if (awards.Count == 0) {
-                if (plName.Length > 0) {
-                    Player.Message(p, "{0} %Shas no awards.", 
-                                   PlayerInfo.GetColoredName(p, plName));
-                } else {
-                    Player.Message(p, "This server has no awards yet.");
-                }
-                return;
-            }
+            List<Awards.Award> awards = Awards.AwardsList;
+            if (awards.Count == 0) { p.Message("This server has no awards yet."); return; }
             
-            string cmd = plName.Length == 0 ? "awards" : "awards " + plName;
-            MultiPageOutput.Output(p, awards, FormatAward,
+            List<string> playerAwards = Awards.GetPlayerAwards(name);
+            StringFormatter<Awards.Award> formatter = (award) => FormatPlayerAward(award, playerAwards);
+            
+            string cmd = name.Length == 0 ? "awards" : "awards " + name;
+            string modifier = args.Length > offset ? args[offset] : "";
+            
+            MultiPageOutput.Output(p, awards, formatter,
                                    cmd, "Awards", modifier, true);
         }
         
-        static List<Awards.Award> GetAwards(string plName) {
-            if (plName.Length == 0) return Awards.AwardsList;
-            
-            List<Awards.Award> awards = new List<Awards.Award>();
-            foreach (string name in Awards.GetPlayerAwards(plName)) {
-                Awards.Award award = new Awards.Award();
-                award.Name = name;
-                
-                Awards.Award match = Awards.FindExact(name);
-                if (match != null) award.Description = match.Description;
-                awards.Add(award);
-            }
-            return awards;
-        }
-        
-        static string FormatAward(Awards.Award award) {
-            return "&6" + award.Name + ": &7" + award.Description;
+        static string FormatPlayerAward(Awards.Award award, List<string> awards) {
+            bool has = awards != null && awards.CaselessContains(award.Name);
+            return (has ? "&a" : "&c") + award.Name + ": &7" + award.Description;
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Awards <player> %H- Lists awards that player has.");
-            Player.Message(p, "%H  If <player> is not given, lists all awards the server has.");
+            p.Message("&T/Awards <player> &H- Lists awards");
+            p.Message("&HAppears &agreen &Hif player has an award, &cred &Hif not");
         }
     }
 }

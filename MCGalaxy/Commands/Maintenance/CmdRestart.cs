@@ -16,19 +16,19 @@
     permissions and limitations under the Licenses.
 */
 namespace MCGalaxy.Commands.Maintenance {
-    public sealed class CmdRestart : Command {
+    public sealed class CmdRestart : Command2 {
         public override string name { get { return "Restart"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
 
-        public override void Use(Player p, string message) {
-            if (message.Length > 0) { Help(p); return; }
-            Server.Stop(true);
+        public override void Use(Player p, string message, CommandData data) {
+            if (message.Length == 0) message = Server.Config.DefaultRestartMessage;
+            Server.Stop(true, message);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Restart");
-            Player.Message(p, "%HRestarts the server! Use carefully!");
+            p.Message("&T/Restart <message>");
+            p.Message("&HRestarts the server! Use carefully!");
         }
     }
 }

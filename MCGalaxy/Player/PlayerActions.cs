@@ -24,24 +24,15 @@ using MCGalaxy.Commands.World;
 namespace MCGalaxy {
     public static class PlayerActions {
         
-        /// <summary> Moves the player to the specified block coordinates. (bY is treated as player feet) </summary>
-        public static void MoveCoords(Player p, int bX, int bY, int bZ, byte rotX, byte rotY) {
-            Position pos = Position.FromFeet(16 + bX * 32, bY * 32, 16 + bZ * 32);
-            p.SendPos(Entities.SelfID, pos, new Orientation(rotX, rotY));
-        }
-        
-        /// <summary> Moves the player to the specified map. </summary>
         public static bool ChangeMap(Player p, string name) { return ChangeMap(p, null, name); }
-        
-        /// <summary> Moves the player to the specified map. </summary>
-        public static bool ChangeMap(Player p, Level lvl) { return ChangeMap(p, lvl, null); }
+        public static bool ChangeMap(Player p, Level lvl)   { return ChangeMap(p, lvl, null); }
         
         static bool ChangeMap(Player p, Level lvl, string name) {
             if (Interlocked.CompareExchange(ref p.UsingGoto, 1, 0) == 1) {
-                Player.Message(p, "Cannot use /goto, already joining a map."); return false; 
+                p.Message("Cannot use /goto, already joining a map."); return false;
             }
             Level oldLevel = p.level;
-            bool didJoin = false;
+            bool didJoin   = false;
             
             try {
                 didJoin = name == null ? GotoLevel(p, lvl) : GotoMap(p, name);
@@ -51,7 +42,7 @@ namespace MCGalaxy {
             }
             
             if (!didJoin) return false;
-            Unload(oldLevel);
+            oldLevel.AutoUnload();
             return true;
         }
         
@@ -60,7 +51,7 @@ namespace MCGalaxy {
             Level lvl = LevelInfo.FindExact(name);
             if (lvl != null) return GotoLevel(p, lvl);
             
-            if (ServerConfig.AutoLoadMaps) {
+            if (Server.Config.AutoLoadMaps) {
                 string map = Matcher.FindMaps(p, name);
                 if (map == null) return false;
                 
@@ -70,88 +61,105 @@ namespace MCGalaxy {
             } else {
                 lvl = Matcher.FindLevels(p, name);
                 if (lvl == null) {
-                    Player.Message(p, "There is no level \"{0}\" loaded. Did you mean..", name);
-                    Command.all.FindByName("Search").Use(p, "levels " + name);
+                    p.Message("There is no level \"{0}\" loaded. Did you mean..", name);
+                    Command.Find("Search").Use(p, "levels " + name);
                     return false;
                 }
                 return GotoLevel(p, lvl);
             }
         }
         
-        static bool LoadOfflineLevel(Player p, string name) {
-            string propsPath = LevelInfo.PropertiesPath(name);
+        static bool LoadOfflineLevel(Player p, string map) {
+            string propsPath = LevelInfo.PropsPath(map);
             LevelConfig cfg = new LevelConfig();
-            LevelConfig.Load(propsPath, cfg);
+            cfg.Load(propsPath);
             
             if (!cfg.LoadOnGoto) {
-                Player.Message(p, "Level \"{0}\" cannot be loaded using %T/Goto.", name);
+                p.Message("Level \"{0}\" cannot be loaded using &T/Goto.", map);
                 return false;
             }
             
-            LevelAccessController visitAccess = new LevelAccessController(cfg, name, true);
-            bool ignorePerms = p.summonedMap != null && p.summonedMap.CaselessEq(name);
-            if (!visitAccess.CheckDetailed(p, ignorePerms)) return false;
+            AccessController visitAccess = new LevelAccessController(cfg, map, true);
+            bool skip = p.summonedMap != null && p.summonedMap.CaselessEq(map);
+            LevelPermission plRank = skip ? LevelPermission.Nobody : p.Rank;
+            if (!visitAccess.CheckDetailed(p, plRank)) return false;
             
-            CmdLoad.LoadLevel(p, name, true);
-            Level lvl = LevelInfo.FindExact(name);
+            LevelActions.Load(p, map, false);
+            Level lvl = LevelInfo.FindExact(map);
             if (lvl != null) return GotoLevel(p, lvl);
 
-            Player.Message(p, "Level \"{0}\" failed to be auto-loaded.", name);
+            p.Message("Level \"{0}\" failed to be auto-loaded.", map);
             return false;
         }
         
         static bool GotoLevel(Player p, Level lvl) {
-            if (p.level == lvl) { Player.Message(p, "You are already in {0}%S.", lvl.ColoredName); return false; }
-            if (!lvl.CanJoin(p)) return false;
+            if (p.level == lvl) { p.Message("You are already in {0}&S.", lvl.ColoredName); return false; }
+            
+            bool canJoin = lvl.CanJoin(p);
+            OnJoiningLevelEvent.Call(p, lvl, ref canJoin);
+            if (!canJoin) return false;
 
             p.Loading = true;
             Entities.DespawnEntities(p);
-            Level oldLevel = p.level;
-            p.level = lvl; 
-            p.SendMap(oldLevel);
-
-            Position pos = lvl.SpawnPos;
-            Orientation rot = p.Rot;
-            byte yaw = lvl.rotx, pitch = lvl.roty;
-            OnPlayerSpawningEvent.Call(p, ref pos, ref yaw, ref pitch, false);
+            Level prev = p.level; p.level = lvl;
             
-            rot.RotY = yaw; rot.HeadX = pitch; 
-            Entities.SpawnEntities(p, pos, rot);
-            CheckGamesJoin(p, oldLevel);
-            
-            if (p.level.ShouldShowJoinMessage(oldLevel)) {
-                string msg = p.level.IsMuseum ? " %Swent to the " : " %Swent to ";
-                Chat.MessageGlobal(p, p.ColoredName + msg + lvl.ColoredName, false, true);
-                OnPlayerActionEvent.Call(p, PlayerAction.JoinWorld, lvl.name);
-            }
+            p.SendRawMap(prev, lvl);
+            PostSentMap(p, prev, lvl, true);
+            p.Loading = false;
             return true;
         }
         
-        internal static void CheckGamesJoin(Player p, Level oldLvl) {
-            Server.lava.PlayerJoinedLevel(p, p.level, oldLvl);
-            Server.zombie.PlayerJoinedLevel(p, p.level, oldLvl);
-            
-            if (p.inTNTwarsMap) p.canBuild = true;
-            TntWarsGame game = TntWarsGame.Find(p.level);
-            if (game == null) return;
-            
-            if (game.GameStatus != TntWarsGame.TntWarsGameStatus.Finished &&
-                game.GameStatus != TntWarsGame.TntWarsGameStatus.WaitingForPlayers) {
-                p.canBuild = false;
-                Player.Message(p, "TNT Wars: Disabled your building because you are in a TNT Wars map!");
-            }
-            p.inTNTwarsMap = true;
+        /// <summary> Reloads the current level for the given player </summary>
+        /// <remarks> The player's spawn position is changed to their current position </remarks>
+        public static void ReloadMap(Player p) {
+            p.Loading = true;
+            Entities.DespawnEntities(p);
+            p.SendRawMap(p.level, p.level);
+            Entities.SpawnEntities(p, p.Pos, p.Rot);
+            p.Loading = false;
         }
         
-        static void Unload(Level lvl) {
-            bool unloadOld = true;
-            if (lvl.IsMuseum || !lvl.Config.AutoUnload) return;
+        internal static void PostSentMap(Player p, Level prev, Level lvl, bool announce) {
+            Position pos = lvl.SpawnPos;
+            Orientation rot = p.Rot;
+            byte yaw = lvl.rotx, pitch = lvl.roty;
+            // in case player disconnected mid-way through loading map
+            if (p.Socket.Disconnected) return;
             
-            Player[] players = PlayerInfo.Online.Items;
-            foreach (Player pl in players) {
-                if (pl.level == lvl) { unloadOld = false; break; }
-            }
-            if (unloadOld && ServerConfig.AutoLoadMaps) lvl.Unload(true);
+            OnPlayerSpawningEvent.Call(p, ref pos, ref yaw, ref pitch, false);
+            rot.RotY = yaw; rot.HeadX = pitch;
+            p.Pos = pos;
+            p.SetYawPitch(yaw, pitch);
+            if (p.Socket.Disconnected) return;
+            
+            Entities.SpawnEntities(p, pos, rot);
+            OnJoinedLevelEvent.Call(p, prev, lvl, ref announce);
+            if (!announce || !Server.Config.ShowWorldChanges) return;
+            
+            announce = !p.hidden && Server.Config.IRCShowWorldChanges;
+            string msg = p.level.IsMuseum ? "λNICK &Swent to the " : "λNICK &Swent to ";
+            Chat.MessageFrom(ChatScope.All, p, msg + lvl.ColoredName,
+                             null, FilterGoto(p, prev, lvl), announce);
+        }
+        
+        static ChatMessageFilter FilterGoto(Player source, Level prev, Level lvl) {
+            return (pl, obj) => 
+                pl.CanSee(source) && !pl.Ignores.WorldChanges &&
+                (Chat.FilterGlobal(pl, obj) || Chat.FilterLevel(pl, prev) || Chat.FilterLevel(pl, lvl));
+        }
+        
+        public static void Respawn(Player p) {
+            bool cpSpawn = p.useCheckpointSpawn;
+            Position pos;
+            
+            pos.X = 16 + (cpSpawn ? p.checkpointX : p.level.spawnx) * 32;
+            pos.Y = 32 + (cpSpawn ? p.checkpointY : p.level.spawny) * 32;
+            pos.Z = 16 + (cpSpawn ? p.checkpointZ : p.level.spawnz) * 32;
+            byte yaw   = cpSpawn ? p.checkpointRotX : p.level.rotx;
+            byte pitch = cpSpawn ? p.checkpointRotY : p.level.roty;
+            OnPlayerSpawningEvent.Call(p, ref pos, ref yaw, ref pitch, true);
+            
+            p.SendPos(Entities.SelfID, pos, new Orientation(yaw, pitch));
         }
     }
 }

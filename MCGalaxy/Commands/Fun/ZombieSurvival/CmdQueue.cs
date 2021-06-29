@@ -16,15 +16,17 @@
     permissions and limitations under the Licenses.
 */
 using System.IO;
+using MCGalaxy.Games;
+
 namespace MCGalaxy.Commands.Fun {
-    public sealed class CmdQueue : Command {
+    public sealed class CmdQueue : Command2 {
         public override string name { get { return "Queue"; } }
         public override string shortcut { get { return "qz"; } }
         public override string type { get { return CommandTypes.Games; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override CommandEnable Enabled { get { return CommandEnable.Zombie; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
             if (args.Length != 2) { Help(p); return; }
             string value = args[1];
@@ -33,28 +35,28 @@ namespace MCGalaxy.Commands.Fun {
                 Player who = PlayerInfo.FindMatches(p, value);
                 if (who == null) return;
                 
-                Player.Message(p, value + " was queued.");
-                Server.zombie.QueuedZombie = who.name;
-                if (Server.zombie.Map != null)
-                    Server.zombie.Map.ChatLevel(who.ColoredName + " %Swas queued as the next zombie.");
+                p.Message(value + " was queued.");
+                ZSGame.Instance.QueuedZombie = who.name;
+                if (ZSGame.Instance.Map != null)
+                    ZSGame.Instance.Map.Message(who.ColoredName + " &Swas queued as the next zombie.");
             } else if (args[0].CaselessEq("level")) {
                 string map = Matcher.FindMaps(p, value);
                 if (map == null) return;
                 
-                Player.Message(p, map + " was queued.");
-                Server.zombie.Picker.QueuedMap = map.ToLower();
-                if (Server.zombie.Map != null)
-                    Server.zombie.Map.ChatLevel(map + " was queued as the next map.");
+                p.Message(map + " was queued.");
+                ZSGame.Instance.Picker.QueuedMap = map.ToLower();
+                if (ZSGame.Instance.Map != null)
+                    ZSGame.Instance.Map.Message(map + " was queued as the next map.");
             } else {
                 Help(p);
             }
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Queue zombie [name]");
-            Player.Message(p, "%HNext round [name] will be infected/start zombie");
-            Player.Message(p, "%T/Queue level [name]");
-            Player.Message(p, "%HNext round [name] will be the level used");
+            p.Message("&T/Queue zombie [name]");
+            p.Message("&HNext round [name] will be infected/start zombie");
+            p.Message("&T/Queue level [level]");
+            p.Message("&HNext round [level] will be the level used");
         }
     }
 }

@@ -29,15 +29,12 @@ namespace MCGalaxy.Tasks {
 
         internal static void QueueTasks() {
             Server.MainScheduler.QueueRepeat(CheckState, null, TimeSpan.FromSeconds(3));
-            
-            Server.Background.QueueRepeat(AutoSave,
-                                          1, TimeSpan.FromSeconds(ServerConfig.BackupInterval));
-            Server.Background.QueueRepeat(BlockUpdates,
-                                          null, TimeSpan.FromSeconds(ServerConfig.BlockDBSaveInterval));
+            Server.Background.QueueRepeat(AutoSave, 1, Server.Config.BackupInterval);
+            Server.Background.QueueRepeat(BlockUpdates, null, Server.Config.BlockDBSaveInterval);
         }
         
         
-        internal static void LocationChecks(SchedulerTask task) {
+        internal static void TickPlayers(SchedulerTask task) {
             Player[] players = PlayerInfo.Online.Items;
             players = PlayerInfo.Online.Items;
             int delay = players.Length == 0 ? 100 : 20;
@@ -46,8 +43,8 @@ namespace MCGalaxy.Tasks {
             for (int i = 0; i < players.Length; i++) {
                 try {
                     TickPlayer(players[i]);
-                } catch (Exception e) {
-                    Logger.LogError(e);
+                } catch (Exception ex) {
+                    Logger.LogError("Error ticking players", ex);
                 }
             }
         }
@@ -57,8 +54,7 @@ namespace MCGalaxy.Tasks {
                 Player who = PlayerInfo.FindExact(p.following);
                 if (who == null || who.level != p.level) {
                     p.following = "";
-                    if (!p.canBuild)
-                        p.canBuild = true;
+                    p.possessed = false;
                     if (who != null && who.possess == p.name)
                         who.possess = "";
                     return;
@@ -88,7 +84,7 @@ namespace MCGalaxy.Tasks {
         internal static void UpdateEntityPositions(SchedulerTask task) {
             Entities.GlobalUpdate();
             PlayerBot.GlobalUpdatePosition();
-            task.Delay = TimeSpan.FromMilliseconds(ServerConfig.PositionUpdateInterval);
+            task.Delay = TimeSpan.FromMilliseconds(Server.Config.PositionUpdateInterval);
         }
         
         internal static void CheckState(SchedulerTask task) {
@@ -100,20 +96,22 @@ namespace MCGalaxy.Tasks {
                     p.Send(Packet.Ping());
                 }
                 
-                if (ServerConfig.AutoAfkMins <= 0) return;
+                if (Server.Config.AutoAfkTime.Ticks <= 0) return;
                 if (DateTime.UtcNow < p.AFKCooldown) return;
                 
                 if (p.IsAfk) {
-                    int time = p.group.AfkKickMinutes;
-                    if (p.AutoAfk) time += ServerConfig.AutoAfkMins;
+                    TimeSpan time = p.group.AfkKickTime;
+                    if (p.AutoAfk) time += Server.Config.AutoAfkTime;
                     
-                    if (p.group.AfkKicked && p.LastAction.AddMinutes(time) < DateTime.UtcNow) {
-                        p.Leave("Auto-kick, AFK for " + p.group.AfkKickMinutes + " minutes");
+                    if (p.group.AfkKicked && p.LastAction.Add(time) < DateTime.UtcNow) {
+                        string afkTime = p.group.AfkKickTime.Shorten(true, true);
+                        p.Leave("Auto-kick, AFK for " + afkTime);
                     }
                 } else {
                     DateTime lastAction = p.LastAction;
-                    if (lastAction.AddMinutes(ServerConfig.AutoAfkMins) < DateTime.UtcNow) {
-                        CmdAfk.ToggleAfk(p, "auto: Not moved for " + ServerConfig.AutoAfkMins + " minutes");
+                    if (lastAction.Add(Server.Config.AutoAfkTime) < DateTime.UtcNow) {
+                        string afkTime = Server.Config.AutoAfkTime.Shorten(true, true);
+                        CmdAfk.ToggleAfk(p, "auto: Not moved for " + afkTime);
                         p.AutoAfk = true;
                         p.LastAction = lastAction;
                     }
@@ -123,14 +121,14 @@ namespace MCGalaxy.Tasks {
         
         internal static void BlockUpdates(SchedulerTask task) {
             Level[] loaded = LevelInfo.Loaded.Items;
-            task.Delay = TimeSpan.FromSeconds(ServerConfig.BlockDBSaveInterval);
+            task.Delay = Server.Config.BlockDBSaveInterval;
             
             foreach (Level lvl in loaded) {
                 try {
-                    if (!lvl.ShouldSaveChanges()) continue;
+                    if (!lvl.SaveChanges) continue;
                     lvl.SaveBlockDBChanges();
-                } catch (Exception e) {
-                    Logger.LogError(e);
+                } catch (Exception ex) {
+                    Logger.LogError("Error saving BlockDB for " + lvl.MapName, ex);
                 }
             }
         }
@@ -142,31 +140,30 @@ namespace MCGalaxy.Tasks {
             
             foreach (Level lvl in levels) {
                 try {
-                    if (!lvl.Changed || !lvl.ShouldSaveChanges()) continue;
+                    if (!lvl.Changed || !lvl.SaveChanges) continue;
 
                     lvl.Save();
                     if (count == 0)  {
-                        int backupNumber = lvl.Backup();
-                        if (backupNumber != -1) {
-                            lvl.ChatLevel("Backup " + backupNumber + " saved.");
-                            Logger.Log(LogType.BackgroundActivity, "Backup {0} saved for {1}", backupNumber, lvl.name);
+                        string backup = lvl.Backup();
+                        if (backup != null) {
+                            lvl.Message("Backup " + backup + " saved.");
+                            Logger.Log(LogType.BackgroundActivity, "Backup {0} saved for {1}", backup, lvl.name);
                         }
                     }
                 } catch (Exception ex) {
-                    Logger.Log(LogType.Warning, "Backup for {0} has caused an error.", lvl.name);
-                    Logger.LogError(ex);
+                    Logger.LogError("Error auto-backing up " + lvl.MapName, ex);
                 }
             }
 
             if (count <= 0) count = 15;
             task.State = count;
-            task.Delay = TimeSpan.FromSeconds(ServerConfig.BackupInterval);
+            task.Delay = Server.Config.BackupInterval;
 
             Player[] players = PlayerInfo.Online.Items;
             try {
-                foreach (Player p in players) p.save();
-            } catch (Exception e) {
-                Logger.LogError(e);
+                foreach (Player p in players) p.SaveStats();
+            } catch (Exception ex) {
+                Logger.LogError("Error auto-saving players", ex);
             }
             
             players = PlayerInfo.Online.Items;

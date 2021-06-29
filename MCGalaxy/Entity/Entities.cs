@@ -13,11 +13,11 @@ or implied. See the Licenses for the specific language governing
 permissions and limitations under the Licenses.
  */
 using System;
-using System.Text;
 using MCGalaxy.Events.EntityEvents;
 using MCGalaxy.Games;
 using MCGalaxy.Network;
 using MCGalaxy.Maths;
+using BlockID = System.UInt16;
 
 namespace MCGalaxy {
 
@@ -43,7 +43,6 @@ namespace MCGalaxy {
         /// <summary> Spawns this player to all other players that can see the player in the current world. </summary>
         public static void GlobalSpawn(Player p, Position pos, Orientation rot, bool self, string possession = "") {
             Player[] players = PlayerInfo.Online.Items;
-            p.Game.lastSpawnColor = p.Game.Infected ? ZSGame.InfectCol : p.color;
             TabList.Update(p, self);
             
             foreach (Player other in players) {
@@ -79,17 +78,16 @@ namespace MCGalaxy {
             }
         }
         
-        internal static void Spawn(Player dst, Player p) { Spawn(dst, p, p.Pos, p.Rot); }       
-        internal static void Spawn(Player dst, Player p, Position pos,
-                                   Orientation rot, string possession = "") {
+        public static void Spawn(Player dst, Player p) { Spawn(dst, p, p.Pos, p.Rot); }       
+        public static void Spawn(Player dst, Player p, Position pos,
+                                 Orientation rot, string possession = "") {
             byte id = p == dst ? Entities.SelfID : p.id;
-            
             string name = p.color + p.truename + possession;
             string skin = p.SkinName, model = p.Model;
             OnEntitySpawnedEvent.Call(p, ref name, ref skin, ref model, dst);
 
             SpawnRaw(dst, id, p, pos, rot, skin, name, model);
-            if (!ServerConfig.TablistGlobal) TabList.Add(dst, p, id);
+            if (!Server.Config.TablistGlobal) TabList.Add(dst, p, id);
         }
         
         /// <summary> Spawns this player to all other players, and spawns all others players to this player. </summary>
@@ -122,22 +120,22 @@ namespace MCGalaxy {
             foreach (PlayerBot b in botsList) { Despawn(p, b); }
         }
         
-        internal static void Spawn(Player dst, PlayerBot b) {
-            string name = Chat.Format(b.color + b.DisplayName, dst, true, false);
+        public static void Spawn(Player dst, PlayerBot b) {
+            string name  = Chat.Format(b.color + b.DisplayName, dst, true, false);
             if (b.DisplayName.CaselessEq("empty")) name = "";
-            string skin = Chat.Format(b.SkinName, dst, true, false);
+            string skin  = Chat.Format(b.SkinName, dst, true, false);
             string model = Chat.Format(b.Model, dst, true, false);
             
             OnEntitySpawnedEvent.Call(b, ref name, ref skin, ref model, dst);
             SpawnRaw(dst, b.id, b, b.Pos, b.Rot, skin, name, model);
-            if (ServerConfig.TablistBots) TabList.Add(dst, b);
+            if (Server.Config.TablistBots) TabList.Add(dst, b);
         }
         
-        static void SpawnRaw(Player dst, byte id, Entity entity, Position pos, Orientation rot,
+        static void SpawnRaw(Player dst, byte id, Entity e, Position pos, Orientation rot,
                              string skin, string name, string model) {
             // NOTE: Fix for standard clients
             if (id == Entities.SelfID) pos.Y -= 22;
-            name = Colors.Cleanup(name, dst.hasTextColors);           
+            name = LineWrapper.CleanupColors(name, dst);
             
             if (dst.Supports(CpeExt.ExtPlayerList, 2)) {
                 dst.Send(Packet.ExtAddEntity2(id, skin, name, pos, rot, dst.hasCP437, dst.hasExtPositions));
@@ -148,98 +146,110 @@ namespace MCGalaxy {
                 dst.Send(Packet.AddEntity(id, name, pos, rot, dst.hasCP437, dst.hasExtPositions));
             }
 
-            if (dst.hasChangeModel && !model.CaselessEq("humanoid")) SendModel(dst, id, model);
+            if (dst.hasChangeModel) {
+                OnSendingModelEvent.Call(e, ref model, dst);
+                if (!model.CaselessEq("humanoid")) SendModel(dst, id, model);
+            }
+            
             if (dst.Supports(CpeExt.EntityProperty)) {
                 dst.Send(Packet.EntityProperty(id, EntityProp.RotX, Orientation.PackedToDegrees(rot.RotX)));
                 dst.Send(Packet.EntityProperty(id, EntityProp.RotZ, Orientation.PackedToDegrees(rot.RotZ)));
-                SendModelScales(dst, id, entity);
+                SendModelScales(dst, id, e);
             }
         }
         
-        internal static void Despawn(Player dst, Player other) {
+        public static void Despawn(Player dst, Player other) {
             OnEntityDespawnedEvent.Call(other, dst);
             byte id = other == dst ? SelfID : other.id;
             dst.Send(Packet.RemoveEntity(id));
-            if (!ServerConfig.TablistGlobal) TabList.Remove(dst, other);
+            if (!Server.Config.TablistGlobal) TabList.Remove(dst, other);
         }
         
-        internal static void Despawn(Player dst, PlayerBot b) {
+        public static void Despawn(Player dst, PlayerBot b) {
             OnEntityDespawnedEvent.Call(b, dst);
             dst.Send(Packet.RemoveEntity(b.id));
-            if (ServerConfig.TablistBots) TabList.Remove(dst, b);
+            if (Server.Config.TablistBots) TabList.Remove(dst, b);
         }
 
         #endregion
         
         
-        /// <summary> Returns whether the given player is able to see the target player (e.g. in /who). </summary>
-        public static bool CanSee(Player p, Player target) {
-            if (p == null || target == null || !target.hidden || p == target) return true;
-            if (target.otherRankHidden) return p.Rank >= target.oHideRank;
-            return p.Rank >= target.Rank;
+        [Obsolete("Use p.CanSee")]
+        public static bool CanSee(Player p, Player target) { return p.CanSee(target); }
+        [Obsolete("Use p.CanSee")]
+        public static bool CanSee(CommandData data, Player p, Player target) {       
+            return p == target || target == null || !target.hidden || data.Rank >= target.hideRank;
         }
 
-        public static void UpdateModel(Entity entity, string model) {
+        [Obsolete("Use entity.UpdateModel")]
+        public static void UpdateModel(Entity e, string model) { e.UpdateModel(model); }
+
+        internal static void BroadcastModel(Entity e, string m) {
             Player[] players = PlayerInfo.Online.Items;
-            entity.Model = model;
-            Level lvl = entity.Level;
-            entity.ModelBB = AABB.ModelAABB(entity, lvl);
+            Level lvl = e.Level;
             
             foreach (Player pl in players) {
-                if (pl.level != lvl || !pl.Supports(CpeExt.ChangeModel)) continue;
-                if (!pl.CanSeeEntity(entity)) continue;
+                if (pl.level != lvl || !pl.hasChangeModel) continue;
+                if (!pl.CanSeeEntity(e)) continue;
                 
-                byte id = (pl == entity) ? Entities.SelfID : entity.EntityID;
-                string modelSend = Chat.Format(model, pl, true, false);
-                SendModel(pl, id, modelSend);
-                SendModelScales(pl, id, entity);
+                byte id = (pl == e) ? Entities.SelfID : e.EntityID;
+                string model = Chat.Format(m, pl, true, false);
+                
+                OnSendingModelEvent.Call(e, ref model, pl);
+                SendModel(pl, id, model);
+                SendModelScales(pl, id, e);
             }
         }
         
-        static void SendModelScales(Player pl, byte id, Entity entity) {
-            if (!pl.Supports(CpeExt.EntityProperty)) return;
+        static void SendModelScales(Player dst, byte id, Entity e) {
+            if (!dst.Supports(CpeExt.EntityProperty)) return;
             
-            string model = entity.Model;
-            float scale = AABB.GetScaleFrom(ref model);
-            SendModelScale(pl, id, EntityProp.ScaleX, entity.ScaleX * scale);
-            SendModelScale(pl, id, EntityProp.ScaleY, entity.ScaleY * scale);
-            SendModelScale(pl, id, EntityProp.ScaleZ, entity.ScaleZ * scale);
+            float max = ModelInfo.MaxScale(e, e.Model);
+            SendModelScale(dst, id, EntityProp.ScaleX, e.ScaleX, max);
+            SendModelScale(dst, id, EntityProp.ScaleY, e.ScaleY, max);
+            SendModelScale(dst, id, EntityProp.ScaleZ, e.ScaleZ, max);
         }
         
-        static void SendModelScale(Player pl, byte id, EntityProp axis, float value) {
+        static void SendModelScale(Player dst, byte id, EntityProp axis, float value, float max) {
             if (value == 0) return;
+            value = Math.Min(value, max);
+            
             int packed = (int)(value * 1000);
             if (packed == 0) return;
-            pl.Send(Packet.EntityProperty(id, axis, packed));
+            dst.Send(Packet.EntityProperty(id, axis, packed));
         }
         
-        static void SendModel(Player pl, byte id, string model) {
-            byte block;
-            // Fallback block models for clients that don't support block definitions
-            if (byte.TryParse(model, out block) && !pl.hasBlockDefs) {
-                model = pl.level.RawFallback(block).ToString();
+        static void SendModel(Player dst, byte id, string model) {
+            BlockID raw;
+            if (BlockID.TryParse(model, out raw) && raw > dst.MaxRawBlock) {
+                BlockID block = Block.FromRaw(raw);
+                if (block >= Block.ExtendedCount) {
+                    model = "humanoid"; // invalid block ids
+                } else {
+                    model = dst.ConvertBlock(block).ToString();
+                }                
             }
-            pl.Send(Packet.ChangeModel(id, model, pl.hasCP437));
+            dst.Send(Packet.ChangeModel(id, model, dst.hasCP437));
         }
 
-        public static void UpdateEntityProp(Entity entity, EntityProp prop, int value) {
+        public static void UpdateEntityProp(Entity e, EntityProp prop, int value) {
             Player[] players = PlayerInfo.Online.Items;
-            Level lvl = entity.Level;
+            Level lvl = e.Level;
             
-            Orientation rot = entity.Rot;
+            Orientation rot = e.Rot;
             byte angle = Orientation.DegreesToPacked(value);
             if (prop == EntityProp.RotX) rot.RotX = angle;
             if (prop == EntityProp.RotY) rot.RotY = angle;
             if (prop == EntityProp.RotZ) rot.RotZ = angle;
             
-            entity.Rot = rot;
-            if (prop == EntityProp.RotY) entity.SetYawPitch(rot.RotY, rot.HeadX);
+            e.Rot = rot;
+            if (prop == EntityProp.RotY) e.SetYawPitch(rot.RotY, rot.HeadX);
 
             foreach (Player pl in players) {
                 if (pl.level != lvl || !pl.Supports(CpeExt.EntityProperty)) continue;
-                if (!pl.CanSeeEntity(entity)) continue;
+                if (!pl.CanSeeEntity(e)) continue;
                 
-                byte id = (pl == entity) ? Entities.SelfID : entity.EntityID;
+                byte id = (pl == e) ? Entities.SelfID : e.EntityID;
                 pl.Send(Packet.EntityProperty(id, prop,
                                               Orientation.PackedToDegrees(angle)));
             }
@@ -315,18 +325,26 @@ namespace MCGalaxy {
             }
         }
         
-        unsafe static void UpdatePosition(Player p) {
+        unsafe static void UpdatePosition(Player dst) {
             Player[] players = PlayerInfo.Online.Items;
             byte* src = stackalloc byte[16 * 256]; // 16 = size of absolute update, with extended positions
             byte* ptr = src;
             
-            foreach (Player pl in players) {
-                if (p == pl || p.level != pl.level || !p.CanSeeEntity(pl)) continue;
+            foreach (Player p in players) {
+                if (dst == p || dst.level != p.level || !dst.CanSeeEntity(p)) continue;
                 
-                Orientation rot = pl.Rot;
-                rot.HeadX = p.hasChangeModel ? MakePitch(pl, rot.HeadX) : MakeClassicPitch(pl, rot.HeadX);
-                Entities.GetPositionPacket(ref ptr, pl.id, pl.hasExtPositions, p.hasExtPositions,
-                                           pl.tempPos, pl.lastPos, rot, pl.lastRot);
+                Orientation rot = p.Rot; byte pitch = rot.HeadX;
+                if (Server.flipHead || p.flipHead) pitch = FlippedPitch(pitch);
+                
+                // flip head when infected, but doesn't support model
+                if (!dst.hasChangeModel) {
+                    ZSData data = ZSGame.TryGet(p);
+                    if (data != null && data.Infected) pitch = FlippedPitch(pitch);
+                }
+            
+                rot.HeadX = pitch;
+                Entities.GetPositionPacket(ref ptr, p.id, p.hasExtPositions, dst.hasExtPositions,
+                                           p.tempPos, p.lastPos, rot, p.lastRot);
             }
             
             int count = (int)(ptr - src);
@@ -334,21 +352,12 @@ namespace MCGalaxy {
             
             byte[] packet = new byte[count];
             for (int i = 0; i < packet.Length; i++) { packet[i] = src[i]; }
-            p.Send(packet);
+            dst.Send(packet);
         }
         
-        static byte MakePitch(Player p, byte pitch) {
-            if (Server.flipHead || p.flipHead)
-                if (pitch > 64 && pitch < 192) return pitch;
-            else return 128;
-            return pitch;
-        }
-        
-        static byte MakeClassicPitch(Player p, byte pitch) {
-            if (Server.flipHead || p.flipHead || p.Game.Infected)
-                if (pitch > 64 && pitch < 192) return pitch;
-            else return 128;
-            return pitch;
+        static byte FlippedPitch(byte pitch) {
+             if (pitch > 64 && pitch < 192) return pitch;
+             else return 128;
         }
         #endregion
     }

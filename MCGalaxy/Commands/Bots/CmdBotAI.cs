@@ -21,17 +21,17 @@ using System.IO;
 using MCGalaxy.Bots;
 
 namespace MCGalaxy.Commands.Bots{
-    public sealed class CmdBotAI : Command {
+    public sealed class CmdBotAI : Command2 {
         public override string name { get { return "BotAI"; } }
         public override string shortcut { get { return "bai"; } }
         public override string type { get { return CommandTypes.Other; } }
-        public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
-            if (args[0].CaselessEq("list")) {
+            string cmd = args[0];
+            if (IsListCommand(cmd)) {
                 string modifier = args.Length > 1 ? args[1] : "";
                 HandleList(p, modifier);
                 return;
@@ -41,13 +41,16 @@ namespace MCGalaxy.Commands.Bots{
             string ai = args[1].ToLower();
 
             if (!Formatter.ValidName(p, ai, "bot AI")) return;
-            if (ai == "hunt" || ai == "kill") { Player.Message(p, "Reserved for special AI."); return; }
+            if (ai == "hunt" || ai == "kill") { p.Message("Reserved for special AI."); return; }
 
-            switch (args[0].ToLower()) {
-                case "add": HandleAdd(p, ai, args); break;
-                case "del": HandleDelete(p, ai, args); break;
-                case "info": HandleInfo(p, ai); break;
-                default: Help(p); break;
+            if (IsCreateCommand(cmd)) {
+                HandleAdd(p, ai, args);
+            } else if (IsDeleteCommand(cmd)) {
+                HandleDelete(p, ai, args);
+            } else if (IsInfoCommand(cmd)) {
+                HandleInfo(p, ai);
+            } else {
+                Help(p);
             }
         }
         
@@ -55,7 +58,7 @@ namespace MCGalaxy.Commands.Bots{
             if (!Directory.Exists("bots/deleted"))
                 Directory.CreateDirectory("bots/deleted");
             if (!File.Exists("bots/" + ai)) {
-                Player.Message(p, "Could not find specified AI."); return;
+                p.Message("Could not find specified bot AI."); return;
             }
             
             for (int attempt = 0; attempt < 10; attempt++) {
@@ -78,7 +81,7 @@ namespace MCGalaxy.Commands.Bots{
             } else {
                 File.Move("bots/" + ai, "bots/deleted/" + ai + attempt);
             }
-            Player.Message(p, "Deleted &b" + ai);
+            p.Message("Deleted bot AI &b" + ai);
         }
         
         static void DeleteLast(Player p, string ai) {
@@ -86,88 +89,61 @@ namespace MCGalaxy.Commands.Bots{
             if (lines.Count > 0) lines.RemoveAt(lines.Count - 1);
 
             File.WriteAllLines("bots/" + ai, lines.ToArray());
-            Player.Message(p, "Deleted the last instruction from " + ai);
+            p.Message("Deleted last instruction from bot AI &b" + ai);
         }
 
         void HandleAdd(Player p, string ai, string[] args) {
-            string[] instructions;
-            try { instructions = File.ReadAllLines("bots/" + ai); }
-            catch { instructions = new string[1]; }
-
-            try {
-                if (!File.Exists("bots/" + ai)) {
-                    Player.Message(p, "Created new bot AI: &b" + ai);
-                    using (StreamWriter w = new StreamWriter("bots/" + ai))
-                        w.WriteLine("#Version 2");
-                } else if (!instructions[0].CaselessEq("#Version 2")) {
-                    Player.Message(p, "File found is out-of-date. Overwriting");
-                    File.Delete("bots/" + ai);
-                    using (StreamWriter w = new StreamWriter("bots/" + ai))
-                        w.WriteLine("#Version 2");
-                } else {
-                    Player.Message(p, "Appended to bot AI: &b" + ai);
+            if (!File.Exists("bots/" + ai)) {
+                p.Message("Created new bot AI: &b" + ai);
+                using (StreamWriter w = new StreamWriter("bots/" + ai)) {
+                    // For backwards compatibility
+                    w.WriteLine("#Version 2");
                 }
-            } catch {
-                Player.Message(p, "An error occurred when accessing the files. You may need to delete it."); return;
             }
 
-            try {
-                string action = args.Length > 2 ? args[2] : "";
-                if (!action.CaselessEq("reverse")) {
-                    ScriptFile.Append(p, ai, action, args); return;
-                }
-                
-                using (StreamWriter w = new StreamWriter("bots/" + ai, true)) {
-                    for (int i = instructions.Length - 1; i > 0; i--) {
-                        if (instructions[i].Length > 0 && instructions[i][0] != '#') {
-                            w.WriteLine(instructions[i]);
-                        }
-                    }
-                }
-            } catch {
-                Player.Message(p, "Invalid parameter");
+            string action = args.Length > 2 ? args[2] : "";
+            string instruction = ScriptFile.Append(p, ai, action, args);
+            if (instruction != null) {
+                p.Message("Appended " + instruction + " instruction to bot AI &b" + ai);
             }
         }
         
         void HandleList(Player p, string modifier) {
             string[] files = Directory.GetFiles("bots");
-            for (int i = 0; i < files.Length; i++) {
-                files[i] = Path.GetFileNameWithoutExtension(files[i]);
-            }
-            
-            MultiPageOutput.Output(p, files, f => f, "BotAI list", "bot AIs", modifier, false);
+            MultiPageOutput.Output(p, files, f => Path.GetFileName(f),
+                                   "BotAI list", "bot AIs", modifier, false);
         }
         
         void HandleInfo(Player p, string ai) {
             if (!File.Exists("bots/" + ai)) {
-                Player.Message(p, "There is no bot AI with that name."); return;
+                p.Message("There is no bot AI with that name."); return;
             }
             string[] lines = File.ReadAllLines("bots/" + ai);
-            foreach (string l in lines) {
-                if (l.Length == 0 || l[0] == '#') continue;
-                Player.Message(p, l);
+            foreach (string line in lines) {
+                if (line.IsCommentLine()) continue;
+                p.Message(line);
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/BotAI del [name] %H- deletes that AI");
-            Player.Message(p, "%T/BotAI del [name] last%H- deletes last instruction of that AI");
-            Player.Message(p, "%T/BotAI info [name] %H- prints list of instructions that AI has");
-            Player.Message(p, "%T/BotAI list %H- lists all current AIs");
-            Player.Message(p, "%T/BotAI add [name] [instruction] <args>");
+            p.Message("&T/BotAI del [name] &H- deletes that AI");
+            p.Message("&T/BotAI del [name] last&H- deletes last instruction of that AI");
+            p.Message("&T/BotAI info [name] &H- prints list of instructions that AI has");
+            p.Message("&T/BotAI list &H- lists all current AIs");
+            p.Message("&T/BotAI add [name] [instruction] <args>");
             
-            Player.Message(p, "%HInstructions: %S{0}, reverse",
-                           BotInstruction.Instructions.Join(ins => ins.Name.ToLower()));
-            Player.Message(p, "%HTo see detailed help, type %T/Help BotAI [instruction]");
+            p.Message("&HInstructions: &S{0}",
+                      BotInstruction.Instructions.Join(ins => ins.Name));
+            p.Message("&HTo see detailed help, type &T/Help BotAI [instruction]");
         }
         
         public override void Help(Player p, string message) {
             BotInstruction ins = BotInstruction.Find(message);
             if (ins == null) {
-                Player.Message(p, "%HInstructions: %S{0}, reverse",
-                               BotInstruction.Instructions.Join(ins2 => ins2.Name.ToLower()));
+                p.Message("&HInstructions: &S{0}, reverse",
+                               BotInstruction.Instructions.Join(ins2 => ins2.Name));
             } else {
-                Player.MessageLines(p, ins.Help);
+                p.MessageLines(ins.Help);
             }
         }
     }

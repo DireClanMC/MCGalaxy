@@ -17,6 +17,7 @@
  */
 using System;
 using System.Collections.Generic;
+using MCGalaxy.Commands.Moderation;
 using MCGalaxy.Events;
 
 namespace MCGalaxy.Tasks {
@@ -40,7 +41,7 @@ namespace MCGalaxy.Tasks {
         internal static void TemprankCalcNextRun() { CalcNextRun(temprankTask, Server.tempRanks); }
         
         static void TemprankCallback(string[] args) {
-            Command.all.FindByName("TempRank").Use(null, args[0] + " delete");
+            CmdTempRank.Delete(Player.Console, args[0], Player.Console.DefaultCmdData);
             // Handle case of old rank no longer existing
             if (Server.tempRanks.Remove(args[0])) {
                 Server.tempRanks.Save();
@@ -55,7 +56,7 @@ namespace MCGalaxy.Tasks {
         internal static void FreezeCalcNextRun() { CalcNextRun(freezeTask, Server.frozen); }
         
         static void FreezeCallback(string[] args) {
-            ModAction action = new ModAction(args[0], null, ModActionType.Unfrozen, "auto unfreeze");
+            ModAction action = new ModAction(args[0], Player.Console, ModActionType.Unfrozen, "auto unfreeze");
             OnModActionEvent.Call(action);
         }
         
@@ -67,7 +68,7 @@ namespace MCGalaxy.Tasks {
         internal static void MuteCalcNextRun() { CalcNextRun(muteTask, Server.muted); }
         
         static void MuteCallback(string[] args) {
-            ModAction action = new ModAction(args[0], null, ModActionType.Unmuted, "auto unmute");
+            ModAction action = new ModAction(args[0], Player.Console, ModActionType.Unmuted, "auto unmute");
             OnModActionEvent.Call(action);
         }
         

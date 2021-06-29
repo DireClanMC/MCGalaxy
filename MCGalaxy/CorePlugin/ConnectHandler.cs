@@ -1,5 +1,5 @@
 ﻿/*
-    Copyright 2015 MCGalaxy team
+    Copyright 2015 MCGalaxy
         
     Dual-licensed under the Educational Community License, Version 2.0 and
     the GNU General Public License, Version 3 (the "Licenses"); you may
@@ -27,23 +27,22 @@ namespace MCGalaxy.Core {
         
         internal static void HandleConnect(Player p) {
             CheckReviewList(p);
-            if (p.group.CanExecute("ReachDistance"))
-                LoadReach(p);
+            if (p.CanUse("ReachDistance")) LoadReach(p);
             
             LoadWaypoints(p);
             p.Ignores.Load(p);
         }
         
         static void CheckReviewList(Player p) {
-            Command cmd = Command.all.FindByName("Review");
-            LevelPermission perm = CommandExtraPerms.MinPerm("Review");
+            if (!p.CanUse("Review")) return;
+            ItemPerms checkPerms = CommandExtraPerms.Find("Review", 1);
+            if (!checkPerms.UsableBy(p.Rank)) return;
             
-            if (p.group.Permission < perm || !p.group.CanExecute(cmd)) return;
             int count = Server.reviewlist.Count;
             if (count == 0) return;
             
             string suffix = count == 1 ? " player is " : " players are ";
-            Player.Message(p, count + suffix + "waiting for a review. Type %T/Review view");
+            p.Message(count + suffix + "waiting for a review. Type &T/Review view");
         }
         
         static void LoadReach(Player p) {
@@ -62,9 +61,8 @@ namespace MCGalaxy.Core {
             try {
                 p.Waypoints.Filename = Paths.WaypointsDir + p.name + ".save";
                 p.Waypoints.Load();
-            } catch (IOException ex) {
-                Player.Message(p, "Error loading waypoints.");
-                Logger.LogError(ex);
+            } catch (Exception ex) {
+                Logger.LogError("Error loading waypoints", ex);
             }
         }
     }

@@ -18,6 +18,8 @@
 using System;
 
 namespace MCGalaxy {
+
+    /// <summary> Extension methods relating to timespans. </summary>
     public static class TimeExts {
         
         public static string Shorten(this TimeSpan value, 
@@ -34,6 +36,10 @@ namespace MCGalaxy {
             
             if (time.Length == 0) time = seconds ? "0s" : "0m";
             return negate ? "-" + time : time;
+        }
+        
+        public static long SecondsLong(this TimeSpan value) {
+            return value.Ticks / TimeSpan.TicksPerSecond;
         }
         
         static void Add(ref string time, int amount, char suffix, bool spaces) {
@@ -69,7 +75,7 @@ namespace MCGalaxy {
             return TimeSpan.FromTicks(total);
         }
         
-        static long GetTicks(int num, string unit) {            
+        static long GetTicks(int num, string unit) {
             if (unit.CaselessEq("s")) return num * TimeSpan.TicksPerSecond;
             if (unit.CaselessEq("m")) return num * TimeSpan.TicksPerMinute;
             if (unit.CaselessEq("h")) return num * TimeSpan.TicksPerHour;

@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2011 MCForge
         
     Dual-licensed under the    Educational Community License, Version 2.0 and
@@ -17,7 +17,7 @@
  */
 using System;
 namespace MCGalaxy.Commands.Misc {
-    public sealed class CmdInvincible : Command {
+    public sealed class CmdInvincible : Command2 {
         public override string name { get { return "Invincible"; } }
         public override string shortcut { get { return "Inv"; } }
         public override string type { get { return CommandTypes.Other; } }
@@ -26,38 +26,36 @@ namespace MCGalaxy.Commands.Misc {
             get { return new CommandAlias[] { new CommandAlias("GodMode") }; }
         }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Operator, "+ can toggle inviciblity of others") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can toggle invinciblity of others") }; }
         }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             Player who = message.Length == 0 ? p : PlayerInfo.FindMatches(p, message);
             if (who == null) return;
 
-            if (p != who && !CheckExtraPerm(p, 1)) return;
-            if (p != null && who.Rank > p.Rank) {
-                MessageTooHighRank(p, "toggle invinciblity", true); return;
-            }
+            if (p != who && !CheckExtraPerm(p, data, 1)) return;
+            if (!CheckRank(p, data, who, "toggle invincibility", true)) return;
             
             who.invincible = !who.invincible;
             ShowPlayerMessage(p, who);
         }
         
-        static void ShowPlayerMessage(Player p, Player who) {
-            string msg = who.invincible ? "now invincible" : "no longer invincible";
-            if (p != null && who == p)
-                Player.Message(p, "You are {0}", msg);
-            else
-                Player.Message(p, "{0} %Sis {1}.", who.ColoredName, msg);
-            
-            string globalMsg = who.invincible ? ServerConfig.InvincibleMessage : "has stopped being invincible";
-            if (ServerConfig.ShowInvincibleMessage && !who.hidden)
-                Chat.MessageGlobal(who, who.ColoredName + " %S" + globalMsg, false);
+        static void ShowPlayerMessage(Player p, Player target) {
+            string msg = target.invincible ? "now invincible" : "no longer invincible";
+            if (p == target) p.Message("You are {0}", msg);
+
+            string globalMsg = target.invincible ? Server.Config.InvincibleMessage : "has stopped being invincible";
+            if (Server.Config.ShowInvincibleMessage && !target.hidden) {
+                Chat.MessageFrom(target, "λNICK &S" + globalMsg);
+            } else if (p != target) {
+                p.Message("{0} &Sis {1}.", p.FormatNick(target), msg);
+            }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Invincible <name>");
-            Player.Message(p, "%HTurns invincible mode on/off.");
-            Player.Message(p, "%HIf <name> is given, that player's invincibility is toggled");
+            p.Message("&T/Invincible <name>");
+            p.Message("&HTurns invincible mode on/off.");
+            p.Message("&HIf <name> is given, that player's invincibility is toggled");
         }
     }
 }

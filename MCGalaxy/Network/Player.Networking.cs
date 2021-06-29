@@ -24,12 +24,88 @@ using BlockID = System.UInt16;
 using BlockRaw = System.Byte;
 
 namespace MCGalaxy {
-    public partial class Player : IDisposable {
+    public partial class Player : IDisposable, INetProtocol {
 
         public bool hasCpe, finishedCpeLogin = false;
         public string appName;
         int extensionCount;
-        byte customBlockSupportLevel;
+        
+        int INetProtocol.ProcessReceived(byte[] buffer, int bufferLen) {
+            int processedLen = 0;
+            try {
+                while (processedLen < bufferLen) {
+                    int packetLen = PacketSize(buffer[processedLen]);
+                    if (packetLen == -1) return bufferLen;
+                    
+                    // Partial packet data received
+                    if (processedLen + packetLen > bufferLen) return processedLen;
+                    HandlePacket(buffer, processedLen);
+                    processedLen += packetLen;
+                }
+            } catch (Exception ex) {
+                Logger.LogError(ex);
+            }
+            return processedLen;
+        }
+        
+        int PacketSize(byte opcode) {
+            switch (opcode) {
+                case Opcode.Handshake:      return 1 + 1 + 64 + 64 + 1;
+                case Opcode.SetBlockClient: return 1 + 6 + 1 + (hasExtBlocks ? 2 : 1);
+                case Opcode.EntityTeleport: return 1 + 6 + 2 + (hasExtPositions ? 6 : 0) + (hasExtBlocks ? 2 : 1);
+                case Opcode.Message:        return 1 + 1 + 64;
+                case Opcode.CpeExtInfo:     return 1 + 64 + 2;
+                case Opcode.CpeExtEntry:    return 1 + 64 + 4;
+                case Opcode.CpeCustomBlockSupportLevel: return 1 + 1;
+                case Opcode.CpePlayerClick: return 1 + 1 + 1 + 2 + 2 + 1 + 2 + 2 + 2 + 1;
+                case Opcode.Ping:           return 1;
+                case Opcode.CpeTwoWayPing:  return 1 + 1 + 2;
+
+                default:
+                    Leave("Unhandled opcode \"" + opcode + "\"!", true);
+                    return -1;
+            }
+        }
+        
+        void HandlePacket(byte[] buffer, int offset) {
+            switch (buffer[offset]) {
+                case Opcode.Ping: break;
+                case Opcode.Handshake:
+                    HandleLogin(buffer, offset); break;
+                case Opcode.SetBlockClient:
+                    HandleBlockchange(buffer, offset); break;
+                case Opcode.EntityTeleport:
+                    HandleMovement(buffer, offset); break;
+                case Opcode.Message:
+                    HandleChat(buffer, offset); break;
+                case Opcode.CpeExtInfo:
+                    HandleExtInfo(buffer, offset); break;
+                case Opcode.CpeExtEntry:
+                    HandleExtEntry(buffer, offset); break;
+                case Opcode.CpeCustomBlockSupportLevel:
+                    break; // only ever one level
+                case Opcode.CpePlayerClick:
+                    HandlePlayerClicked(buffer, offset); break;
+                case Opcode.CpeTwoWayPing:
+                    HandleTwoWayPing(buffer, offset); break;
+            }
+        }
+        
+        #if TEN_BIT_BLOCKS
+        BlockID ReadBlock(byte[] buffer, int offset) {
+            BlockID block;
+            if (hasExtBlocks) {
+                block = NetUtils.ReadU16(buffer, offset);
+            } else {
+                block = buffer[offset];
+            }
+            
+            if (block > Block.MaxRaw) block = Block.MaxRaw;
+            return Block.FromRaw(block);
+        }
+        #else
+        BlockID ReadBlock(byte[] buffer, int offset) { return Block.FromRaw(buffer[offset]); }
+        #endif
         
         void HandleExtInfo(byte[] buffer, int offset) {
             appName = NetUtils.ReadString(buffer, offset + 1);
@@ -45,34 +121,6 @@ namespace MCGalaxy {
             CheckReadAllExtensions();
         }
 
-        void HandlePlayerClicked(byte[] buffer, int offset) {
-            MouseButton Button = (MouseButton)buffer[offset + 1];
-            MouseAction Action = (MouseAction)buffer[offset + 2];
-            ushort yaw = NetUtils.ReadU16(buffer, offset + 3);
-            ushort pitch = NetUtils.ReadU16(buffer, offset + 5);
-            byte entityID = buffer[offset + 7];
-            ushort x = NetUtils.ReadU16(buffer, offset + 8);
-            ushort y = NetUtils.ReadU16(buffer, offset + 10);
-            ushort z = NetUtils.ReadU16(buffer, offset + 12);
-            
-            TargetBlockFace face = (TargetBlockFace)buffer[offset + 14];
-            if (face > TargetBlockFace.None) face = TargetBlockFace.None;
-            OnPlayerClickEvent.Call(this, Button, Action, yaw, pitch, entityID, x, y, z, face);
-        }
-        
-        void HandleTwoWayPing(byte[] buffer, int offset) {
-            bool serverToClient = buffer[offset + 1] != 0;
-            ushort data = NetUtils.ReadU16(buffer, offset + 2);
-            
-            if (!serverToClient) {
-                // Client-> server ping, immediately send reply.
-                Send(Packet.TwoWayPing(false, data));
-            } else {
-                // Server -> client ping, set time received for reply.
-                Ping.Update(data);
-            }
-        }
-
         void CheckReadAllExtensions() {
             if (extensionCount <= 0 && !finishedCpeLogin) {
                 CompleteLoginProcess();
@@ -80,108 +128,106 @@ namespace MCGalaxy {
             }
         }
         
-        public void Send(byte[] buffer, bool sync = false) { Socket.Send(buffer, sync); }
         
-        public static void MessageLines(Player p, IEnumerable<string> lines) {
-            foreach (string line in lines)
-                SendMessage(p, line);
+        public void Send(byte[] buffer)  { Socket.Send(buffer, SendFlags.None); }
+        public void Send(byte[] buffer, bool sync) { 
+            Socket.Send(buffer, sync ? SendFlags.Synchronous : SendFlags.None);
         }
         
+        public void MessageLines(IEnumerable<string> lines) {
+            foreach (string line in lines) { Message(line); }
+        }
+        
+        [Obsolete("Use p.Message(message) instead", true)]
         public static void Message(Player p, string message) {
-            SendMessage(p, message);
+            if (p == null) p = Player.Console;
+            p.Message(0, message);
         }
+        [Obsolete("Use p.Message(message) instead", true)]
+        public static void SendMessage(Player p, string message) { Message(p, message); }
         
-        public static void Message(Player p, string message, object a0) {
-            SendMessage(p, String.Format(message, a0));
-        }
+        public void Message(string message, object a0) { Message(string.Format(message, a0)); }  
+        public void Message(string message, object a0, object a1) { Message(string.Format(message, a0, a1)); }       
+        public void Message(string message, object a0, object a1, object a2) { Message(string.Format(message, a0, a1, a2)); }       
+        public void Message(string message, params object[] args) { Message(string.Format(message, args)); }
         
-        public static void Message(Player p, string message, object a0, object a1) {
-            SendMessage(p, String.Format(message, a0, a1));
-        }
+        [Obsolete("Use Message(message) instead", true)]
+        public void SendMessage(string message) { Message(0, message); } 
+        [Obsolete("Use Message(id, message) instead", true)]
+        public void SendMessage(byte id, string message) { Message(id, message); }
+        public void Message(string message) { Message(0, message); }
         
-        public static void Message(Player p, string message, object a0, object a1, object a2) {
-            SendMessage(p, String.Format(message, a0, a1, a2));
-        }
-        
-        public static void Message(Player p, string message, params object[] args) {
-            SendMessage(p, String.Format(message, args));
-        }
-
-        public static void SendMessage(Player p, string message) {
-            if (p == null) {
-                Logger.Log(LogType.ConsoleMessage, message);
-            } else {
-                p.SendMessage(0, message);
+        // Need to combine chat line packets into one Send call, so that
+        // multi-line messages from multiple threads don't interleave
+        void SendLines(List<string> lines, byte type) {
+            for (int i = 0; i < lines.Count;) {
+                // Send buffer max size is 4096 bytes
+                // Divide by 66 (size of chat packet) gives ~62 lines
+                int count   = Math.Min(62, lines.Count - i);
+                byte[] data = new byte[count * 66];
+                
+                for (int j = 0; j < count; i++, j++) {
+                    Packet.WriteMessage(lines[i], type, hasCP437, data, j * 66);
+                }
+                Send(data);
             }
         }
         
-        public void SendMessage(string message) { SendMessage(0, message); }       
-        public virtual void SendMessage(byte id, string message) {
+        public virtual void Message(byte type, string message) {
             // Message should start with server color if no initial color
-            if (message.Length > 0 && !(message[0] == '&' || message[0] == '%')) {
-                message = ServerConfig.DefaultColor + message;
-            }
+            if (message.Length > 0 && !(message[0] == '&' || message[0] == '%')) message = "&S" + message;
             message = Chat.Format(message, this);
             
-            int totalTries = 0;
-            OnMessageRecievedEvent.Call(this, message);
-            if (cancelmessage) { cancelmessage = false; return; }
+            bool cancel = false;
+            OnMessageRecievedEvent.Call(this, ref message, ref cancel);
+            if (cancel) return;
             
-            retryTag: try {
-                foreach (string raw in LineWrapper.Wordwrap(message)) {
-                    string line = raw;
-                    if (!Supports(CpeExt.EmoteFix) && LineEndsInEmote(line))
-                        line += '\'';
-
-                    Send(Packet.Message(line, (CpeMessageType)id, hasCP437));
-                }
-            } catch ( Exception e ) {
-                message = "&f" + message;
-                totalTries++;
-                if ( totalTries < 10 ) goto retryTag;
-                else Logger.LogError(e);
+            try {
+                message = LineWrapper.CleanupColors(message, this);
+                SendLines(LineWrapper.Wordwrap(message, hasEmoteFix), type);
+            } catch (Exception e) {
+                Logger.LogError(e);
             }
         }
         
-        static bool LineEndsInEmote(string line) {
-            line = line.TrimEnd(' ');
-            if (line.Length == 0) return false;
-            
-            char last = line[line.Length - 1];
-            return last.UnicodeToCp437() != last;
-        }
-        
-        public void SendCpeMessage(CpeMessageType type, string message, bool colorParse = true) {
+        public void SendCpeMessage(CpeMessageType type, string message) {
             if (type != CpeMessageType.Normal && !Supports(CpeExt.MessageTypes)) {
                 if (type == CpeMessageType.Announcement) type = CpeMessageType.Normal;
                 else return;
             }
-            message = Chat.Format(message, this, colorParse);
+            
+            message = Chat.Format(message, this);
+            message = LineWrapper.CleanupColors(message, this);
             Send(Packet.Message(message, type, hasCP437));
         }
 
         public void SendMapMotd() {
-            string motd = level.GetMotd(this);
+            string motd = GetMotd();
             motd = Chat.Format(motd, this);
-            
             OnSendingMotdEvent.Call(this, ref motd);
+            
+            // Change -hax into +hax etc when in Referee mode
+            //  (can't just do Replace('-', '+') though, that breaks -push)
+            if (Game.Referee) {
+                motd = motd
+                    .Replace("-hax",  "+hax"  ).Replace("-noclip",  "+noclip")
+                    .Replace("-speed","+speed").Replace("-respawn", "+respawn")
+                    .Replace("-fly",  "+fly"  ).Replace("-thirdperson", "+thirdperson");
+            }
             byte[] packet = Packet.Motd(this, motd);
             Send(packet);
             
             if (!Supports(CpeExt.HackControl)) return;
             Send(Hacks.MakeHackControl(this, motd));
-            if (Game.Referee) Send(Packet.HackControl(true, true, true, true, true, -1));
         }
-        
-        public void SendMap(Level oldLevel) { SendRawMap(oldLevel, level); }
-        
+
         readonly object joinLock = new object();
         public bool SendRawMap(Level oldLevel, Level level) {
             lock (joinLock)
                 return SendRawMapCore(oldLevel, level);
         }
         
-        bool SendRawMapCore(Level oldLevel, Level level) {
+        bool SendRawMapCore(Level prev, Level level) {
             if (level.blocks == null) return false;
             bool success = true;
             useCheckpointSpawn = false;
@@ -190,15 +236,19 @@ namespace MCGalaxy {
             AFKCooldown = DateTime.UtcNow.AddSeconds(2);
             ZoneIn = null;
             SendMapMotd();
-            AccessResult access = level.BuildAccess.Check(this);
-            AllowBuild = access == AccessResult.Whitelisted || access == AccessResult.Allowed;
+            AllowBuild = level.BuildAccess.CheckAllowed(this);
             
-            try {                 
-                Send(Packet.LevelInitalise());
+            try {
+                int volume = level.blocks.Length;
+                if (Supports(CpeExt.FastMap)) {
+                    Send(Packet.LevelInitaliseExt(volume));
+                } else {
+                    Send(Packet.LevelInitalise());
+                }
                 
                 if (hasBlockDefs) {
-                    if (oldLevel != null && oldLevel != level) {
-                        RemoveOldLevelCustomBlocks(oldLevel);
+                    if (prev != null && prev != level) {
+                        RemoveOldLevelCustomBlocks(prev);
                     }
                     BlockDefinition.SendLevelCustomBlocks(this);
                     
@@ -207,8 +257,15 @@ namespace MCGalaxy {
                     }
                 }
                 
-                using (LevelChunkStream s = new LevelChunkStream(this))
-                    LevelChunkStream.CompressMap(this, s);
+                using (LevelChunkStream dst = new LevelChunkStream(this))
+                    using (Stream stream = LevelChunkStream.CompressMapHeader(this, volume, dst))
+                {
+                    if (level.MightHaveCustomBlocks()) {
+                        LevelChunkStream.CompressMap(this, stream, dst);
+                    } else {
+                        LevelChunkStream.CompressMapSimple(this, stream, dst);
+                    }
+                }
                 
                 // Force players to read the MOTD (clamped to 3 seconds at most)
                 if (level.Config.LoadDelay > 0)
@@ -218,11 +275,11 @@ namespace MCGalaxy {
                 Send(buffer);
                 Loading = false;
                 
-                OnJoinedLevelEvent.Call(this, oldLevel, level);
+                OnSentMapEvent.Call(this, prev, level);
             } catch (Exception ex) {
                 success = false;
                 PlayerActions.ChangeMap(this, Server.mainLevel);
-                SendMessage("There was an error sending the map data, you have been sent to the main level.");
+                Message("&WThere was an error sending the map, you have been sent to the main level.");
                 Logger.LogError(ex);
             } finally {
                 Server.DoGC();
@@ -234,8 +291,9 @@ namespace MCGalaxy {
             BlockDefinition[] defs = oldLevel.CustomBlockDefs;
             for (int i = 0; i < defs.Length; i++) {
                 BlockDefinition def = defs[i];
-                if (def == BlockDefinition.GlobalDefs[i]) continue;
-                if (def.BlockID > MaxRawBlock) continue;
+                if (def == BlockDefinition.GlobalDefs[i] || def == null) continue;
+                
+                if (def.RawID > MaxRawBlock) continue;
                 Send(Packet.UndefineBlock(def, hasExtBlocks));
             }
         }
@@ -264,6 +322,13 @@ namespace MCGalaxy {
             NetUtils.WriteU16(y, buffer, 3);
             NetUtils.WriteU16(z, buffer, 5);
             
+            BlockID raw = ConvertBlock(block);
+            NetUtils.WriteBlock(raw, buffer, 7, hasExtBlocks);
+            Socket.Send(buffer, SendFlags.LowPriority);
+        }
+        
+        
+        public BlockID ConvertBlock(BlockID block) {
             BlockID raw;
             if (block >= Block.Extended) {
                 raw = Block.ToRaw(block);
@@ -271,22 +336,16 @@ namespace MCGalaxy {
                 raw = Block.Convert(block);
                 if (raw >= Block.CpeCount) raw = Block.Orange;
             }
-            if (raw > MaxRawBlock) raw = level.RawFallback(block);
+            if (raw > MaxRawBlock) raw = level.GetFallback(block);
             
             // Custom block replaced a core block
             if (!hasBlockDefs && raw < Block.CpeCount) {
                 BlockDefinition def = level.CustomBlockDefs[raw];
                 if (def != null) raw = def.FallBack;
-            }            
-            if (!hasCustomBlocks) raw = Block.ConvertCPE((BlockRaw)raw);
+            }
             
-            NetUtils.WriteBlock(raw, buffer, 7, hasExtBlocks);
-            Socket.SendLowPriority(buffer);
-        }
-
-        internal void CloseSocket() { 
-            Socket.Close();
-            RemoveFromPending();
+            if (!hasCustomBlocks) raw = Block.ConvertCPE((BlockRaw)raw);
+            return raw;
         }
     }
 }

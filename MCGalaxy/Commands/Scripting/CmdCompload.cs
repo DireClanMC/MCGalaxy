@@ -16,31 +16,31 @@
     permissions and limitations under the Licenses.
 */
 namespace MCGalaxy.Commands.Scripting {
-    public sealed class CmdCompLoad : Command {
+    public sealed class CmdCompLoad : Command2 {
         public override string name { get { return "CompLoad"; } }
         public override string shortcut { get { return "cml"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Nobody; } }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
             if (message.Length == 0) { Help(p); return; }
 
             if (args.Length == 1 || args[1].CaselessEq("vb")) {
-                Command.all.FindByName("Compile").Use(p, message);
-                Command.all.FindByName("CmdLoad").Use(p, args[0]);
-                Command.all.FindByName("Help").Use(p, args[0]);
+                Command.Find("Compile").Use(p, message, data);
+                Command.Find("CmdLoad").Use(p, args[0], data);
+                Command.Find("Help").Use(p, args[0], data);
             } else { 
                 Help(p);
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/CompLoad [command]");
-            Player.Message(p, "%HCompiles and loads a C# command into the server for use.");
-            Player.Message(p, "%T/CompLoad [command] vb");
-            Player.Message(p, "%HCompiles and loads a Visual basic command into the server for use.");
+            p.Message("&T/CompLoad [command]");
+            p.Message("&HCompiles and loads a C# command into the server for use.");
+            p.Message("&T/CompLoad [command] vb");
+            p.Message("&HCompiles and loads a Visual basic command into the server for use.");
         }        
     }
 }

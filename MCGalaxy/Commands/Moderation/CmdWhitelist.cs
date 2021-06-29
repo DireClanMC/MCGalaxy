@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2010 MCLawl Team - Written by Valek (Modified for use with MCGalaxy)
  
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -18,75 +18,63 @@
 using System.Collections.Generic;
 
 namespace MCGalaxy.Commands.Moderation {
-    public sealed class CmdWhitelist : Command {
+    public sealed class CmdWhitelist : Command2 {
         public override string name { get { return "Whitelist"; } }
         public override string shortcut { get { return "w"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
-            if (!ServerConfig.WhitelistedOnly) { Player.Message(p, "Whitelist is not enabled."); return; }
-            if (message.Length == 0) { Help(p); return; }
+        public override void Use(Player p, string message, CommandData data) {
+            if (!Server.Config.WhitelistedOnly) { p.Message("Whitelist is not enabled."); return; }
+            if (message.Length == 0) { List(p, ""); return; }
             string[] args = message.SplitSpaces();
-
-            if (args[0].CaselessEq("add")) {
+            string cmd = args[0];
+            
+            if (cmd.CaselessEq("add")) {
                 if (args.Length < 2) { Help(p); return; }
                 Add(p, args[1]);
-            } else if (args[0].CaselessEq("del") || args[0].CaselessEq("remove")) {
+            } else if (IsDeleteCommand(cmd)) {
                 if (args.Length < 2) { Help(p); return; }
                 Remove(p, args[1]);
-            } else if (args[0].CaselessEq("list")) {
-                List(p, args);
+            } else if (IsListCommand(cmd)) {
+                string modifier = args.Length > 1 ? args[1] : "";
+                List(p, modifier);
             } else if (args.Length == 1) {
-                Add(p, args[0]);
+                Add(p, cmd);
             } else {
                 Help(p);
             }
         }
         
         static void Add(Player p, string player) {
-            if (Server.whiteList.Contains(player)) {
-                Player.Message(p, player + " %Sis already on the whitelist!"); return;
+            if (!Server.whiteList.Add(player)) {
+                p.Message("{0} &Sis already on the whitelist!", p.FormatNick(player));
+            } else {
+                Chat.MessageFromOps(p, "λNICK &Sadded &f" + player + " &Sto the whitelist.");
+                Server.whiteList.Save();
+                Logger.Log(LogType.UserActivity, "WHITELIST: Added " + player);
             }
-            
-            Server.whiteList.Add(player);
-            string src = p == null ? "(console)" : p.ColoredName;
-            Chat.MessageOps(src + " %Sadded &f" + player + " %Sto the whitelist.");
-            Server.whiteList.Save();
-            Logger.Log(LogType.UserActivity, "WHITELIST: Added " + player);
         }
         
         static void Remove(Player p, string player) {
-            if (!Server.whiteList.Contains(player)) {
-                Player.Message(p, player + " %Sis not on the whitelist!"); return;
+            if (!Server.whiteList.Remove(player)) {
+                p.Message("{0} &Sis not on the whitelist!", p.FormatNick(player));
+            } else {
+                Server.whiteList.Save();
+                Chat.MessageFromOps(p, "λNICK &Sremoved &f" + player + " &Sfrom the whitelist.");
+                Logger.Log(LogType.UserActivity, "WHITELIST: Removed " + player);
             }
-            
-            Server.whiteList.Remove(player);
-            string src = p == null ? "(console)" : p.ColoredName;
-            Chat.MessageOps(src + " %Sremoved &f" + player + " %Sfrom the whitelist.");
-            Server.whiteList.Save();
-            Logger.Log(LogType.UserActivity, "WHITELIST: Removed " + player);
         }
         
-        static void List(Player p, string[] args) {
-            List<string> list = Server.whiteList.All();
-            string modifier = args.Length > 1 ? args[1] : "";
-            
-            if (list.Count == 0) {
-                Player.Message(p, "There are no whitelisted players.");
-            } else {
-                Player.Message(p, "Whitelisted players:");
-                MultiPageOutput.Output(p, list, 
-                                       (name) => PlayerInfo.GetColoredName(p, name),
-                                       "Whitelist list", "players", modifier, false);
-            }
+        static void List(Player p, string modifier) {
+            Server.whiteList.Output(p, "whitelisted players", "Whitelist list", modifier);
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Whitelist add/del [player]");
-            Player.Message(p, "%HAdds or removes [player] from the whitelist.");
-            Player.Message(p, "%T/Whitelist list");
-            Player.Message(p, "%HLists all players who are on the whitelist.");
+            p.Message("&T/Whitelist add/del [player]");
+            p.Message("&HAdds or removes [player] from the whitelist.");
+            p.Message("&T/Whitelist list");
+            p.Message("&HLists all players who are on the whitelist.");
         }
     }
 }

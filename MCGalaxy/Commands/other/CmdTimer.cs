@@ -19,13 +19,13 @@ using System;
 using MCGalaxy.Tasks;
 
 namespace MCGalaxy.Commands.Misc {
-    public sealed class CmdTimer : Command {
+    public sealed class CmdTimer : Command2 {
         public override string name { get { return "Timer"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
-            if (p.cmdTimer) { Player.Message(p, "Can only have one timer at a time. Use /abort to cancel your previous timer."); return; }
+        public override void Use(Player p, string message, CommandData data) {
+            if (p.cmdTimer) { p.Message("Can only have one timer at a time. Use /abort to cancel your previous timer."); return; }
             if (message.Length == 0) { Help(p); return; }
 
             int TotalTime = 0;
@@ -39,7 +39,7 @@ namespace MCGalaxy.Commands.Misc {
                 TotalTime = 60;
             }
 
-            if (TotalTime > 300) { Player.Message(p, "Cannot have more than 5 minutes in a timer"); return; }
+            if (TotalTime > 300) { p.Message("Cannot have more than 5 minutes in a timer"); return; }
 
             TimerArgs args = new TimerArgs();
             args.Message = message;
@@ -47,8 +47,8 @@ namespace MCGalaxy.Commands.Misc {
             args.Player = p;
             
             p.cmdTimer = true;
-            Chat.MessageLevel(p, "Timer lasting for " + TotalTime + " seconds has started.", false, p.level);
-            Chat.MessageLevel(p, args.Message, false, p.level);
+            p.level.Message("Timer lasting for " + TotalTime + " seconds has started.");
+            p.level.Message(args.Message);
             Server.MainScheduler.QueueRepeat(TimerCallback, args, TimeSpan.FromSeconds(5));
         }
         
@@ -64,19 +64,19 @@ namespace MCGalaxy.Commands.Misc {
 
             args.Repeats--;
             if (args.Repeats == 0 || !p.cmdTimer) {
-                Player.Message(p, "Timer ended.");
+                p.Message("Timer ended.");
                 p.cmdTimer = false;
                 task.Repeating = false;
             } else {
-                Chat.MessageLevel(p, args.Message, false, p.level);
-                Chat.MessageLevel(p, "Timer has " + (args.Repeats * 5) + " seconds remaining.", false, p.level);
+                p.level.Message(args.Message);
+                p.level.Message("Timer has " + (args.Repeats * 5) + " seconds remaining.");
             }
         }
         
         public override void Help(Player p)  {
-            Player.Message(p, "%T/Timer [time] [message]");
-            Player.Message(p, "%HStarts a timer which repeats [message] every 5 seconds.");
-            Player.Message(p, "%HRepeats constantly until [time] has passed");
+            p.Message("&T/Timer [time] [message]");
+            p.Message("&HStarts a timer which repeats [message] every 5 seconds.");
+            p.Message("&HRepeats constantly until [time] has passed");
         }
     }
 }

@@ -20,99 +20,148 @@ using BlockID = System.UInt16;
 
 namespace MCGalaxy.Config {
     
-    public class ConfigIntAttribute : ConfigAttribute {
-        
-        /// <summary> Minimum integer allowed for a value. </summary>
-        public int MinValue;
-        
-        /// <summary> Maximum value integer allowed for a value. </summary>
-        public int MaxValue;
-        
-        public ConfigIntAttribute(string name, string section, int defValue,
-                                  int min = int.MinValue, int max = int.MaxValue)
-            : base(name, section, defValue) {
-            MinValue = min; MaxValue = max;
-        }
-        
-        public override object Parse(string value) {
-            int integer;
-            if (!int.TryParse(value, out integer)) {
-                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid integer, using default of {1}", Name, DefaultValue);
-                return DefaultValue;
+    public abstract class ConfigIntegerAttribute : ConfigAttribute {        
+        public ConfigIntegerAttribute(string name, string section) 
+            : base(name, section) { }
+         
+        // separate function to avoid boxing in derived classes
+        protected int ParseInteger(string raw, int def, int min, int max) {
+            int value;
+            if (!int.TryParse(raw, out value)) {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" has invalid integer '{2}', using default of {1}", Name, def, raw);
+                value = def;
             }
             
-            if (integer < MinValue) {
-                Logger.Log(LogType.Warning, "Config key \"{0}\" is too small an integer, using {1}", Name, MinValue);
-                return MinValue;
+            if (value < min) {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is too small an integer, using {1}", Name, min);
+                value = min;
             }
-            if (integer > MaxValue) {
-                Logger.Log(LogType.Warning, "Config key \"{0}\" is too big an integer, using {1}", Name, MaxValue);
-                return MaxValue;
+            if (value > max) {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is too big an integer, using {1}", Name, max);
+                value = max;
             }
-            return integer;
+            return value;
         }
-    }   
+    }
+    
+    public sealed class ConfigIntAttribute : ConfigIntegerAttribute {
+        int defValue, minValue, maxValue;
+        
+        public ConfigIntAttribute()
+            : this(null, null, 0, int.MinValue, int.MaxValue) { }
+        public ConfigIntAttribute(string name, string section, int def,
+                                  int min = int.MinValue, int max = int.MaxValue)
+            : base(name, section) { defValue = def; minValue = min; maxValue = max; }
+        
+        public override object Parse(string value) {
+            return ParseInteger(value, defValue, minValue, maxValue);
+        }
+    }
     
     // Hacky workaround for old ExponentialFog attribute
-    public sealed class ConfigBoolIntAttribute : ConfigIntAttribute {
+    sealed class ConfigBoolIntAttribute : ConfigIntegerAttribute {
+        public ConfigBoolIntAttribute(string name, string section)
+            : base(name, section) { }
         
-        public ConfigBoolIntAttribute(string name, string section, int defValue)
-            : base(name, section, defValue, -1, 1) {
-        }
-        
-        public override object Parse(string value) {
-            bool boolValue;
-            if (bool.TryParse(value, out boolValue)) {
-                return boolValue ? 1 : 0;
-            }
-            return base.Parse(value);
+        public override object Parse(string raw) {
+            bool value;
+            if (bool.TryParse(raw, out value)) return value ? 1 : 0;
+            return ParseInteger(raw, 0, -1, 1);
         }
     }
     
-    public class ConfigBlockAttribute : ConfigIntAttribute {
+    public sealed class ConfigBlockAttribute : ConfigIntegerAttribute {
+        BlockID defBlock;
+        public ConfigBlockAttribute() : this(null, null, Block.Air) { }
+        public ConfigBlockAttribute(string name, string section, BlockID def)
+            : base(name, section) { defBlock = def; }
         
-        public ConfigBlockAttribute(string name, string section, int defValue)
-            : base(name, section, defValue, 0, Block.ExtendedCount - 1) {
-        }
-        
-        public override object Parse(string value) {
-            int intValue = (int)base.Parse(value);
-            
-            // Can't directly unbox object to block ID - must unbox to int, then cast to block ID
-            if (intValue == Block.Invalid) return Block.Invalid;
-            return Block.MapOldRaw((BlockID)intValue);
+        public override object Parse(string raw) {
+            BlockID block = (BlockID)ParseInteger(raw, defBlock, 0, Block.ExtendedCount - 1);
+            if (block == Block.Invalid) return Block.Invalid;
+            return Block.MapOldRaw(block);
         }
     }
     
-    public class ConfigRealAttribute : ConfigAttribute {
+    public class ConfigByteAttribute : ConfigIntegerAttribute {        
+        public ConfigByteAttribute() : this(null, null) { }
+        public ConfigByteAttribute(string name, string section) : base(name, section) { }
         
-        /// <summary> Minimum real number allowed for a value. </summary>
-        public float MinValue;
-        
-        /// <summary> Maximum real number allowed for a value. </summary>
-        public float MaxValue;
-        
-        public ConfigRealAttribute(string name, string section, float defValue, float min, float max)
-            : base(name, section, defValue) {
-            MinValue = min; MaxValue = max;
+        public override object Parse(string raw) { 
+            return (byte)ParseInteger(raw, 0, 0, byte.MaxValue); 
         }
+    }
+    
+    public class ConfigUShortAttribute : ConfigIntegerAttribute {
+        public ConfigUShortAttribute() : this(null, null) { }
+        public ConfigUShortAttribute(string name, string section) : base(name, section) { }
         
-        public override object Parse(string value) {
-            float real;
-            if (!Utils.TryParseDecimal(value, out real)) {
-                Logger.Log(LogType.Warning, "Config key \"{0}\" is not a valid number, using default of {1}", Name, DefaultValue);
-                return DefaultValue;
+        public override object Parse(string raw) { 
+            return (ushort)ParseInteger(raw, 0, 0, ushort.MaxValue);
+        }
+    }
+    
+    public abstract class ConfigRealAttribute : ConfigAttribute {
+        public ConfigRealAttribute(string name, string section) 
+            : base(name, section) { }
+        
+        protected double ParseReal(string raw, double def, double min, double max) {
+            double value;
+            if (!Utils.TryParseDouble(raw, out value)) {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" has invalid number '{2}', using default of {1}", Name, def, raw);
+                value = def;
             }
             
-            if (real < MinValue) {
-                Logger.Log(LogType.Warning, "Config key \"{0}\" is too small a number, using {1}", Name, MinValue);
-                return MinValue;
+            if (value < min) {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is too small a number, using {1}", Name, min);
+                value = min;
             }
-            if (real > MaxValue) {
-                Logger.Log(LogType.Warning, "Config key \"{0}\" is too big a number, using {1}", Name, MaxValue);
-                return MaxValue;
+            if (value > max) {
+                Logger.Log(LogType.Warning, "Config key \"{0}\" is too big a number, using {1}", Name, max);
+                value = max;
             }
-            return real;
+            return value;
+        }
+
+		public override string Serialise(object value) {
+        	if (value is float)  return Utils.StringifyDouble((float)value);
+        	if (value is double) return Utils.StringifyDouble((double)value);
+			return base.Serialise(value);
+		}
+    }
+    
+    public class ConfigFloatAttribute : ConfigRealAttribute {
+        float defValue, minValue, maxValue;
+        
+        public ConfigFloatAttribute()
+            : this(null, null, 0, float.NegativeInfinity, float.PositiveInfinity) { }
+        public ConfigFloatAttribute(string name, string section, float def,
+                                    float min = float.NegativeInfinity, float max = float.PositiveInfinity)
+            : base(name, section) { defValue = def; minValue = min; maxValue = max; }
+        
+        public override object Parse(string raw) {
+            return (float)ParseReal(raw, defValue, minValue, maxValue);
+        }
+    }
+    
+    public class ConfigTimespanAttribute : ConfigRealAttribute {
+        bool mins; int def;
+        public ConfigTimespanAttribute(string name, string section, int def, bool mins)
+            : base(name, section) { this.def = def; this.mins = mins; }
+        
+        public override object Parse(string raw) {
+            double value = ParseReal(raw, def, 0, int.MaxValue);
+            if (mins) {
+                return TimeSpan.FromMinutes(value);
+            } else {
+                return TimeSpan.FromSeconds(value);
+            }
+        }
+        
+        public override string Serialise(object value) {
+            TimeSpan span = (TimeSpan)value;
+            double time = mins ? span.TotalMinutes : span.TotalSeconds;
+            return time.ToString();
         }
     }
 }

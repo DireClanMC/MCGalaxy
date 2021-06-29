@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2010 MCSharp team (Modified for use with MCZall/MCLawl/MCGalaxy)
     
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -18,33 +18,34 @@
 using MCGalaxy.Drawing.Transforms;
 
 namespace MCGalaxy.Commands.Building {
-    public sealed class CmdAbort : Command {
+    public sealed class CmdAbort : Command2 {
         public override string name { get { return "Abort"; } }
         public override string shortcut { get { return "a"; } }
         public override string type { get { return CommandTypes.Building; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             p.ClearBlockchange();
             p.painting = false;
+            p.checkingBotInfo = false;
             p.cmdTimer = false;
             p.staticCommands = false;
             p.deleteMode = false;
-            p.ModeBlock = Block.Air;
-            p.aiming = false;
-            p.onTrain = false;
-            p.isFlying = false;
+            p.ModeBlock = Block.Invalid;
+            p.onTrain   = false;
+            p.isFlying  = false;
             p.BrushName = "normal";
             p.DefaultBrushArgs = "";
             p.Transform = NoTransform.Instance;
             
-            BlockQueue.RemoveAll(p);
-            Player.Message(p, "Every toggle or action was aborted.");
+            p.level.blockqueue.RemoveAll(p);
+            if (p.weapon != null) p.weapon.Disable();
+            p.Message("Every toggle or action was aborted.");
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Abort");
-            Player.Message(p, "%HCancels an action.");
+            p.Message("&T/Abort");
+            p.Message("&HCancels an action.");
         }
     }
 }

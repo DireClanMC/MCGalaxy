@@ -17,46 +17,40 @@
  */
 
 namespace MCGalaxy.Commands.Misc {
-    public sealed class CmdFakeRank : Command {
+    public sealed class CmdFakeRank : Command2 {
         public override string name { get { return "FakeRank"; } }
         public override string shortcut { get { return "frk"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
             if (message.Length == 0 || args.Length < 2) { Help(p); return; }
             Player who = PlayerInfo.FindMatches(p, args[0]);
             Group newRank = Matcher.FindRanks(p, args[1]);
             if (who == null || newRank == null) return;
             
-            if (p != null && who.Rank > p.Rank) {
-                MessageTooHighRank(p, "fakerank", true); return;
-            }
+            if (!CheckRank(p, data, who, "fakerank", true)) return;
             DoFakerank(p, who, newRank);
         }
 
         internal static void DoFakerank(Player p, Player who, Group newRank) {            
             if (newRank.Permission == LevelPermission.Banned) {
-                Chat.MessageGlobal("{0} %Swas &8banned%S.", who.ColoredName);
+                Chat.MessageGlobal("{0} &Swas &8banned&S.", who.ColoredName);
             } else {
-                string reason    = newRank.Permission >= who.Rank ? ServerConfig.DefaultPromoteMessage : ServerConfig.DefaultDemoteMessage;
-                string direction = newRank.Permission >= who.Rank ? " %Swas promoted to " : " %Swas demoted to ";
-                string rankMsg   = who.ColoredName + direction + newRank.ColoredName + "%S. (" + reason + "%S)";
+                string reason    = newRank.Permission >= who.Rank ? Server.Config.DefaultPromoteMessage : Server.Config.DefaultDemoteMessage;
+                string direction = newRank.Permission >= who.Rank ? " &Swas promoted to " : " &Swas demoted to ";
+                string rankMsg   = who.ColoredName + direction + newRank.ColoredName + "&S. (" + reason + "&S)";
                 
                 Chat.MessageGlobal(rankMsg);
-                Player.Message(who, "You are now ranked {0}%S, type /Help for your new set of commands.", 
-                               newRank.ColoredName);
+                who.Message("You are now ranked {0}&S, type /Help for your new set of commands.", newRank.ColoredName);
             }
-            
-            who.color = newRank.Color;
-            Entities.GlobalRespawn(who);
-            who.SetPrefix();            
+        	who.UpdateColor(newRank.Color);         
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/FakeRank [player] [rank]");
-            Player.Message(p, "%HGives [player] the appearance of being ranked to [rank].");
+            p.Message("&T/FakeRank [player] [rank]");
+            p.Message("&HGives [player] the appearance of being ranked to [rank].");
         }
     }
 }

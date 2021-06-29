@@ -19,105 +19,120 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
 using MCGalaxy.Config;
 
 namespace MCGalaxy.Games {
     
-    public static class ZSConfig {
+    public sealed class ZSConfig : RoundsGameConfig {
         
-        /// <summary> How precise collision detection is between alive and dead players. (Where 1 block = 32 units) </summary>
-        [ConfigInt("zombie-hitbox-precision", "Zombie", 32)]
-        public static int HitboxPrecision = 32;
+        [ConfigFloat("zombie-hitbox-distance", "Zombie", 1f)]
+        public float HitboxDist = 1f;
+        [ConfigFloat("zombie-max-move-distance", "Zombie", 1.5625f)]
+        public float MaxMoveDist = 1.5625f;
         
-        /// <summary> The maximum distance a player is allowed to move between movement packets. </summary>
-        [ConfigInt("zombie-maxmove-distance", "Zombie", 50)]
-        public static int MaxMoveDistance = 50;
-        
-        /// <summary> Whether the server's main level should be set to the current level at the end of each round. </summary>
-        [ConfigBool("zombie-survival-only-server", "Zombie", false)]
-        public static bool SetMainLevel;
-        
-        /// <summary> Whether zombie survival should start upon server startup. </summary>
-        [ConfigBool("zombie-on-server-start", "Zombie", false)]
-        public static bool StartImmediately;
-        
-        /// <summary> Whether the current level name should be shown in the heartbeats sent. </summary>
-        [ConfigBool("zombie-map-inheartbeat", "Zombie", false)]
-        public static bool IncludeMapInHeartbeat = false;
+        [ConfigString("human-tablist-group", "Human", "&fHumans")]
+        public string HumanTabListGroup = "&fHumans"; 
 
         [ConfigBool("no-pillaring-during-zombie", "Zombie", true)]
-        public static bool NoPillaring = true;
+        public bool NoPillaring = true;
         [ConfigString("zombie-name-while-infected", "Zombie", "", true)]
-        public static string ZombieName = "";
+        public string ZombieName = "";
         [ConfigString("zombie-model-while-infected", "Zombie", "zombie")]
-        public static string ZombieModel = "zombie";
+        public string ZombieModel = "zombie";
+        [ConfigString("zombie-tablist-group", "Zombie", "&cZombies")]
+        public string ZombieTabListGroup = "&cZombies";       
         
         [ConfigInt("zombie-invisibility-duration", "Zombie", 7, 1)]
-        public static int InvisibilityDuration = 7;
+        public int InvisibilityDuration = 7;
         [ConfigInt("zombie-invisibility-potions", "Zombie",  7, 1)]
-        public static int InvisibilityPotions = 7;
+        public int InvisibilityPotions = 7;
         [ConfigInt("zombie-zinvisibility-duration", "Zombie", 5, 1)]
-        public static int ZombieInvisibilityDuration = 5;
+        public int ZombieInvisibilityDuration = 5;
         [ConfigInt("zombie-zinvisibility-potions", "Zombie", 4, 1)]
-        public static int ZombieInvisibilityPotions = 4;
-        [ConfigBool("enable-changing-levels", "Zombie", true)]
-        public static bool ChangeLevels = true;
+        public int ZombieInvisibilityPotions = 4;
         
         [ConfigString("revive-notime-msg", "Revive",
                       "It's too late. The humans do not have enough time left to make more revive potions.")]
-        public static string ReviveNoTimeMessage = "It's too late. The humans do not have enough time left to produce more revive potions.";        
+        public string ReviveNoTimeMessage = "It's too late. The humans do not have enough time left to produce more revive potions.";
         [ConfigInt("revive-no-time", "Revive", 120, 0)]
-        public static int ReviveNoTime = 120;
+        public int ReviveNoTime = 120;
         
         [ConfigString("revive-fewzombies-msg", "Revive",
                       "There aren't enough zombies for it to be worthwhile to produce revive potions.")]
-        public static string ReviveFewZombiesMessage = "There aren't enough zombies for it to be worthwhile to produce revive potions.";        
+        public string ReviveFewZombiesMessage = "There aren't enough zombies for it to be worthwhile to produce revive potions.";
         [ConfigInt("revive-fewzombies", "Revive", 3, 0)]
-        public static int ReviveFewZombies = 3;       
+        public int ReviveFewZombies = 3;
         [ConfigInt("revive-tooslow", "Revive", 60, 0)]
-        public static int ReviveTooSlow = 60;      
+        public int ReviveTooSlow = 60;
         [ConfigInt("revive-chance", "Revive", 80, 0, 100)]
-        public static int ReviveChance = 80;        
+        public int ReviveChance = 80;
         [ConfigInt("revive-times", "Revive", 1, 0)]
-        public static int ReviveTimes = 1;       
-        [ConfigString("revive-success", "Revive", "used a revive potion. &aIt was super effective!")]
-        public static string ReviveSuccessMessage = "used a revive potion. &aIt was super effective!";
-        [ConfigString("revive-failure", "Revive", "tried using a revive potion. &cIt was not very effective..")]
-        public static string ReviveFailureMessage = "tried using a revive potion. &cIt was not very effective..";
+        public int ReviveTimes = 1;
         
-        /// <summary> List of levels that are randomly picked for zombie survival.
-        /// If this left blank, then all level files are picked from instead. </summary>
-        [ConfigStringList("zombie-levels-list", "Zombie")]
-        public static List<string> LevelList = new List<string>();
+        static ConfigElement[] cfg;
+        public override bool AllowAutoload { get { return true; } }
+        protected override string GameName { get { return "Zombie Survival"; } }
+        protected override string PropsPath { get { return "properties/zombiesurvival.properties"; } }
         
-        /// <summary> List of levels that are never picked for zombie survival. </summary>
-        [ConfigStringList("zombie-ignores-list", "Zombie")]
-        public static List<string> IgnoredLevelList = new List<string>();
-        
-        public static void SaveSettings() {
-            using (StreamWriter w = new StreamWriter("properties/zombiesurvival.properties")) {
-                w.WriteLine("#   zombie-on-server-start        = Starts Zombie Survival when server is started.");
-                w.WriteLine("#   no-respawning-during-zombie   = Disables respawning (Pressing R) while Zombie is on.");
+        public override void Save() {
+            if (cfg == null) cfg = ConfigElement.GetAll(typeof(ZSConfig));
+            
+            using (StreamWriter w = new StreamWriter(PropsPath)) {
                 w.WriteLine("#   no-pillaring-during-zombie    = Disables pillaring while Zombie Survival is activated.");
                 w.WriteLine("#   zombie-name-while-infected    = Sets the zombies name while actived if there is a value.");
-                w.WriteLine("#   enable-changing-levels        = After a Zombie Survival round has finished, will change the level it is running on.");
-                w.WriteLine("#   zombie-survival-only-server   = EXPERIMENTAL! Makes the server only for Zombie Survival (etc. changes main level)");
-                w.WriteLine("#   use-level-list                = Only gets levels for changing levels in Zombie Survival from zombie-level-list.");
-                w.WriteLine("#   zombie-level-list             = List of levels for changing levels (Must be comma seperated, no spaces. Must have changing levels and use level list enabled.)");
                 w.WriteLine();
-                ConfigElement.Serialise(Server.zombieConfig, " options", w, null);
+                ConfigElement.Serialise(cfg, w, this);
             }
         }
         
-        public static void LoadSettings() {
-            PropertiesFile.Read("properties/zombiesurvival.properties", ZSLineProcessor);
+        public override void Load() {
+            if (cfg == null) cfg = ConfigElement.GetAll(typeof(ZSConfig));
+            PropertiesFile.Read(PropsPath, ProcessConfigLine);
         }
         
-        static void ZSLineProcessor(string key, string value) {
-            if (!ConfigElement.Parse(Server.zombieConfig, key, value, null)) {
-                Logger.Log(LogType.Warning, "\"{0}\" was not a recognised zombie survival property key.", key);
+        void ProcessConfigLine(string key, string value) {
+            // backwards compatibility
+            if (key.CaselessEq("zombie-levels-list")) {
+                Maps = new List<string>(value.SplitComma());
+            } else {
+                ConfigElement.Parse(cfg, this, key, value);
             }
+        }
+        
+        static string[] defMessages = new string[] { "{0} WIKIWOO'D {1}", "{0} stuck their teeth into {1}",
+            "{0} licked {1}'s brain ", "{0} danubed {1}", "{0} made {1} meet their maker", "{0} tripped {1}",
+            "{0} made some zombie babies with {1}", "{0} made {1} see the dark side", "{0} tweeted {1}",
+            "{0} made {1} open source", "{0} infected {1}", "{0} iDotted {1}", "{1} got nommed on",
+            "{0} transplanted {1}'s living brain" };
+        
+        public static List<string> LoadInfectMessages() {
+            List<string> msgs = new List<string>();
+            try {
+                if (!File.Exists("text/infectmessages.txt")) {
+                    File.WriteAllLines("text/infectmessages.txt", defMessages);
+                }
+                msgs = Utils.ReadAllLinesList("text/infectmessages.txt");
+            } catch (Exception ex) {
+                Logger.LogError("Error loading infect messages list", ex);
+            }
+            
+            if (msgs.Count == 0) msgs = new List<string>(defMessages);
+            return msgs;
+        }
+        
+        static string InfectPath(string name) { return "text/infect/" + name.ToLower() + ".txt"; }
+        public static List<string> LoadPlayerInfectMessages(string name) {
+            string path = InfectPath(name);
+            if (!File.Exists(path)) return null;
+            return Utils.ReadAllLinesList(path);
+        }
+        
+        public static void AppendPlayerInfectMessage(string name, string msg) {
+            if (!Directory.Exists("text/infect"))
+                Directory.CreateDirectory("text/infect");
+            
+            string path = InfectPath(name);
+            File.AppendAllText(path, msg + Environment.NewLine);
         }
     }
 }

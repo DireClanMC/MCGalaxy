@@ -25,8 +25,8 @@ namespace MCGalaxy.Drawing.Transforms {
         public override string[] Help { get { return HelpString; } }
         
         static string[] HelpString = new string[] {
-            "%TArguments: none",
-            "%HDoes not affect the output of draw operations.",
+            "&TArguments: none",
+            "&HDoes not affect the output of draw operations.",
         };
         
         public override Transform Construct(Player p, string message) {
@@ -39,16 +39,16 @@ namespace MCGalaxy.Drawing.Transforms {
         public override string[] Help { get { return HelpString; } }
         
         static string[] HelpString = new string[] {
-            "%TArguments: [scaleX] [scaleY] [scaleZ] <centre>",
-            "%TAlternatively: [scale] <centre>",
-            "%H[scale] values can be an integer or a fraction (e.g. 2 or 1/2).",
-            "%H[centre] if given, indicates to scale from the centre of a draw operation, " +
+            "&TArguments: [scaleX] [scaleY] [scaleZ] <centre>",
+            "&TAlternatively: [scale] <centre>",
+            "&H[scale] values can be an integer or a fraction (e.g. 2 or 1/2).",
+            "&H[centre] if given, indicates to scale from the centre of a draw operation, " +
                 "instead of outwards from the first mark. Recommended for cuboid and cylinder.",
         };
         
         public override Transform Construct(Player p, string message) {
             string[] args = message.SplitSpaces();
-            if (args.Length > 4) { Player.MessageLines(p, Help); return null; }
+            if (message.Length == 0 || args.Length > 4) { p.MessageLines(Help); return null; }
             int mul = 0, div = 0;
             ScaleTransform scaler = new ScaleTransform();
             
@@ -66,9 +66,11 @@ namespace MCGalaxy.Drawing.Transforms {
                 scaler.ZMul = mul; scaler.ZDiv = div;
             }
 
+            scaler.CheckScales();            
             if ((args.Length % 2) != 0) return scaler; // no centre argument
+            
             if (!args[args.Length - 1].CaselessEq("centre")) {
-                Player.Message(p, "The mode must be either \"centre\", or not given."); return null;
+                p.Message("The mode must be either \"centre\", or not given."); return null;
             }
             scaler.CentreOrigin = true;
             return scaler;
@@ -86,9 +88,9 @@ namespace MCGalaxy.Drawing.Transforms {
             if (!CommandParser.GetInt(p, top,    argName + " (numerator)",   ref mul, -32768, 32768)) return false;
             if (!CommandParser.GetInt(p, bottom, argName + " (denominator)", ref div, -32768, 32768)) return false;
             
-            if (div == 0) { Player.Message(p, "Cannot divide by 0."); return false; }
+            if (div == 0) { p.Message("&WCannot divide by 0."); return false; }
             float fract = mul / (float)div;
-            if (Math.Abs(fract) > 32) { Player.Message(p, argName + " must be between -32 and 32."); return false; }
+            if (Math.Abs(fract) > 32) { p.Message(argName + " must be between -32 and 32."); return false; }
             return true;
         }
     }

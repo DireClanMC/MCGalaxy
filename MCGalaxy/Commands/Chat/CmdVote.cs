@@ -19,23 +19,22 @@ using System;
 using MCGalaxy.Tasks;
 
 namespace MCGalaxy.Commands.Chatting {
-    public sealed class CmdVote : Command {
+    public sealed class CmdVote : Command2 {
         public override string name { get { return "Vote"; } }
         public override string shortcut { get { return "vo"; } }
         public override string type { get { return CommandTypes.Chat; } }
-        public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             if (!MessageCmd.CanSpeak(p, name)) return;
             
             if (Server.voting) {
-                Player.Message(p, "A vote is in progress!"); return;
+                p.Message("A vote is in progress!"); return;
             }
             Server.voting = true;
             Server.NoVotes = 0; Server.YesVotes = 0;
-            Chat.MessageGlobal("&2 VOTE: %S{0} %S(&2Yes %S/&cNo%S)", message);
+            Chat.MessageGlobal("&2 VOTE: &S{0} &S(&2Yes &S/&cNo&S)", message);
             Server.MainScheduler.QueueOnce(VoteCallback, null, TimeSpan.FromSeconds(15));
         }
         
@@ -47,9 +46,9 @@ namespace MCGalaxy.Commands.Chatting {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Vote [message]");
-            Player.Message(p, "%HStarts a vote for 15 seconds.");
-            Player.Message(p, "%HType %TY %Hor %TN %Hinto chat to vote.");
+            p.Message("&T/Vote [message]");
+            p.Message("&HStarts a vote for 15 seconds.");
+            p.Message("&HType &TY &Hor &TN &Hinto chat to vote.");
         }
     }
 }

@@ -16,32 +16,32 @@
     permissions and limitations under the Licenses.
 */
 namespace MCGalaxy.Commands.Maintenance {
-    public sealed class CmdLowlag : Command {
+    public sealed class CmdLowlag : Command2 {
         public override string name { get { return "LowLag"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
-            if (message.Length == 0 && ServerConfig.PositionUpdateInterval > 1000) {
-                ServerConfig.PositionUpdateInterval = 100;
-                Chat.MessageGlobal("&dLow lag %Sturned &cOFF %S- positions update every &b100 %Sms.");
+        public override void Use(Player p, string message, CommandData data) {
+            if (message.Length == 0 && Server.Config.PositionUpdateInterval > 1000) {
+                Server.Config.PositionUpdateInterval = 100;
+                Chat.MessageAll("&dLow lag &Sturned &cOFF &S- positions update every &b100 &Sms.");
             } else if (message.Length == 0) {
-                ServerConfig.PositionUpdateInterval = 2000;
-                Chat.MessageGlobal("&dLow lag %Sturned &aON %S- positions update every &b2000 %Sms.");
+                Server.Config.PositionUpdateInterval = 2000;
+                Chat.MessageAll("&dLow lag &Sturned &aON &S- positions update every &b2000 &Sms.");
             } else {
                 int interval = 0;
                 if (!CommandParser.GetInt(p, message, "Interval", ref interval, 20, 2000)) return;
 
-                ServerConfig.PositionUpdateInterval = interval;
-                Chat.MessageGlobal("Positions now update every &b{0} %Smilliseconds.", interval);
+                Server.Config.PositionUpdateInterval = interval;
+                Chat.MessageAll("Positions now update every &b" + interval + " &Smilliseconds.");
             }
             SrvProperties.Save();
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/LowLag [interval in milliseconds]");
-            Player.Message(p, "%HSets the interval between sending of position packets.");
-            Player.Message(p, "%HIf no interval is given, then 2000 ms is used if the current interval" + 
+            p.Message("&T/LowLag [interval in milliseconds]");
+            p.Message("&HSets the interval between sending of position packets.");
+            p.Message("&HIf no interval is given, then 2000 ms is used if the current interval" + 
                                " is less than 1000 ms, otherwise 200 ms is used for the interval.");
         }
     }

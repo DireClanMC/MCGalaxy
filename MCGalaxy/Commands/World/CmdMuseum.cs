@@ -21,31 +21,30 @@ using System.Threading;
 using MCGalaxy.Levels.IO;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdMuseum : Command {
+    public sealed class CmdMuseum : Command2 {
         public override string name { get { return "Museum"; } }
         public override string type { get { return CommandTypes.World; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
-            string path = args.Length == 1 ? LevelInfo.MapPath(args[0]) :
-                LevelInfo.BackupFilePath(args[0], args[1]);
+            string path = args.Length == 1 ? LevelInfo.MapPath(args[0]) : LevelInfo.BackupFilePath(args[0], args[1]);
             if (!File.Exists(path)) {
-                Player.Message(p, "Level or backup could not be found."); return;
+                p.Message("Level or backup could not be found."); return;
             }
             
             string name = null;
             if (args.Length == 1) {
-                name = "&cMuseum " + ServerConfig.DefaultColor + "(" + args[0] + ")";
+                name = "&cMuseum &S(" + args[0] + ")";
             } else {
-                name = "&cMuseum " + ServerConfig.DefaultColor + "(" + args[0] + " " + args[1] + ")";
+                name = "&cMuseum &S(" + args[0] + " " + args[1] + ")";
             }
             
             if (p.level.name.CaselessEq(name)) {
-                Player.Message(p, "You are already in this museum."); return;
+                p.Message("You are already in this museum."); return;
             }
             if (Interlocked.CompareExchange(ref p.LoadingMuseum, 1, 0) == 1) {
-                Player.Message(p, "You are already loading a museum level."); return;
+                p.Message("You are already loading a museum level."); return;
             }
             
             try {
@@ -57,7 +56,7 @@ namespace MCGalaxy.Commands.World {
         
         static void JoinMuseum(Player p, string name, string mapName, string path) {
             Level lvl = IMapImporter.Formats[0].Read(path, name, false);
-            lvl.MapName = mapName;           
+            lvl.MapName = mapName;
             SetLevelProps(lvl);
             Level.LoadMetadata(lvl);
             
@@ -69,16 +68,11 @@ namespace MCGalaxy.Commands.World {
             lvl.backedup = true;
             lvl.BuildAccess.Min = LevelPermission.Nobody;
             lvl.IsMuseum = true;
-
-            lvl.Config.JailX = lvl.spawnx * 32;
-            lvl.Config.JailY = lvl.spawny * 32;
-            lvl.Config.JailZ = lvl.spawnz * 32;
-            lvl.Config.jailrotx = lvl.rotx; lvl.Config.jailroty = lvl.roty;
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Museum [map] [restore]");
-            Player.Message(p, "%HAllows you to access a restore of the map entered. Works on unloaded maps");
+            p.Message("&T/Museum [level] [backup]");
+            p.Message("&HTeleports you to a backup of the given level.");
         }
     }
 }

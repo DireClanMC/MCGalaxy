@@ -17,6 +17,7 @@
  */
 using System;
 using System.Collections.Generic;
+using MCGalaxy.SQL;
 
 namespace MCGalaxy.DB {
     
@@ -51,44 +52,45 @@ namespace MCGalaxy.DB {
         
         /// <summary> List of stats that can be ordered. </summary>
         public static List<TopStat> Stats = new List<TopStat>() {
-            new TopStat("Logins", PlayerData.DBTable, 
+            new TopStat("Logins", "Players",
                         PlayerData.ColumnLogins, MostLogins, FormatInteger),
-            new TopStat("Deaths", PlayerData.DBTable, 
+            new TopStat("Deaths", "Players",
                         PlayerData.ColumnDeaths, MostDeaths, FormatInteger),
-            new TopStat("Money", PlayerData.DBTable, 
+            new TopStat("Money", "Players",
                         PlayerData.ColumnMoney, MostMoney, FormatInteger),            
-            new TopStat("Oldest", PlayerData.DBTable, 
+            new TopStat("Oldest", "Players", 
                         PlayerData.ColumnFirstLogin, MostOldest, FormatDate, true),
-            new TopStat("Newest", PlayerData.DBTable,
+            new TopStat("Newest", "Players",
                         PlayerData.ColumnFirstLogin, MostNewest, FormatDate),
-            new TopStat("Recent", PlayerData.DBTable, 
+            new TopStat("Recent", "Players",
                         PlayerData.ColumnLastLogin, MostRecent, FormatDate),
-            new TopStat("Least-Recent", PlayerData.DBTable,
+            new TopStat("Least-Recent", "Players",
                         PlayerData.ColumnLastLogin, MostNotRecent, FormatDate, true),
-            new TopStat("Kicked", PlayerData.DBTable, 
+            new TopStat("Kicked", "Players", 
                         PlayerData.ColumnKicked, MostKicked, FormatInteger),
-            new TopStat("Modified", PlayerData.DBTable, 
-                        PlayerData.ColumnTotalBlocks + " & " + PlayerData.LowerBitsMask,
+            new TopStat("Modified", "Players",
+                        PlayerData.ColumnBlocks + " & " + PlayerData.LoBitsMask,
                         MostModified, FormatInteger),
-            new TopStat("Drawn", PlayerData.DBTable,
-                        PlayerData.ColumnTotalCuboided + " & " + PlayerData.LowerBitsMask,
+            new TopStat("Drawn", "Players",
+                        PlayerData.ColumnDrawn + " & " + PlayerData.LoBitsMask,
                         MostDrawn, FormatInteger),
-            new TopStat("Placed", PlayerData.DBTable,
-                        PlayerData.ColumnTotalBlocks + " >> " + PlayerData.LowerBits,
+            new TopStat("Placed", "Players",
+                        // TODO: Check if this works on MySQL too
+                        PlayerData.ColumnBlocks + " >> " + PlayerData.HiBitsShift + " & " + PlayerData.HiBitsMask,
                         MostPlaced, FormatInteger),
-            new TopStat("Deleted", PlayerData.DBTable, 
-                        PlayerData.ColumnTotalCuboided + " >> " + PlayerData.LowerBits,
+            new TopStat("Deleted", "Players",
+                        PlayerData.ColumnDrawn  + " >> " + PlayerData.HiBitsShift + " & " + PlayerData.HiBitsMask,
                         MostDeleted, FormatInteger),
-            new TopStat("TimeSpent", PlayerData.DBTable, 
+            new TopStat("TimeSpent", "Players",
                         PlayerData.ColumnTimeSpent, MostTime, FormatTimespan,
                         false, " CAST(TimeSpent as unsigned) "),
-            new TopStat("Messages", PlayerData.DBTable, 
+            new TopStat("Messages", "Players",
                         PlayerData.ColumnMessages, MostMessages, FormatInteger),
         };
         
         static string MostLogins()    { return "Most logins"; }
         static string MostDeaths()    { return "Most deaths"; }
-        static string MostMoney()     { return "Most " + ServerConfig.Currency; }
+        static string MostMoney()     { return "Most " + Server.Config.Currency; }
         static string MostNewest()    { return "Newest players"; }
         static string MostOldest()    { return "Oldest players"; }
         static string MostRecent()    { return "Most recent players"; }
@@ -108,13 +110,13 @@ namespace MCGalaxy.DB {
         
         public static string FormatTimespan(string input) {
             long value = PlayerData.ParseLong(input);
-            return TimeSpan.FromSeconds(value).Shorten(true, true);
+            return TimeSpan.FromSeconds(value).Shorten(true);
         }
         
         public static string FormatDate(string input) {
-            DateTime time = DateTime.Parse(input);
+            DateTime time = input.ParseDBDate();
             TimeSpan delta = DateTime.Now - time;
-            return String.Format("{0:H:mm} on {0:d} ({1} ago)", time, delta.Shorten());
+            return string.Format("{0:H:mm} on {0:d} ({1} ago)", time, delta.Shorten());
         }
     }
 }

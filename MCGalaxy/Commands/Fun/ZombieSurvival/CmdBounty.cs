@@ -18,46 +18,48 @@
 using MCGalaxy.Games;
 
 namespace MCGalaxy.Commands.Fun {    
-    public sealed class CmdBounty : Command {        
+    public sealed class CmdBounty : Command2 {        
         public override string name { get { return "Bounty"; } }
         public override string type { get { return CommandTypes.Games; } }
         public override CommandEnable Enabled { get { return CommandEnable.Zombie; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
             if (args.Length < 2) { Help(p); return; }
             
-            Player who = PlayerInfo.FindMatches(p, args[0]);
-            if (who == null) return;
+            Player target = PlayerInfo.FindMatches(p, args[0]);
+            if (target == null) return;
             
             int amount = 0;
             if (!CommandParser.GetInt(p, args[1], "Bounty amount", ref amount, 1, 256)) return;
             
             if (p.money < amount) {
-                Player.Message(p, "You do not have enough " + ServerConfig.Currency + " to place such a large bountry."); return;
+                p.Message("You do not have enough " + Server.Config.Currency + " to place such a large bountry."); return;
             }
             
-            BountyData old = Server.zombie.FindBounty(who.name);
+            BountyData old = ZSGame.Instance.FindBounty(target.name);
             if (old != null && old.Amount >= amount) {
-                Player.Message(p, "There is already a larger active bounty for " + who.name + "."); return;
+                p.Message("There is already a larger active bounty for " + p.FormatNick(target)); return;
             }
             
+            string msg;
             if (old == null) {
-                Chat.MessageGlobal("Looks like someone really wants the brains of {0}%S! A bounty of &a{1} %S{2} was placed on them.", 
-                                who.ColoredName, amount, ServerConfig.Currency);
+                msg = string.Format("Looks like someone really wants the brains of {0}&S! A bounty of &a{1} &S{2} was placed on them.", 
+                                    target.ColoredName, amount, Server.Config.Currency);
             } else {
-                Chat.MessageGlobal("{0} %Sis popular! The bounty on them was increased from &a{3} %Sto &a{1} %S{2}.", 
-                                who.ColoredName, amount, ServerConfig.Currency, old.Amount);
-                Server.zombie.Bounties.Remove(old);
+                msg = string.Format("{0} &Sis popular! The bounty on them was increased from &a{3} &Sto &a{1} &S{2}.", 
+                                    target.ColoredName, amount, Server.Config.Currency, old.Amount);
+                ZSGame.Instance.Bounties.Remove(old);
             }
+            ZSGame.Instance.Map.Message(msg);
             
-            Server.zombie.Bounties.Add(new BountyData(p.name, who.name, amount));
+            ZSGame.Instance.Bounties.Add(new BountyData(p.name, target.name, amount));
             p.SetMoney(p.money - amount);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Bounty [name] [amount]");
-            Player.Message(p, "%HSets a bounty on the given player.");
+            p.Message("&T/Bounty [name] [amount]");
+            p.Message("&HSets a bounty on the given player.");
         }
     }
 }

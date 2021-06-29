@@ -17,42 +17,41 @@
  */
 using MCGalaxy.Network;
 
-namespace MCGalaxy.Commands.CPE {    
-    public sealed class CmdReachDistance : Command {        
+namespace MCGalaxy.Commands.CPE {
+    public sealed class CmdReachDistance : Command2 {
         public override string name { get { return "ReachDistance"; } }
         public override string shortcut { get { return "Reach"; } }
         public override string type { get { return CommandTypes.Building; } }
-        public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
-            if (message.Length == 0) { Help(p); return; }
-            
-            float dist;
-            if (!Utils.TryParseDecimal(message, out dist)) {
-                Player.Message(p, "\"{0}\" is not a valid decimal.", message); return;
+        public override void Use(Player p, string message, CommandData data) {          
+            if (!p.Supports(CpeExt.ClickDistance)) {
+                p.Message("Your client doesn't support changing your reach distance."); return;
             }
-            int packedDist = (int)(dist * 32);
-            if (packedDist < 0) packedDist = 160;
+            if (message.Length == 0) {
+                p.Message("Your reach distance is {0} blocks", p.ReachDistance); return;
+            }
             
+            float dist = 0;
+            if (!CommandParser.GetReal(p, message, "Distance", ref dist, 0, 1024)) return;
+            
+            int packedDist = (int)(dist * 32);
             if (packedDist > short.MaxValue) {
-                Player.Message(p, "\"{0}\", is too long a reach distance. Max is 1023 blocks.", message);
-            } else if (!p.Supports(CpeExt.ClickDistance)) {
-                Player.Message(p, "Your client doesn't support changing your reach distance.");
-            } else {        
+                p.Message("\"{0}\", is too long a reach distance. Max is 1023 blocks.", message);
+            } else {
                 p.Send(Packet.ClickDistance((short)packedDist));
-                p.ReachDistance = packedDist / 32f;
-                Player.Message(p, "Set your reach distance to {0} blocks.", dist);
-                Server.reach.AddOrReplace(p.name, packedDist.ToString());
+                p.ReachDistance = dist;
+                p.Message("Set your reach distance to {0} blocks.", dist);
+                Server.reach.Update(p.name, packedDist.ToString());
                 Server.reach.Save();
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/ReachDistance [distance]");
-            Player.Message(p, "%HSets the reach distance for how far away you can modify blocks.");
-            Player.Message(p, "%H  The default reach distance is 5.");
+            p.Message("&T/ReachDistance [distance]");
+            p.Message("&HSets the reach distance for how far away you can modify blocks.");
+            p.Message("&H  The default reach distance is 5.");
         }
     }
 }

@@ -18,157 +18,145 @@
 using System;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdMap : Command {
+    public sealed class CmdMap : Command2 {
         public override string name { get { return "Map"; } }
         public override string type { get { return CommandTypes.World; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Operator, "+ can edit map options"),
-                    new CommandPerm(LevelPermission.Admin, "+ can set realm owners") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can edit map options"),
+                    new CommandPerm(LevelPermission.Admin, "can set realm owners") }; }
         }
         public override CommandAlias[] Aliases {
-            get { return new[] { new CommandAlias("ps", "physicspeed"),
-                    new CommandAlias("AllowGuns", null, "guns") }; }
+            get { return new[] { new CommandAlias("ps", LevelOptions.Speed),
+                    new CommandAlias("AllowGuns", "{args} " + LevelOptions.Guns) }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (CheckSuper(p, message, "level name")) return;
             if (message.Length == 0) message = p.level.name;
             string[] args = message.SplitSpaces(3);
             Level lvl = null;
-            string opt = null, value = null;
+            string optName = null, value = null;
             
             if (IsMapOption(args)) {
-                if (Player.IsSuper(p)) { SuperRequiresArgs(p, "level"); return; }                
-                lvl = p.level; 
+                if (p.IsSuper) { SuperRequiresArgs(p, "level name"); return; }
+                lvl = p.level;
                 
-                opt = args[0];
+                optName = args[0];
                 args = message.SplitSpaces(2);
                 value = args.Length > 1 ? args[1] : "";
             } else if (args.Length == 1) {
                 string map = Matcher.FindMaps(p, args[0]);
                 if (map == null) return;
                 
-                PrintMapInfo(p, LevelInfo.GetConfig(map, out lvl));
+                PrintMapInfo(p, LevelInfo.GetConfig(map));
                 return;
             } else {
                 lvl = Matcher.FindLevels(p, args[0]);
                 if (lvl == null) return;
                 
-                opt = args[1];
+                optName = args[1];
                 value = args.Length > 2 ? args[2] : "";
             }
             
-            if (!CheckExtraPerm(p, 1)) return;
-            if (opt.CaselessEq("realmowner") && !CheckExtraPerm(p, 2)) return;
+            if (!CheckExtraPerm(p, data, 1)) return;
+            if (optName.CaselessEq(LevelOptions.RealmOwner) && !CheckExtraPerm(p, data, 2)) return;
+            if (!LevelInfo.Check(p, data.Rank, lvl, "change map settings of this level")) return;
             
-            if (!LevelInfo.ValidateAction(p, lvl.name, "change map settings of this level")) return;
-            if (SetMapOption(p, lvl, opt, value)) return;
-            Player.Message(p, "Could not find option entered.");
+            LevelOption opt = LevelOptions.Find(optName);
+            if (opt == null) {
+                p.Message("Could not find option entered.");
+            } else {
+                opt.SetFunc(p, lvl, value);
+                lvl.SaveSettings();
+            }
         }
         
         static bool IsMapOption(string[] args) {
-            string opt = LevelOptions.Map(args[0].ToLower());
-            if (!ValidOption(opt)) return false;
+            LevelOption opt = LevelOptions.Find(args[0]);
+            if (opt == null) return false;
             // In rare case someone uses /map motd motd My MOTD
-            if (opt == "motd" && (args.Length == 1 || !args[1].CaselessStarts("motd "))) return true;
+            if (opt.Name == LevelOptions.MOTD && (args.Length == 1 || !args[1].CaselessStarts("motd "))) return true;
             
-            int argsCount = HasArgument(opt) ? 2 : 1;
+            int argsCount = HasArgument(opt.Name) ? 2 : 1;
             return args.Length == argsCount;
         }
         
-        internal static bool SetMapOption(Player p, Level lvl, string opt, string value) {
-            opt = LevelOptions.Map(opt.ToLower());
-            foreach (var option in LevelOptions.Options) {
-                if (!option.Key.CaselessEq(opt)) continue;
-                
-                option.Value(p, lvl, value);
-                Level.SaveSettings(lvl);
-                return true;
-            }
-            return false;
-        }
-        
-        
-        static bool ValidOption(string opt) {
-            foreach (var option in LevelOptions.Options) {
-                if (option.Key.CaselessEq(opt)) return true;
-            }
-            return false;
-        }
-        
         static bool HasArgument(string opt) {
-            return opt == "physicspeed" || opt == "overload" || opt == "treetype"
-                || opt == "fall" || opt == "drown" || opt == "realmowner" || opt == "loaddelay";
+            return
+                opt == LevelOptions.Speed || opt == LevelOptions.Overload || opt == LevelOptions.TreeType ||
+                opt == LevelOptions.Fall || opt == LevelOptions.Drown || opt == LevelOptions.RealmOwner || opt == LevelOptions.LoadDelay;
         }
         
         static void PrintMapInfo(Player p, LevelConfig cfg) {
-            Player.Message(p, "%TPhysics settings:");
-            Player.Message(p, "  Finite mode: {0}%S, Random flow: {1}",
+            p.Message("&TPhysics settings:");
+            p.Message("  Finite mode: {0}&S, Random flow: {1}",
                            GetBool(cfg.FiniteLiquids), GetBool(cfg.RandomFlow));
-            Player.Message(p, "  Animal hunt AI: {0}%S, Edge water: {1}",
+            p.Message("  Animal hunt AI: {0}&S, Edge water: {1}",
                            GetBool(cfg.AnimalHuntAI), GetBool(cfg.EdgeWater));
-            Player.Message(p, "  Grass growing: {0}%S, {1} tree growing: {2}",
+            p.Message("  Grass growing: {0}&S, {1} tree growing: {2}",
                            GetBool(cfg.GrassGrow), cfg.TreeType.Capitalize(), GetBool(cfg.GrowTrees));
-            Player.Message(p, "  Leaf decay: {0}%S, Physics overload: {1}",
+            p.Message("  Leaf decay: {0}&S, Physics overload: {1}",
                            GetBool(cfg.LeafDecay), cfg.PhysicsOverload);
-            Player.Message(p, "  Physics speed: &b{0} %Smilliseconds between ticks",
+            p.Message("  Physics speed: &b{0} &Smilliseconds between ticks",
                            cfg.PhysicsSpeed);
             
-            Player.Message(p, "%TSurvival settings:");
-            Player.Message(p, "  Survival death: {0} %S(Fall: {1}, Drown: {2})",
+            p.Message("&TSurvival settings:");
+            p.Message("  Survival death: {0} &S(Fall: {1}, Drown: {2})",
                            GetBool(cfg.SurvivalDeath), cfg.FallHeight, cfg.DrownTime);
-            Player.Message(p, "  Guns: {0}%S, Killer blocks: {1}",
+            p.Message("  Guns: {0}&S, Killer blocks: {1}",
                            GetBool(cfg.Guns), GetBool(cfg.KillerBlocks));
             
-            Player.Message(p, "%TGeneral settings:");
-            Player.Message(p, "  MOTD: &b" + cfg.MOTD);
-            Player.Message(p, "  Roleplay (level only) chat: " + GetBool(!cfg.ServerWideChat));
-            Player.Message(p, "  Load on /goto: {0}%S, Auto unload: {1}",
+            p.Message("&TGeneral settings:");
+            p.Message("  MOTD: &b" + cfg.MOTD);
+            p.Message("  Local level only chat: " + GetBool(!cfg.ServerWideChat));
+            p.Message("  Load on /goto: {0}&S, Auto unload: {1}",
                            GetBool(cfg.LoadOnGoto), GetBool(cfg.AutoUnload));
-            Player.Message(p, "  Buildable: {0}%S, Deletable: {1}",
-                           GetBool(cfg.Buildable), GetBool(cfg.Deletable));
+            p.Message("  Buildable: {0}&S, Deletable: {1}&S, Drawing: {2}",
+                           GetBool(cfg.Buildable), GetBool(cfg.Deletable), GetBool(cfg.Drawing));
         }
         
         static string GetBool(bool value) { return value ? "&aON" : "&cOFF"; }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Map [level] [option] <value> %H- Sets [option] on [level]");
-            Player.Message(p, "%HPossible options: %S{0}", LevelOptions.Options.Keys.Join());
-            Player.Message(p, "%HUse %T/Help map [option] %Hto see description for that option.");
+            p.Message("&T/Map [level] [option] <value> &H- Sets [option] on that level");
+            p.Message("&HUse &T/Help map options &Hfor a list of options");
+            p.Message("&HUse &T/Help map [option] &Hto see description for that option");
         }
         
         public override void Help(Player p, string message) {
-            string opt = LevelOptions.Map(message.ToLower());
-            foreach (var help in LevelOptions.Help) {
-                if (!help.Key.CaselessEq(opt)) continue;
-                Player.Message(p, "%T/Map [level] {0}{1}", opt, Suffix(opt));
-                Player.Message(p, "%H" + help.Value);
-                
-                if (help.Key.CaselessEq("motd")) ShowMotdRules(p);
+            if (message.CaselessEq("options")) {
+                p.Message("&HOptions: &f{0}", LevelOptions.Options.Join(o => o.Name));
+                p.Message("&HUse &T/Help map [option] &Hto see description for that option");
                 return;
             }
-            Player.Message(p, "Unrecognised option \"{0}\".", opt);
+            
+            LevelOption opt = LevelOptions.Find(message);
+            if (opt == null) {
+                p.Message("Unrecognised option \"{0}\".", message); return;
+            }
+            
+            bool isMotd = opt.Name == LevelOptions.MOTD;
+            string suffix = isMotd ? " <value>" : (HasArgument(opt.Name) ? " [value]" : "");
+            
+            p.Message("&T/Map [level] {0}{1}", opt.Name, suffix);
+            p.Message("&H" + opt.Help);
+            if (isMotd) ShowMotdRules(p);
         }
         
         static void ShowMotdRules(Player p) {
-            Player.Message(p, "%HSpecial rules that can be put in a motd:");
-            Player.Message(p, "%T-/+hax %H- disallows/allows all hacks");
-            Player.Message(p, "%T-/+fly %H- disallows/allows flying");
-            Player.Message(p, "%T-/+noclip %H- disallows/allows noclipping");
-            Player.Message(p, "%T-/+respawn %H- disallows/allows respawning");
-            Player.Message(p, "%T-/+thirdperson %H- disallows/allows third person camera");
-            Player.Message(p, "%T-/+speed %H- disallows/allows speeding");            
-            Player.Message(p, "%T-/+ophax %H- disallows/allows hacks for {0}%S+", 
+            p.Message("&HSpecial rules that can be put in a motd:");
+            p.Message("&T-/+hax &H- disallows/allows all hacks");
+            p.Message("&T-/+fly &H- disallows/allows flying");
+            p.Message("&T-/+noclip &H- disallows/allows noclipping");
+            p.Message("&T-/+respawn &H- disallows/allows respawning");
+            p.Message("&T-/+thirdperson &H- disallows/allows third person camera");
+            p.Message("&T-/+speed &H- disallows/allows speeding");
+            p.Message("&T-/+ophax &H- disallows/allows hacks for {0}&S+",
                            Group.GetColoredName(LevelPermission.Operator));
-            Player.Message(p, "%T-/+push %H- disallows/allows player pushing");
-            Player.Message(p, "%Tjumpheight=[height] %H- sets max height users can jump up to");
-            Player.Message(p, "%Thorspeed=[speed] %H- sets base horizontal speed users move at");
-            Player.Message(p, "%Tjumps=[number] %H- sets max number of consecutive jumps");
-        }
-        
-        static string Suffix(string opt) {
-            if (opt == "motd") return " <value>";
-            return HasArgument(opt) ? " [value]" : "";
+            p.Message("&T-/+push &H- disallows/allows player pushing");
+            p.Message("&Tjumpheight=[height] &H- sets max height users can jump up to");
+            p.Message("&Thorspeed=[speed] &H- sets base horizontal speed users move at");
+            p.Message("&Tjumps=[number] &H- sets max number of consecutive jumps");
         }
     }
 }

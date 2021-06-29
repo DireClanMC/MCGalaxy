@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2011 MCForge
         
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -15,29 +15,31 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
  */
+using MCGalaxy.Games;
+
 namespace MCGalaxy.Commands.Fun {    
-    public sealed class CmdDisInfect : Command {        
+    public sealed class CmdDisInfect : Command2 {        
         public override string name { get { return "DisInfect"; } }
         public override string shortcut { get { return "di"; } }
         public override string type { get { return CommandTypes.Games; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override CommandEnable Enabled { get { return CommandEnable.Zombie; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             Player who = message.Length == 0 ? p : PlayerInfo.FindMatches(p, message);
             if (who == null) return;
             
-            if (!who.Game.Infected || !Server.zombie.RoundInProgress) {
-                Player.Message(p, "Cannot disinfect player");
+            if (!ZSGame.Instance.RoundInProgress || !ZSGame.Get(who).Infected) {
+                p.Message("Cannot disinfect player");
             } else if (!who.Game.Referee) {
-                Server.zombie.DisinfectPlayer(who);
-                Chat.MessageGlobal("{0} %Swas disinfected.", who.ColoredName);
+                ZSGame.Instance.DisinfectPlayer(who);
+                Chat.MessageFrom(who, "λNICK &Swas disinfected.");
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/DisInfect [name]");
-            Player.Message(p, "%HTurns [name] back into a human");
+            p.Message("&T/DisInfect [name]");
+            p.Message("&HTurns [name] back into a human");
         }
     }
 }

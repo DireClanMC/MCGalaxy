@@ -17,6 +17,7 @@
  */
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Net;
 using MCGalaxy.Network;
@@ -25,66 +26,51 @@ using MCGalaxy.Drawing;
 namespace MCGalaxy.Generator {
     public static class HeightmapGen {
         
-        public static bool DownloadImage(string url, string dir, Player p) {
-            if (!Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-            if (!url.CaselessStarts("http://") && !url.CaselessStarts("https://"))
-                url = "http://" + url;
-            
-            Uri uri;
-            if (!Uri.TryCreate(url, UriKind.Absolute, out uri)) {
-                Player.Message(p, "{0} is not a valid URL.", url); return false;
-            }
-            
-            try {
-                using (WebClient client = HttpUtil.CreateWebClient()) {
-                    Player.Message(p, "Downloading file from: &f" + url);
-                    string user = p == null ? "(console)" : p.name;
-                    client.DownloadFile(uri, dir + "tempImage_" + user + ".bmp");
-                }
-                Player.Message(p, "Finished downloading image.");
-                return true;
-            } catch (Exception ex) {
-                Logger.LogError(ex);
-                Player.Message(p, "&cFailed to download the image from the given url.");
-                Player.Message(p, "&cThe url may need to end with its extension (such as .jpg).");
-                return false;
-            }
+        static void OnDecodeError(Player p, Bitmap bmp) {
+            if (bmp != null) bmp.Dispose();
+            // TODO failed to decode the image. make sure you are using the URL of the image directly, not just the webpage it is hosted on              
+            p.Message("&WThere was an error reading the downloaded image.");
+            p.Message("&WThe url may need to end with its extension (such as .jpg).");
         }
         
-        public static Bitmap ReadBitmap(string name, string dir, Player p) {
+        public static Bitmap DecodeImage(byte[] data, Player p) {
             Bitmap bmp = null;
             try {
-                bmp = new Bitmap(dir + name + ".bmp");
+                bmp = new Bitmap(new MemoryStream(data));
                 int width = bmp.Width;
                 // sometimes Mono will return an invalid bitmap instance that throws ArgumentNullException,
                 // so we make sure to check for that here rather than later.
                 return bmp;
+            } catch (ArgumentException ex) {
+                // GDI+ throws ArgumentException when data is not an image
+                // This is a fairly expected error - e.g. when a user tries to /imgprint
+                //   the webpage an image is hosted on, instead of the actual image itself. 
+                // So don't bother logging a full error for this case
+                Logger.Log(LogType.Warning, "Error decoding image: " + ex.Message);
+                OnDecodeError(p, bmp);
+                return null;
             } catch (Exception ex) {
-                Logger.LogError(ex);
-                if (bmp != null) bmp.Dispose();
-                Player.Message(p, "&cThere was an error reading the downloaded image.");
-                Player.Message(p, "&cThe url may need to end with its extension (such as .jpg).");
+                Logger.LogError("Error decoding image", ex);
+                OnDecodeError(p, bmp);
                 return null;
             }
         }
         
-        public static bool Generate(MapGenArgs args) {
-            Player p = args.Player;
-            Level lvl = args.Level;
-            if (args.Args.Length == 0) { Player.Message(p, "You need to provide a url for the image."); return false; }
+        public static bool Generate(Player p, Level lvl, string url) {
+            if (url.Length == 0) { p.Message("You need to provide a url for the image."); return false; }
             
-            if (!DownloadImage(args.Args, "extra/heightmap/", p )) return false;
-            string user = p == null ? "(console)" : p.name;
-            Bitmap bmp = ReadBitmap("tempImage_" + user, "extra/heightmap/", p);
+            byte[] data = HttpUtil.DownloadImage(url, p);
+            if (data == null) return false;
+            Bitmap bmp = DecodeImage(data, p);
             if (bmp == null) return false;
             
             int index = 0, oneY = lvl.Width * lvl.Length;
-            using (bmp) {
+            try {
                 if (lvl.Width != bmp.Width || lvl.Length != bmp.Height) {
-                    Player.Message(p, "The size of the heightmap is {0} by {1}.", bmp.Width, bmp.Height);
-                    Player.Message(p, "The width and length of the new level must match that size.");
-                    return false;
+                    p.Message("&cHeightmap size ({0}x{1}) does not match Width x Length ({2}x{3}) of the level",
+                              bmp.Width, bmp.Height, lvl.Width, lvl.Length);
+                    p.Message("&cAs such, the map may not look accurate.");
+                    bmp = Resize(bmp, lvl.Width, lvl.Length);
                 }
                 
                 using (PixelGetter pixels = new PixelGetter(bmp)) {
@@ -112,8 +98,22 @@ namespace MCGalaxy.Generator {
                         index++;
                     }
                 }
-            }
+                // Cannot use using { } here because bmp may be reassigned
+            } finally { bmp.Dispose(); }
             return true;
+        }
+        
+        static Bitmap Resize(Bitmap bmp, int width, int height) {
+            Bitmap resized = new Bitmap(width, height);
+            using (Graphics g = Graphics.FromImage(resized)) {
+                g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                g.SmoothingMode     = SmoothingMode.None;
+                g.PixelOffsetMode   = PixelOffsetMode.None;
+                g.DrawImage(bmp, 0, 0, width, height);
+            }
+            
+            bmp.Dispose();
+            return resized;
         }
         
         static bool IsShorterBy(int height, PixelGetter pixels, int x, int z) {

@@ -30,15 +30,25 @@ namespace MCGalaxy {
     
     public static class Extensions {
         
-        static char[] trimChars = new char[] {' '};
+        static char[] space = new char[] { ' ' };
+        
+        /// <summary> Same as value.Split(' '), but doesn't allocate ' ' each time. </summary>
+        /// <example> "abc def xyz".SplitSpaces() becomes "abc", "def", "xyz" </example>
         public static string[] SplitSpaces(this string value) {
-            return value.Split(trimChars);
+            return value.Split(space);
         }
         
+        /// <summary> Same as value.Split(' ', maxParts), but doesn't allocate ' ' each time. </summary>
+        /// <example> "abc def xyz".SplitSpaces(2) becomes "abc", "def xyz" </example>
         public static string[] SplitSpaces(this string value, int maxParts) {
-            return value.Split(trimChars, maxParts);
+            return value.Split(space, maxParts);
         }
         
+        /// <summary> Works like value.Split(' '), removing first 'startCount' and last 'endCount' elements, 
+        /// then joining the leftover elements together again. </summary>
+        /// <example> "abc def ghi xyz".Splice(1, 1) becomes "def ghi" </example>
+        /// <example> "abc def ghi xyz".Splice(0, 3) becomes "abc" </example>
+        /// <example> "abc def ghi xyz".Splice(3, 3) becomes "" </example>
         public static string Splice(this string value, int startCount, int endCount) {
             int start = 0;
             for (int i = 0; i < startCount; i++) {
@@ -55,6 +65,8 @@ namespace MCGalaxy {
             return value.Substring(0, end);
         }
         
+        /// <summary> Works like value.Split(splitter), setting elements to null if result.Length is less than split.Length. </summary>
+        /// <example> "abc def".FixedSplit(new string[3], ' ') results in "abc", "def", null </example>
         public static void FixedSplit(this string value, string[] split, char splitter) {
             int start = 0, i = 0;
             for (; i < split.Length && start <= value.Length; i++) {
@@ -68,33 +80,53 @@ namespace MCGalaxy {
             // If not enough split strings, set remaining to null
             for (; i < split.Length; i++) { split[i] = null; }
         }
+                
+        static char[] comma = new char[] { ',' };
+        static string[] emptyStrs = new string[0];
+        
+        /// <summary> Trims spaces then calls Split(','). However, returns an empty array on empty input, 
+        /// instead of a array consisting of "" that a .Split() call would. </summary>
+        public static string[] SplitComma(this string str) {
+            // Don't want an array of one entry of empty string
+            if (str.Length == 0) return emptyStrs;
+            
+            if (str.IndexOf(' ') >= 0) str = str.Replace(" ", "");
+            if (str.Length == 0) return emptyStrs;
+ 
+            return str.Split(comma);
+        }
+        
+        public static void Separate(this string str, out string prefix, out string suffix) {
+            int index = str.IndexOf(' ');
+            prefix = index == -1 ? str : str.Substring(0, index);
+            suffix = index == -1 ? ""  : str.Substring(index + 1);
+        }
+        
+        public static string Plural(this int value) { return value != 1 ? "s" : ""; }
+        
         
         public static byte[] GZip(this byte[] bytes) {
             using (MemoryStream ms = new MemoryStream()) {
-                using (GZipStream gs = new GZipStream(ms, CompressionMode.Compress, true))
+                using (GZipStream gs = new GZipStream(ms, CompressionMode.Compress, true)) {
                     gs.Write(bytes, 0, bytes.Length);
+                }
                 
                 ms.Position = 0;
                 return ms.ToArray();
             }
         }
         
-        public static byte[] Decompress(this byte[] gzip, int capacity = 16)
-        {
-            // Create a GZIP stream with decompression mode.
-            // ... Then create a buffer and write into while reading from the GZIP stream.
-            using (GZipStream stream = new GZipStream(new MemoryStream(gzip), CompressionMode.Decompress))
-            {
+        public static byte[] Decompress(this byte[] gzip, int capacity = 16) {
+            using (GZipStream src = new GZipStream(new MemoryStream(gzip), CompressionMode.Decompress)) {
                 const int size = 4096;
                 byte[] buffer = new byte[size];
-                using (MemoryStream memory = new MemoryStream(capacity))
-                {
+                
+                using (MemoryStream dst = new MemoryStream(capacity)) {
                     int count = 0;
-                    do {
-                        count = stream.Read(buffer, 0, size);
-                        if (count > 0) memory.Write(buffer, 0, count);
-                    } while (count > 0);
-                    return memory.ToArray();
+                    while ((count = src.Read(buffer, 0, size)) > 0) {
+                        dst.Write(buffer, 0, count);
+                    }
+                    return dst.ToArray();
                 }
             }
         }

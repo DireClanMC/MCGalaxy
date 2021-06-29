@@ -25,6 +25,23 @@ namespace MCGalaxy {
         public const byte CpeCount = CpeMaxBlock + 1;
         public const int Count = 256;
 
+        // 10 bit block ids are broken down into: 2 bits of class/type, 8 bits value
+        // class | value meaning
+        // --------------
+        // 00    | Default blocks:
+        //       |    0  to 65  are classic + CPE blocks
+        //       |    66 to 255 are physics blocks
+        // 01    | Custom blocks:
+        //       |    0  to 65  are same as default blocks (not used)
+        //       |    66 to 255 are custom blocks 66 to 255
+        // 10    | Extended custom blocks:
+        //       |    0 to 255 are custom blocks 256 to 511
+        // 11    | Extended custom blocks:
+        //       |    0 to 255 are custom blocks 512 to 767
+        //
+        // E.g. 0x080 = class 01, value 128 = physics block 128
+        // E.g. 0x180 = class 00, value 128 =  custom block 128
+        
         #if TEN_BIT_BLOCKS
         public const ushort MaxRaw = 767;
         public const int ExtendedCount = 256 * 4;
@@ -107,8 +124,8 @@ namespace MCGalaxy {
         public const byte LightPink = 55;
         public const byte ForestGreen = 56;
         public const byte Brown = 57;
-        public const byte deepblue = 58;
-        public const byte turquoise = 59;
+        public const byte DeepBlue = 58;
+        public const byte Turquoise = 59;
         public const byte Ice = 60;
         public const byte CeramicTile = 61;
         public const byte MagmaBlock = 62;
@@ -116,9 +133,9 @@ namespace MCGalaxy {
         public const byte Crate = 64;
         public const byte StoneBrick = 65;
 
-        //public const byte Door_Pink_air = 66;      // unused in core
+        //public const byte Door_Pink_air  = 66;     // unused in core
         //public const byte Door_Black_Air = 67;     // unused in core
-        //public const byte Door_Gray_Air = 68;      // unused in core
+        //public const byte Door_Gray_Air  = 68;     // unused in core
         //public const byte Door_White_Air = 69;     // unused in core
         public const byte FlagBase = 70;
 

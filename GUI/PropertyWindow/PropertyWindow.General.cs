@@ -21,53 +21,60 @@ using MCGalaxy.Gui.Popups;
 namespace MCGalaxy.Gui {
 
     public partial class PropertyWindow : Form {
+        bool warnDisabledVerification = true;
         
         void LoadGeneralProps() {
-            srv_txtName.Text = ServerConfig.Name;
-            srv_txtMOTD.Text = ServerConfig.MOTD;
-            srv_numPort.Value = ServerConfig.Port;
-            srv_txtOwner.Text = ServerConfig.OwnerName;
-            srv_chkPublic.Checked = ServerConfig.Public;
+            srv_txtName.Text = Server.Config.Name;
+            srv_txtMOTD.Text = Server.Config.MOTD;
+            srv_numPort.Value = Server.Config.Port;
+            srv_txtOwner.Text = Server.Config.OwnerName;
+            srv_chkPublic.Checked = Server.Config.Public;
             
-            srv_numPlayers.Value = ServerConfig.MaxPlayers;
-            srv_numGuests.Value = ServerConfig.MaxGuests;
+            srv_numPlayers.Value = Server.Config.MaxPlayers;
+            srv_numGuests.Value = Server.Config.MaxGuests;
             srv_numGuests.Maximum = srv_numPlayers.Value;
-            srv_cbMustAgree.Checked = ServerConfig.AgreeToRulesOnEntry;
+            srv_cbMustAgree.Checked = Server.Config.AgreeToRulesOnEntry;
             
-            lvl_txtMain.Text = ServerConfig.MainLevel;
-            lvl_chkAutoload.Checked = ServerConfig.AutoLoadMaps;
-            lvl_chkWorld.Checked = ServerConfig.ServerWideChat;
+            lvl_txtMain.Text = Server.Config.MainLevel;
+            lvl_chkAutoload.Checked = Server.Config.AutoLoadMaps;
+            lvl_chkWorld.Checked = Server.Config.ServerWideChat;
             
-            adv_chkVerify.Checked = ServerConfig.VerifyNames;
-            adv_chkRestart.Checked = ServerConfig.restartOnError;
-            
-            chkUpdates.Checked = ServerConfig.CheckForUpdates;
+            warnDisabledVerification = false;
+            adv_chkVerify.Checked    = Server.Config.VerifyNames;
+            warnDisabledVerification = true;
+            adv_chkCPE.Checked = Server.Config.EnableCPE;       
+            chkUpdates.Checked = Server.Config.CheckForUpdates;
         }
         
         void ApplyGeneralProps() {
-            ServerConfig.Name = srv_txtName.Text;
-            ServerConfig.MOTD = srv_txtMOTD.Text;
-            ServerConfig.Port = (int)srv_numPort.Value;
-            ServerConfig.OwnerName = srv_txtOwner.Text;
-            ServerConfig.Public = srv_chkPublic.Checked;
+            Server.Config.Name = srv_txtName.Text;
+            Server.Config.MOTD = srv_txtMOTD.Text;
+            Server.Config.Port = (int)srv_numPort.Value;
+            Server.Config.OwnerName = srv_txtOwner.Text;
+            Server.Config.Public = srv_chkPublic.Checked;
             
-            ServerConfig.MaxPlayers = (byte)srv_numPlayers.Value;
-            ServerConfig.MaxGuests = (byte)srv_numGuests.Value;
-            ServerConfig.AgreeToRulesOnEntry = srv_cbMustAgree.Checked;  
+            Server.Config.MaxPlayers = (byte)srv_numPlayers.Value;
+            Server.Config.MaxGuests = (byte)srv_numGuests.Value;
+            Server.Config.AgreeToRulesOnEntry = srv_cbMustAgree.Checked;  
             
-            string main = Player.ValidName(lvl_txtMain.Text) ? lvl_txtMain.Text : "main";
-            Server.SetMainLevel(main);
-            ServerConfig.AutoLoadMaps = lvl_chkAutoload.Checked;
-            ServerConfig.ServerWideChat = lvl_chkWorld.Checked;
+            Server.Config.MainLevel = lvl_txtMain.Text;
+            Server.Config.AutoLoadMaps = lvl_chkAutoload.Checked;
+            Server.Config.ServerWideChat = lvl_chkWorld.Checked;
             
-            ServerConfig.VerifyNames = adv_chkVerify.Checked;
-            ServerConfig.restartOnError = adv_chkRestart.Checked;
-            
-            ServerConfig.CheckForUpdates = chkUpdates.Checked;
-            //ServerConfig.reportBack = ;  //No setting for this?                
+            Server.Config.VerifyNames = adv_chkVerify.Checked;
+            Server.Config.EnableCPE = adv_chkCPE.Checked;            
+            Server.Config.CheckForUpdates = chkUpdates.Checked;
+            //Server.Config.reportBack = ;  //No setting for this?                
+        }        
+        
+        
+        const string warnMsg = "Disabling name verification means players\ncan login as anyone, including YOU\n\n" +
+            "Are you sure you want to disable name verification?";
+        void chkVerify_CheckedChanged(object sender, EventArgs e) {
+            if (!warnDisabledVerification || adv_chkVerify.Checked) return;            
+            if (Popup.OKCancel(warnMsg, "Security warning")) return;
+            adv_chkVerify.Checked = true;
         }
-        
-        
         
         void numPlayers_ValueChanged(object sender, EventArgs e) {
             // Ensure that number of guests is never more than number of players
@@ -78,16 +85,17 @@ namespace MCGalaxy.Gui {
         }
         
         void ChkPort_Click(object sender, EventArgs e) {
-            using (PortTools form = new PortTools()) {
+            int port = (int)srv_numPort.Value;
+            using (PortTools form = new PortTools(port)) {
                 form.ShowDialog();
             }
         }
 
         void forceUpdateBtn_Click(object sender, EventArgs e) {
             srv_btnForceUpdate.Enabled = false;
-            DialogResult result = MessageBox.Show("Would you like to force update " + Server.SoftwareName + " now?", "Force Update",
-                                                  MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
-            if (result == DialogResult.OK) {
+            string msg = "Would you like to force update " + Server.SoftwareName + " now?";
+            
+            if (Popup.YesNo(msg, "Force update")) {
                 SaveChanges();
                 Updater.PerformUpdate();
                 Dispose();

@@ -20,21 +20,17 @@ using System.Threading;
 using MCGalaxy.Maths;
 
 namespace MCGalaxy.Commands.Misc {
-    public class CmdWarp : Command {
+    public class CmdWarp : Command2 {
         public override string name { get { return "Warp"; } }
         public override string type { get { return CommandTypes.World; } }
         public override bool museumUsable { get { return false; } }
         public override bool SuperUseable { get { return false; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] {
-                    new CommandPerm(LevelPermission.Operator, "+ can create warps"),
-                    new CommandPerm(LevelPermission.Operator, "+ can delete warps"),
-                    new CommandPerm(LevelPermission.Operator, "+ can move/edit warps"),
-                }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can manage warps") }; }
         }
         
-        public override void Use(Player p, string message) {
-            UseCore(p, message, WarpList.Global, "Warp", true);
+        public override void Use(Player p, string message, CommandData data) {
+            UseCore(p, message, data, WarpList.Global, "Warp");
         }
         
         static string FormatWarp(Warp warp) {
@@ -42,13 +38,14 @@ namespace MCGalaxy.Commands.Misc {
             return warp.Name + " - (" + pos.X + ", " + pos.Y + ", " + pos.Z + ") on " + warp.Level;
         }
         
-        protected void UseCore(Player p, string message, WarpList warps, 
-                               string group, bool checkExtraPerms) {
+        protected void UseCore(Player p, string message, CommandData data,
+                               WarpList warps, string group) {
             string[] args = message.SplitSpaces();
             string cmd = args[0];
             if (cmd.Length == 0) { Help(p); return; }
+            bool checkExtraPerms = warps == WarpList.Global;
             
-            if (cmd.CaselessEq("list")) {
+            if (IsListCommand(cmd)) {
                 string modifier = args.Length > 1 ? args[1] : "";
                 MultiPageOutput.Output(p, warps.Items, FormatWarp, group + " list", group + "s", modifier, true);
                 return;
@@ -59,26 +56,26 @@ namespace MCGalaxy.Commands.Misc {
             }
             
             string name = args[1];
-            if (cmd.CaselessEq("create") || cmd.CaselessEq("add")) {
-                if (checkExtraPerms && !CheckExtraPerm(p, 1)) return;
-                if (warps.Exists(name)) { Player.Message(p, "{0} already exists", group); return; }
+            if (IsCreateCommand(cmd)) {
+                if (checkExtraPerms && !CheckExtraPerm(p, data, 1)) return;
+                if (warps.Exists(name)) { p.Message("{0} already exists", group); return; }
 
                 warps.Create(name, p);
-                Player.Message(p, "{0} {1} created.", group, name);
-            } else if (cmd.CaselessEq("delete") || cmd.CaselessEq("remove")) {
-                if (checkExtraPerms && !CheckExtraPerm(p, 2)) return;
+                p.Message("{0} {1} created.", group, name);
+            } else if (IsDeleteCommand(cmd)) {
+                if (checkExtraPerms && !CheckExtraPerm(p, data, 1)) return;
                 Warp warp = Matcher.FindWarps(p, warps, name);
                 if (warp == null) return;
                 
                 warps.Remove(warp, p);
-                Player.Message(p, "{0} {1} deleted.", group, warp.Name);
-            } else if (cmd.CaselessEq("move") || cmd.CaselessEq("update")) {
-                if (checkExtraPerms && !CheckExtraPerm(p, 3)) return;
+                p.Message("{0} {1} deleted.", group, warp.Name);
+            } else if (IsEditCommand(cmd)) {
+                if (checkExtraPerms && !CheckExtraPerm(p, data, 1)) return;
                 Warp warp = Matcher.FindWarps(p, warps, name);
                 if (warp == null) return;
 
                 warps.Update(warp, p);
-                Player.Message(p, "{0} {1} moved.", group, warp.Name);
+                p.Message("{0} {1} moved.", group, warp.Name);
             } else if (cmd.CaselessEq("goto")) {
                 Warp warp = Matcher.FindWarps(p, warps, name);
                 if (warp != null) warps.Goto(warp, p);
@@ -88,11 +85,11 @@ namespace MCGalaxy.Commands.Misc {
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Warp [name] %H- Move to that warp");
-            Player.Message(p, "%T/Warp list %H- List all the warps");
-            Player.Message(p, "%T/Warp create [name] %H- Create a warp at your position");
-            Player.Message(p, "%T/Warp delete [name] %H- Deletes a warp");
-            Player.Message(p, "%T/Warp move [name] %H- Moves a warp to your position");
+            p.Message("&T/Warp [name] &H- Move to that warp");
+            p.Message("&T/Warp list &H- List all the warps");
+            p.Message("&T/Warp create [name] &H- Create a warp at your position");
+            p.Message("&T/Warp delete [name] &H- Deletes a warp");
+            p.Message("&T/Warp move [name] &H- Moves a warp to your position");
         }
     }
 }

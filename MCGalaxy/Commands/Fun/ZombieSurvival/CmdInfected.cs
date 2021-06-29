@@ -15,26 +15,28 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
  */
+using System.Collections.Generic;
 using MCGalaxy.Games;
 
-namespace MCGalaxy.Commands.Fun {    
-    public sealed class CmdInfected : Command {
+namespace MCGalaxy.Commands.Fun {
+    public sealed class CmdInfected : Command2 {
         public override string name { get { return "Infected"; } }
         public override string shortcut { get { return "dead"; } }
         public override string type { get { return CommandTypes.Games; } }
         public override CommandEnable Enabled { get { return CommandEnable.Zombie; } }
 
-        public override void Use(Player p, string message) {
-            Player[] infected = Server.zombie.Infected.Items;
-            if (infected.Length == 0) { Player.Message(p, "No one is infected"); return; }
+        public override void Use(Player p, string message, CommandData data) {
+            List<Player> infected = PlayerInfo.OnlyCanSee(p, data.Rank,
+                                                          ZSGame.Instance.Infected.Items);
+            if (infected.Count == 0) { p.Message("No one is infected"); return; }
             
-            Player.Message(p, "Players who are &cinfected %Sare:");
-            Player.Message(p, infected.Join(pl => "&c" + pl.DisplayName + "%S"));
+            p.Message("Players who are &cinfected &Sare:");
+            p.Message(infected.Join(pl => "&c" + pl.DisplayName + "&S"));
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Infected");
-            Player.Message(p, "%HShows who is infected/a zombie");
+            p.Message("&T/Infected");
+            p.Message("&HShows who is infected/a zombie");
         }
     }
 }

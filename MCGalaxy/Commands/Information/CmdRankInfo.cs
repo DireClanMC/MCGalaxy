@@ -20,46 +20,60 @@ using System.Collections.Generic;
 using System.IO;
 
 namespace MCGalaxy.Commands.Info { 
-    public sealed class CmdRankInfo : Command {        
+    public sealed class CmdRankInfo : Command2 {        
         public override string name { get { return "RankInfo"; } }
         public override string shortcut { get { return "ri"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override bool UseableWhenFrozen { get { return true; } }
         
-        public override void Use(Player p, string message) {
-            if (CheckSuper(p, message, "player name")) return;
-            if (message.Length == 0) message = p.name;
+        public override void Use(Player p, string name, CommandData data) {
+            if (CheckSuper(p, name, "player name")) return;
+            if (name.Length == 0) name = p.name;
             
-            List<string> rankings = Server.RankInfo.FindMatches(p, message, "rankings");
-            if (rankings == null) return;
+            name = PlayerInfo.FindMatchesPreferOnline(p, name);
+            if (name == null) return;
             
-            string target = PlayerMetaList.GetName(rankings[0]);
-            Player.Message(p, "  Rankings for {0}:", PlayerInfo.GetColoredName(p, target));
-            DateTime now = DateTime.Now;
+            List<string> rankings = Server.RankInfo.FindAllExact(name);
+            string nick = p.FormatNick(name);
+            
+            if (rankings.Count == 0) {
+                p.Message("{0} &Shas no rankings.", nick); return;
+            } else {
+                p.Message("  Rankings for {0}:", nick);
+            }
             
             foreach (string line in rankings) {
-                string[] parts = line.SplitSpaces();                
-                string newRank = Group.GetColoredName(parts[7]);
-                string oldRank = Group.GetColoredName(parts[8]);
+                string[] args = line.SplitSpaces();
+                TimeSpan delta;
+                string oldRank, newRank;
+                int offset;
                 
-                int min = int.Parse(parts[2]), hour = int.Parse(parts[3]);
-                int day = int.Parse(parts[4]), month = int.Parse(parts[5]), year = int.Parse(parts[6]);
-                DateTime timeRanked = new DateTime(year, month, day, hour, min, 0);
-                
-                string reason = parts.Length <= 9 ? "(no reason given)" : parts[9].Replace("%20", " ");
-                TimeSpan delta = now - timeRanked;
+                if (args.Length <= 6) {
+                    delta = DateTime.UtcNow - long.Parse(args[2]).FromUnixTime();
+                    newRank = args[3]; oldRank = args[4]; 
+                    offset = 5;
+                } else {
+                    // Backwards compatibility with old format
+                    int min = int.Parse(args[2]), hour = int.Parse(args[3]);
+                    int day = int.Parse(args[4]), month = int.Parse(args[5]), year = int.Parse(args[6]);
+                    
+                    delta = DateTime.Now - new DateTime(year, month, day, hour, min, 0);
+                    newRank = args[7]; oldRank = args[8]; 
+                    offset = 9;
+                }
+                string reason = args.Length <= offset ? "(no reason given)" : args[offset].Replace("%20", " ");
                
-                Player.Message(p, "&aFrom {0} &ato {1} &a{2} ago", 
-                               oldRank, newRank, delta.Shorten(true, false));
-                Player.Message(p, "&aBy %S{0}&a, reason: %S{1}", 
-                               PlayerInfo.GetColoredName(p, parts[1]), reason);
+                p.Message("&aFrom {0} &ato {1} &a{2} ago", 
+                               Group.GetColoredName(oldRank), Group.GetColoredName(newRank), 
+                               delta.Shorten(true, false));
+                p.Message("&aBy &S{0}&a, reason: &S{1}", p.FormatNick(args[1]), reason);
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/RankInfo [player]");
-            Player.Message(p, "%HReturns details about that person's rankings.");
+            p.Message("&T/RankInfo [player]");
+            p.Message("&HReturns details about that person's rankings.");
         }
     }
 }

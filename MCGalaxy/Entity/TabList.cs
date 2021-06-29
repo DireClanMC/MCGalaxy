@@ -31,19 +31,23 @@ namespace MCGalaxy {
         public static void Add(Player dst, Player p, byte id) {
             if (!dst.hasExtList) return;
             byte grpPerm = (byte)(offset - p.Rank);
-            if (!ServerConfig.TablistRankSorted) grpPerm = 0;
+            if (!Server.Config.TablistRankSorted) grpPerm = 0;
             
             string name, group;
             GetEntry(p, dst, out name, out group);
             
-            name = Colors.Cleanup(name, dst.hasTextColors);
-            group = Colors.Cleanup(group, dst.hasTextColors);
+            name  = Colors.Escape(name); // for nicks
+            name  = LineWrapper.CleanupColors(name,  dst);
+            group = LineWrapper.CleanupColors(group, dst);
             dst.Send(Packet.ExtAddPlayerName(id, p.truename, name, group, grpPerm, dst.hasCP437));
         }
         
         static void GetEntry(Player p, Player dst, out string name, out string group) {
-            group = ServerConfig.TablistGlobal ? "On " + p.level.name : "&fPlayers";
-            name = p.color + p.truename;
+            string map = p.level.name;
+            if (!p.level.SeesServerWideChat) map += " &S<Local chat>";
+            
+            group = Server.Config.TablistGlobal ? "On " + map : "&fPlayers";
+            name  = dst.Ignores.Nicks ? p.color + p.truename : p.ColoredName;
             OnTabListEntryAddedEvent.Call(p, ref name, ref group, dst);
 
             if (p.hidden && p.IsAfk) { name += " &f(Hid, &7AFK)"; return; }
@@ -57,7 +61,7 @@ namespace MCGalaxy {
             
             string name = b.color + b.name, group = "Bots";
             OnTabListEntryAddedEvent.Call(b, ref name, ref group, dst);
-            dst.Send(Packet.ExtAddPlayerName(b.id, b.SkinName, name, group, 0, dst.hasCP437));
+            dst.Send(Packet.ExtAddPlayerName(b.id, b.name, name, group, 0, dst.hasCP437));
         }
         
         /// <summary> Removes the given player from player's tab list (if their client supports it). </summary>
@@ -79,19 +83,17 @@ namespace MCGalaxy {
                     if (self) Add(other, p, Entities.SelfID);
                     continue;
                 }
-                if (!ServerConfig.TablistGlobal && p.level != other.level) continue;
+                if (!Server.Config.TablistGlobal && p.level != other.level) continue;
                 
-                if (other.CanSeeEntity(p))
-                    Add(other, p, p.id);
-                if (p.CanSeeEntity(other))
-                    Add(p, other, other.id);
+                if (other.CanSee(p)) Add(other, p, p.id);
+                if (p.CanSee(other)) Add(p, other, other.id);
             }
         }
         
-        /// <summary> Updates the tab list entry for this player to all other players 
+        /// <summary> Removes this tab list entry for this player to all other players 
         /// (whose clients support it) in the server. </summary>
         internal static void RemoveAll(Player p, bool self, bool toVisible) {
-            if (!ServerConfig.TablistGlobal) return;
+            if (!Server.Config.TablistGlobal) return;
             Player[] players = PlayerInfo.Online.Items;
             foreach (Player other in players) {               
                 if (p == other) {
@@ -99,11 +101,11 @@ namespace MCGalaxy {
                     continue;
                 }
                 
-                bool despawn = other.CanSeeEntity(p);
+                bool despawn = other.CanSee(p);
                 if (!toVisible) despawn = !despawn;
                 if (despawn) Remove(other, p);
                 
-                despawn = p.CanSeeEntity(other);
+                despawn = p.CanSee(other);
                 if (!toVisible) despawn = !despawn;
                 if (despawn) Remove(p, other);
             }

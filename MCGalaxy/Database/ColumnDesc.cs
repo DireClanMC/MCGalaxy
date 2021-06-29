@@ -28,23 +28,20 @@ namespace MCGalaxy.SQL {
         public readonly bool AutoIncrement;
         public readonly bool PrimaryKey;
         public readonly bool NotNull;
-        public readonly string DefaultValue;
         
         public ColumnDesc(string col, ColumnType type)
-            : this(col, type, 0, false, false, false, null) { }        
-        public ColumnDesc(string col, ColumnType type, ushort maxLen = 0)
-            : this(col, type, maxLen, false, false, false, null) { }
+            : this(col, type, 0, false, false, false) { }        
+        public ColumnDesc(string col, ColumnType type, ushort maxLen)
+            : this(col, type, maxLen, false, false, false) { }
         
         public ColumnDesc(string col, ColumnType type, ushort maxLen = 0,
-                            bool autoInc = false, bool priKey = false, 
-                            bool notNull = false, string def = null) {
+                            bool autoInc = false, bool priKey = false, bool notNull = false) {
             Column = col;
             Type = type;
             MaxLength = maxLen;
             AutoIncrement = autoInc;
             PrimaryKey = priKey;
             NotNull = notNull;
-            DefaultValue = def;
         }
         
         public string FormatType() {
@@ -56,13 +53,13 @@ namespace MCGalaxy.SQL {
         static string[] colTypes = new string[] {
             "TINYINT UNSIGNED", "SMALLINT UNSIGNED", "MEDIUMINT UNSIGNED", 
             "INT UNSIGNED", "BIGINT UNSIGNED", "TINYINT", "SMALLINT", 
-            "MEDIUMINT", "INT", "BIGINT", "INTEGER", "BOOL", "DATETIME",
+            "MEDIUMINT", "INT", "BIGINT", "INTEGER", "DATETIME",
         };
     }
     
     public enum ColumnType {
         UInt8, UInt16, UInt24, UInt32, UInt64,
         Int8, Int16, Int24, Int32, Int64,
-        Integer, Bool, DateTime, Char, VarChar
+        Integer, DateTime, Char, VarChar
     }
 }

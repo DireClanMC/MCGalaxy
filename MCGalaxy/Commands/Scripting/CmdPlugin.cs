@@ -16,11 +16,12 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using System.CodeDom.Compiler;
 using System.IO;
 using MCGalaxy.Scripting;
 
 namespace MCGalaxy.Commands.Scripting {
-    public sealed class CmdPlugin : Command {
+    public sealed class CmdPlugin : Command2 {
         public override string name { get { return "Plugin"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Nobody; } }
@@ -31,131 +32,109 @@ namespace MCGalaxy.Commands.Scripting {
         }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
-            if (message.CaselessEq("list")) {
-                Player.Message(p, "Loaded plugins: " + Plugin.all.Join(pl => pl.name));
+        public override void Use(Player p, string message, CommandData data) {
+            if (IsListCommand(message)) {
+                p.Message("Loaded plugins: " + Plugin.all.Join(pl => pl.name));
                 return;
             }
             
-            string[] parts = message.SplitSpaces(2);
-            if (parts.Length == 1) { Help(p); return; }
-            if (!Formatter.ValidName(p, parts[1], "plugin")) return;
+            string[] args = message.SplitSpaces(3);
+            if (args.Length == 1) { Help(p); return; }
             
-            if (parts[0].CaselessEq("load")) {
-                LoadPlugin(p, parts[1]);
-            } else if (parts[0].CaselessEq("unload")) {
-                UnloadPlugin(p, parts[1]);
-            } else if (parts[0].CaselessEq("create")) {
-                CreatePlugin(p, parts[1]);
-            } else if (parts[0].CaselessEq("compile")) {
-                CompilePlugin(p, parts[1]);
+            string cmd = args[0], name = args[1];
+            if (!Formatter.ValidName(p, name, "plugin")) return;
+            string language = args.Length > 2 ? args[2] : "";
+            
+            if (cmd.CaselessEq("load")) {
+                LoadPlugin(p, name);
+            } else if (cmd.CaselessEq("unload")) {
+                UnloadPlugin(p, name);
+            } else if (cmd.CaselessEq("create")) {
+                CreatePlugin(p, name, language);
+            } else if (cmd.CaselessEq("compile")) {
+                CompilePlugin(p, name, language);
             } else {
                 Help(p);
             }
         }
         
-        static void CompilePlugin(Player p, string name) {
-            IScripting engine = IScripting.CS;
-            string srcPath = "plugins/" + name + engine.Ext;
-            string dstPath = IScripting.PluginPath(name);
+        static void CompilePlugin(Player p, string name, string language) {
+            ICompiler engine = ICompiler.Lookup(language, p);
+            if (engine == null) return;
             
-            if (File.Exists(srcPath)) {
-                if (engine.Compile(srcPath, dstPath)) {
-                    Player.Message(p, "Plugin compiled successfully.");
-                } else {
-                    Player.Message(p, "Compilation error. See " + IScripting.ErrorPath + " for more information.");
-                }
+            string srcPath = "plugins/" + name + engine.FileExtension;
+            string dstPath = IScripting.PluginPath(name);  
+            if (!File.Exists(srcPath)) {
+                p.Message("File &9{0} &Snot found.", srcPath); return;
+            }
+               
+            CompilerResults results = engine.Compile(srcPath, dstPath);
+            if (!results.Errors.HasErrors) {
+                p.Message("Plugin compiled successfully.");
             } else {
-                Player.Message(p, "File &9{0} %Snot found.", srcPath);
+                ICompiler.SummariseErrors(results, p);
+                p.Message("&WCompilation error. See " + ICompiler.ErrorPath + " for more information.");
             }
         }
         
         static void LoadPlugin(Player p, string name) {
             string path = IScripting.PluginPath(name);
-            if (File.Exists(path)) {
-                if (Plugin.Load(name, false)) {
-                    Player.Message(p, "Plugin loaded successfully.");
-                } else {
-                    Player.Message(p, "Error loading plugin. See error logs for more information.");
-                }
+            if (!File.Exists(path)) {
+                p.Message("File &9{0} &Snot found.", path); return;
+            }
+            
+            if (IScripting.LoadPlugin(path, false)) {
+                p.Message("Plugin loaded successfully.");
             } else {
-                Player.Message(p, "File &9{0} %Snot found.", path);
+                p.Message("&WError loading plugin. See error logs for more information.");
             }
         }
         
         static void UnloadPlugin(Player p, string name) {
             int matches;
-            Plugin plugin = Matcher.Find<Plugin>(p, name, out matches, Plugin.all, 
-                                                 null, pln => pln.name, "plugins");
+            Plugin plugin = Matcher.Find(p, name, out matches, Plugin.all, 
+                                         null, pln => pln.name, "plugins");
             if (plugin == null) return;
             
             if (Plugin.core.Contains(plugin)) {
-                Player.Message(p, plugin.name + " is a core plugin and cannot be unloaded.");
+                p.Message(plugin.name + " is a core plugin and cannot be unloaded.");
                 return;
             }
             
             if (plugin != null) {
                 if (Plugin.Unload(plugin, false)) {
-                    Player.Message(p, "Plugin unloaded successfully.");
+                    p.Message("Plugin unloaded successfully.");
                 } else {
-                    Player.Message(p, "Error unloading plugin. See error logs for more information.");
+                    p.Message("&WError unloading plugin. See error logs for more information.");
                 }
             } else {
-                Player.Message(p, "Loaded plugins: " + Plugin.all.Join(pl => pl.name));
+                p.Message("Loaded plugins: " + Plugin.all.Join(pl => pl.name));
             }
         }
         
-        static void CreatePlugin(Player p, string name) {
-            Player.Message(p, "Creating a plugin example source");
-            string creator = p == null ? ServerConfig.Name : p.name;
-            string syntax = pluginSrc.Replace(@"\t", "\t");
-            syntax = String.Format(syntax, name, creator, Server.VersionString);
-            File.WriteAllText("plugins/" + name + ".cs", syntax);
+        static void CreatePlugin(Player p, string name, string language) {
+            ICompiler engine = ICompiler.Lookup(language, p);
+            if (engine == null) return;
+            
+            string path = engine.PluginPath(name);
+            p.Message("Creating a plugin example source");
+            
+            string creator = p.IsSuper ? Server.Config.Name : p.truename;
+            string source  = engine.GenExamplePlugin(name, creator);
+            File.WriteAllText(path, source);
         }
         
-        const string pluginSrc =
-            @"//This is an example plugin source!
-using System;
-namespace MCGalaxy
-{{
-\tpublic class {0} : Plugin
-\t{{
-\t\tpublic override string name {{ get {{ return ""{0}""; }} }}
-\t\tpublic override string website {{ get {{ return ""www.example.com""; }} }}
-\t\tpublic override string MCGalaxy_Version {{ get {{ return ""{2}""; }} }}
-\t\tpublic override int build {{ get {{ return 100; }} }}
-\t\tpublic override string welcome {{ get {{ return ""Loaded Message!""; }} }}
-\t\tpublic override string creator {{ get {{ return ""{1}""; }} }}
-\t\tpublic override bool LoadAtStartup {{ get {{ return true; }} }}
-
-\t\tpublic override void Load(bool startup)
-\t\t{{
-\t\t\t//LOAD YOUR PLUGIN WITH EVENTS OR OTHER THINGS!
-\t\t}}
-                        
-\t\tpublic override void Unload(bool shutdown)
-\t\t{{
-\t\t\t//UNLOAD YOUR PLUGIN BY SAVING FILES OR DISPOSING OBJECTS!
-\t\t}}
-                        
-\t\tpublic override void Help(Player p)
-\t\t{{
-\t\t\t//HELP INFO!
-\t\t}}
-\t}}
-}}";
-        
         public override void Help(Player p) {
-            Player.Message(p, "%T/Plugin create [name]");
-            Player.Message(p, "%HCreate a example .cs plugin file");
-            Player.Message(p, "%T/Plugin compile [name]");
-            Player.Message(p, "%HCompiles a .cs plugin file");
-            Player.Message(p, "%T/Plugin load [filename]");
-            Player.Message(p, "%HLoad a plugin from your plugins folder");
-            Player.Message(p, "%T/Plugin unload [name]");
-            Player.Message(p, "%HUnloads a currently loaded plugin");
-            Player.Message(p, "%T/Plugin list");
-            Player.Message(p, "%HLists all loaded plugins");
+            p.Message("&T/Plugin create [name]");
+            p.Message("&HCreate a example .cs plugin file");
+            p.Message("&T/Plugin compile [name]");
+            p.Message("&HCompiles a .cs plugin file");
+            p.Message("&T/Plugin load [filename]");
+            p.Message("&HLoad a plugin from your plugins folder");
+            p.Message("&T/Plugin unload [name]");
+            p.Message("&HUnloads a currently loaded plugin");
+            p.Message("&T/Plugin list");
+            p.Message("&HLists all loaded plugins");
         }
     }
 }

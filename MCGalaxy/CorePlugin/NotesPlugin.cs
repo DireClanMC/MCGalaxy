@@ -20,9 +20,9 @@ using MCGalaxy.Events;
 
 namespace MCGalaxy.Core {
 
-    public sealed class NotesPlugin : Plugin_Simple {
+    public sealed class NotesPlugin : Plugin {
         public override string creator { get { return Server.SoftwareName + " team"; } }
-        public override string MCGalaxy_Version { get { return Server.VersionString; } }
+        public override string MCGalaxy_Version { get { return Server.Version; } }
         public override string name { get { return "Core_NotesPlugin"; } }
 
         public override void Load(bool startup) {
@@ -49,15 +49,13 @@ namespace MCGalaxy.Core {
             }
         }
         
-        static void AddNote(ModAction action, string type) {
-             if (!ServerConfig.LogNotes) return;
-             string src = action.Actor == null ? "(console)" : action.Actor.name;
+        static void AddNote(ModAction e, string type) {
+             if (!Server.Config.LogNotes) return;
+             string src = e.Actor.name;
              
              string time = DateTime.UtcNow.ToString("dd/MM/yyyy");
-             string data = action.Target + " " + type + " " + src + " " + time;
-             if (action.Reason.Length > 0) {
-                 data += " " + action.Reason.Replace(" ", "%20");
-             }
+             string data = e.Target + " " + type + " " + src + " " + time + " " + 
+                           e.Reason.Replace(" ", "%20") + " " + e.Duration.Ticks;
              Server.Notes.Append(data);
         }
     }

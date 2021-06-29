@@ -26,17 +26,14 @@ namespace MCGalaxy.Events {
         public string Target;
 
         /// <summary> Gets the colored name of the target. (Not nickname) </summary>
-        public string TargetName {
-            get { return PlayerInfo.GetColoredName(Actor, Target); }
-        }
+        public string TargetName { get { return Actor.FormatNick(Target); } }
         
         internal Group targetGroup;
         /// <summary> Gets the rank/group target is in. </summary>
         public Group TargetGroup {
             get {
                 if (targetGroup != null) return targetGroup;
-                Player who = PlayerInfo.FindExact(Target);
-                targetGroup = who != null ? who.group : Group.GroupIn(Target);
+                targetGroup = PlayerInfo.GetGroup(Target);
                 return targetGroup;
             }
         }
@@ -45,12 +42,6 @@ namespace MCGalaxy.Events {
         /// <summary> Player performing the action (e.g. person who is banning). </summary>
         public Player Actor;
         
-        /// <summary> Gets the colored name of the actor. (Not nickname) </summary>
-        public string ActorName {
-            get { return Actor == null ? "(console)" : Actor.ColoredName; }
-        }
-        
-
         /// <summary> Type of this action. </summary>
         public ModActionType Type;
         
@@ -62,16 +53,16 @@ namespace MCGalaxy.Events {
         
         /// <summary> Returns " (reason)" if reason is given, "" if not. </summary>
         public string ReasonSuffixed {
-            get { return Reason.Length == 0 ? "" : " (" + Reason + "%S)"; }
+            get { return Reason.Length == 0 ? "" : " (" + Reason + "&S)"; }
         }
         
         /// <summary> Returns a formatted moderation action message. </summary>
         public string FormatMessage(string target, string action) {
-            string suffix = "%S";
+            string suffix = "&S";
             if (Duration.Ticks != 0) suffix += " for " + Duration.Shorten();
             
             suffix += "." + ReasonSuffixed;
-            return target + " %Swas " + action + " %Sby " + ActorName + suffix;
+            return target + " &Swas " + action + " &Sby " + Actor.ColoredName + suffix;
         }
         
         

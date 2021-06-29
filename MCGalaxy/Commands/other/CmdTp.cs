@@ -19,7 +19,7 @@ using MCGalaxy.Games;
 using MCGalaxy.Maths;
 
 namespace MCGalaxy.Commands.Misc {
-    public sealed class CmdTp : Command {
+    public sealed class CmdTp : Command2 {
         public override string name { get { return "TP"; } }
         public override string shortcut { get { return "Move"; } }
         public override string type { get { return CommandTypes.Other; } }
@@ -28,23 +28,24 @@ namespace MCGalaxy.Commands.Misc {
             get { return new [] { new CommandAlias("Teleport"), new CommandAlias("TPP", "-precise") }; }
         }
         
-        public override void Use(Player p, string message) {
-            string[] args = message.SplitSpaces();
-            if (message.Length == 0 || args.Length > 4) { Help(p); return; }
-            if (args.Length == 3) { TeleportCoords(p, args); return; }
+        const string precisePrefix = "-precise ";
+        public override void Use(Player p, string message, CommandData data) {           
+            if (message.Length == 0) { Help(p); return; }
             
-            if (message.CaselessStarts("-precise ")) {
-                if (args.Length != 4) { Help(p); return; }
-                TeleportCoordsPrecise(p, args);
-                return;
+            bool preciseTP = message.CaselessStarts(precisePrefix);        
+            if (preciseTP) {
+                message = message.Substring(precisePrefix.Length);
             }
+            
+            string[] args = message.SplitSpaces();            
+            if (args.Length >= 3) { TeleportCoords(p, args, preciseTP); return; }
             
             Player target = null;
             PlayerBot bot = null;
             if (args.Length == 1) {
                 target = PlayerInfo.FindMatches(p, args[0]);
                 if (target == null) return;
-                if (!CheckPlayer(p, target)) return;
+                if (!CheckPlayer(p, target, data)) return;
             } else if (args[0].CaselessEq("bot")) {
                 bot = Matcher.FindBots(p, args[1]);
                 if (bot == null) return;
@@ -57,7 +58,7 @@ namespace MCGalaxy.Commands.Misc {
 
             if (p.level != lvl) PlayerActions.ChangeMap(p, lvl.name);
             if (target != null && target.Loading) {
-                Player.Message(p, "Waiting for " + target.ColoredName + " %Sto spawn..");
+                p.Message("Waiting for {0} &Sto spawn..", p.FormatNick(target));
                 target.BlockUntilLoad(10);
             }
             
@@ -70,21 +71,41 @@ namespace MCGalaxy.Commands.Misc {
             p.SendPos(Entities.SelfID, pos, rot);
         }
         
-        static void TeleportCoords(Player p, string[] args) {
-            Vec3S32 P = p.Pos.BlockFeetCoords;
-            if (!CommandParser.GetCoords(p, args, 0, ref P)) return;
-
-            SavePreTeleportState(p);
-            PlayerActions.MoveCoords(p, P.X, P.Y, P.Z, p.Rot.RotY, p.Rot.HeadX);
+        internal static bool GetTeleportCoords(Player p, Entity ori, string[] args, bool precise, 
+                                               out Position pos, out byte yaw, out byte pitch) {
+            Vec3S32 P;
+            pos = p.Pos; yaw = ori.Rot.RotY; pitch = ori.Rot.HeadX;
+            
+            if (!precise) {
+                // relative to feet block coordinates
+                P = p.Pos.FeetBlockCoords;
+                if (!CommandParser.GetCoords(p, args, 0, ref P)) return false;
+                pos = Position.FromFeetBlockCoords(P.X, P.Y, P.Z);
+            } else {
+                // relative to feet position exactly
+                P = new Vec3S32(p.Pos.X, p.Pos.Y - Entities.CharacterHeight, p.Pos.Z);
+                if (!CommandParser.GetCoords(p, args, 0, ref P)) return false;
+                pos = new Position(P.X, P.Y + Entities.CharacterHeight, P.Z);
+            }
+            
+            int angle = 0;            
+            if (args.Length > 3) {
+                if (!CommandParser.GetInt(p, args[3], "Yaw angle", ref angle, -360, 360)) return false;
+                yaw = Orientation.DegreesToPacked(angle);
+            }            
+            if (args.Length > 4) {
+                if (!CommandParser.GetInt(p, args[4], "Pitch angle", ref angle, -360, 360)) return false;
+                pitch = Orientation.DegreesToPacked(angle);
+            }
+            return true;
         }
         
-        static void TeleportCoordsPrecise(Player p, string[] args) {
-            Vec3S32 P = new Vec3S32(p.Pos.X, p.Pos.Y + Entities.CharacterHeight, p.Pos.Z);
-            if (!CommandParser.GetCoords(p, args, 1, ref P)) return;
+        static void TeleportCoords(Player p, string[] args, bool precise) {
+            Position pos; byte yaw, pitch;
+            if (!GetTeleportCoords(p, p, args, precise, out pos, out yaw, out pitch)) return;
 
             SavePreTeleportState(p);
-            Position pos = new Position(P.X, P.Y - Entities.CharacterHeight, P.Z);
-            p.SendPos(Entities.SelfID, pos, p.Rot);
+            p.SendPos(Entities.SelfID, pos, new Orientation(yaw, pitch));
         }
         
         static void SavePreTeleportState(Player p) {
@@ -93,33 +114,30 @@ namespace MCGalaxy.Commands.Misc {
             p.PreTeleportRot = p.Rot;
         }
         
-        static bool CheckPlayer(Player p, Player target) {
+        static bool CheckPlayer(Player p, Player target, CommandData data) {
             if (target.level.IsMuseum) {
-                Player.Message(p, target.ColoredName + " %Sis in a museum."); return false;
-            }
+                p.Message("{0} &Sis in a museum.", p.FormatNick(target)); return false;
+            }          
+            if (!Server.Config.HigherRankTP && !CheckRank(p, data, target, "teleport to", true)) return false;
             
-            if (!ServerConfig.HigherRankTP && p.Rank < target.group.Permission) {
-                MessageTooHighRank(p, "teleport to", true); return false;
-            }
-            
-            IGame game = target.level.CurrentGame();
-            if (!p.Game.Referee && game != null && !game.TeleportAllowed) {
-                Player.Message(p, "You can only teleport to players who are " +
-                               "playing a game when you are in referee mode."); return false;
+            IGame game = IGame.GameOn(target.level);
+            if (!p.Game.Referee && game != null) {
+                p.Message("You can only teleport to players in " +
+                               "a game when you are in referee mode."); return false;
             }
             return true;
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%HUse ~ before a coordinate to move relative to current position");
-            Player.Message(p, "%T/TP [x y z]");
-            Player.Message(p, "%HTeleports yourself to the given block coordinates.");
-            Player.Message(p, "%T/TP -precise [x y z]");
-            Player.Message(p, "%HTeleports using precise units. (32 units = 1 block)");
-            Player.Message(p, "%T/TP [player]");
-            Player.Message(p, "%HTeleports yourself to that player.");
-            Player.Message(p, "%T/TP bot [name]");
-            Player.Message(p, "%HTeleports yourself to that bot.");
+            p.Message("&HUse ~ before a coordinate to move relative to current position");
+            p.Message("&T/TP [x y z] <yaw> <pitch>");
+            p.Message("&HTeleports yourself to the given block coordinates.");
+            p.Message("&T/TP -precise [x y z] <yaw> <pitch>");
+            p.Message("&HTeleports using precise units. (32 units = 1 block)");
+            p.Message("&T/TP [player]");
+            p.Message("&HTeleports yourself to that player.");
+            p.Message("&T/TP bot [name]");
+            p.Message("&HTeleports yourself to that bot.");
         }
     }
 }

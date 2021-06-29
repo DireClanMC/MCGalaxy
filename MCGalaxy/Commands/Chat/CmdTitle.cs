@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2011 MCForge
         
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -15,42 +15,44 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
  */
-using MCGalaxy.SQL;
+using MCGalaxy.DB;
+
 namespace MCGalaxy.Commands.Chatting {    
     public class CmdTitle : EntityPropertyCmd {        
         public override string name { get { return "Title"; } }
         public override string type { get { return CommandTypes.Chat; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Admin, "+ can change the title of others") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Admin, "can change the title of others") }; }
         }
         public override CommandAlias[] Aliases {
             get { return new[] { new CommandAlias("XTitle", "-own") }; }
         }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (!MessageCmd.CanSpeak(p, name)) return;
-            UsePlayer(p, message, "title");
+            UsePlayer(p, data, message, "title");
         }
         
-        protected override void SetPlayerData(Player p, Player who, string title) {
-            if (title.Length >= 20) { Player.Message(p, "Title must be under 20 letters."); return; }
-
+        protected override void SetPlayerData(Player p, string target, string title) {
+            if (title.Length >= 20) { p.Message("Title must be under 20 letters."); return; } 
+            Player who = PlayerInfo.FindExact(target);
+            
             if (title.Length == 0) {
-                Chat.MessageGlobal(who, who.FullName + " %Shad their title removed.", false);
+                MessageAction(p, target, who, "λACTOR &Sremoved λTARGET title");
             } else {
-                Chat.MessageGlobal(who, who.FullName + " %Swas given the title of &b[" + title + "&b]", false);
+            	MessageAction(p, target, who, "λACTOR &Schanged λTARGET title to &b[" + title + "&b]");
             }
             
-            who.title = title;
-            who.SetPrefix();
-            Database.Backend.UpdateRows("Players", "Title = @1", "WHERE Name = @0", who.name, title.UnicodeToCp437());
+            if (who != null) who.title = title;
+            if (who != null) who.SetPrefix();
+            PlayerDB.Update(target, PlayerData.ColumnTitle, title.UnicodeToCp437());
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Title [player] [title]");
-            Player.Message(p, "%HSets the title of [player]");
-            Player.Message(p, "%H  If [title] is not given, removes [player]'s title.");
+            p.Message("&T/Title [player] [title]");
+            p.Message("&HSets the title of [player]");
+            p.Message("&H  If [title] is not given, removes [player]'s title.");
         }
     }
 }

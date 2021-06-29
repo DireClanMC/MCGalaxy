@@ -19,6 +19,7 @@
 using System;
 using MCGalaxy.Commands;
 using MCGalaxy.Commands.Moderation;
+using MCGalaxy.DB;
 using MCGalaxy.Events;
 using MCGalaxy.Tasks;
 
@@ -27,36 +28,36 @@ namespace MCGalaxy.Core {
         
         internal static void HandleModAction(ModAction action) {
             switch (action.Type) {
-                case ModActionType.Frozen: DoFreeze(action); break;
-                case ModActionType.Unfrozen: DoUnfreeze(action); break;
-                case ModActionType.Muted: DoMute(action); break;
-                case ModActionType.Unmuted: DoUnmute(action); break;
-                case ModActionType.Ban: DoBan(action); break;
-                case ModActionType.Unban: DoUnban(action); break;
-                case ModActionType.BanIP: DoBanIP(action); break;
-                case ModActionType.UnbanIP: DoUnbanIP(action); break;
-                case ModActionType.Warned: DoWarn(action); break;
-                case ModActionType.Rank: DoRank(action); break;
+                    case ModActionType.Frozen: DoFreeze(action); break;
+                    case ModActionType.Unfrozen: DoUnfreeze(action); break;
+                    case ModActionType.Muted: DoMute(action); break;
+                    case ModActionType.Unmuted: DoUnmute(action); break;
+                    case ModActionType.Ban: DoBan(action); break;
+                    case ModActionType.Unban: DoUnban(action); break;
+                    case ModActionType.BanIP: DoBanIP(action); break;
+                    case ModActionType.UnbanIP: DoUnbanIP(action); break;
+                    case ModActionType.Warned: DoWarn(action); break;
+                    case ModActionType.Rank: DoRank(action); break;
             }
         }
         
-        static void LogAction(ModAction e, Player who, string action) {
+        static void LogAction(ModAction e, Player target, string action) {
             if (e.Announce) {
-                if (who != null) {
-                    Chat.MessageGlobal(who, e.FormatMessage(e.TargetName, action), false);
-                } else {
-                    Chat.MessageGlobal(e.FormatMessage(e.TargetName, action));
-                }
+                // TODO: Chat.MessageFrom if target is online?
+                Player who = PlayerInfo.FindExact(e.Target);
+                // TODO: who.SharesChatWith
+                Chat.Message(ChatScope.Global, e.FormatMessage(e.TargetName, action),
+                             null, null, true);
             } else {
-                Chat.MessageOps(e.FormatMessage(e.TargetName, action));            
+                Chat.MessageOps(e.FormatMessage(e.TargetName, action));
             }
             
-            action = Colors.Strip(action);
+            action = Colors.StripUsed(action);
             string suffix = "";
-            if (e.Duration.Ticks != 0) suffix = " %Sfor " + e.Duration.Shorten();
+            if (e.Duration.Ticks != 0) suffix = " &Sfor " + e.Duration.Shorten();
             
-            Logger.Log(LogType.UserActivity, "{0} was {1} by {2}", 
-                       e.Target, action, e.ActorName + suffix);
+            Logger.Log(LogType.UserActivity, "{0} was {1} by {2}",
+                       e.Target, action, e.Actor.name + suffix);
         }
 
         
@@ -65,7 +66,7 @@ namespace MCGalaxy.Core {
             if (who != null) who.frozen = true;
             LogAction(e, who, "&bfrozen");
 
-            Server.frozen.AddOrReplace(e.Target, FormatModTaskData(e));
+            Server.frozen.Update(e.Target, FormatModTaskData(e));
             ModerationTasks.FreezeCalcNextRun();
             Server.frozen.Save();
         }
@@ -86,7 +87,7 @@ namespace MCGalaxy.Core {
             if (who != null) who.muted = true;
             LogAction(e, who, "&8muted");
             
-            Server.muted.AddOrReplace(e.Target, FormatModTaskData(e));
+            Server.muted.Update(e.Target, FormatModTaskData(e));
             ModerationTasks.MuteCalcNextRun();
             Server.muted.Save();
         }
@@ -107,21 +108,21 @@ namespace MCGalaxy.Core {
             LogAction(e, who, "&8banned");
             
             if (e.Duration.Ticks != 0) {
-                string banner = e.Actor == null ? "(console)" : e.Actor.truename;
+                string banner = e.Actor.truename;
                 DateTime end = DateTime.UtcNow.Add(e.Duration);
-                Server.tempBans.AddOrReplace(e.Target, Ban.PackTempBanData(e.Reason, banner, end));
+                Server.tempBans.Update(e.Target, Ban.PackTempBanData(e.Reason, banner, end));
                 Server.tempBans.Save();
 
                 if (who != null) who.Kick("Banned for " + e.Duration.Shorten(true) + "." + e.ReasonSuffixed);
             } else {
-                if (who != null) who.color = "";
                 Ban.DeleteBan(e.Target);
                 Ban.BanPlayer(e.Actor, e.Target, e.Reason, !e.Announce, e.TargetGroup.Name);
                 ModActionCmd.ChangeRank(e.Target, e.targetGroup, Group.BannedRank, who);
-                                
+                
                 if (who != null) {
-                    string msg = e.Reason.Length == 0 ? ServerConfig.DefaultBanMessage : e.Reason;
-                    who.Kick("Banned by " + e.ActorName + ": " + msg);
+                    string msg = e.Reason.Length == 0 ? Server.Config.DefaultBanMessage : e.Reason;
+                    who.Kick("Banned by " + e.Actor.ColoredName + ": &S" + msg,
+                             "Banned by " + e.Actor.ColoredName + ": &f" + msg);
                 }
             }
         }
@@ -137,30 +138,37 @@ namespace MCGalaxy.Core {
             
             Ban.DeleteUnban(e.Target);
             Ban.UnbanPlayer(e.Actor, e.Target, e.Reason);
-            ModActionCmd.ChangeRank(e.Target, Group.BannedRank, Group.standard, who, false);
+            ModActionCmd.ChangeRank(e.Target, Group.BannedRank, Group.DefaultRank, who, false);
             
-            string ip = PlayerInfo.FindIP(e.Target);
-            if (ip != null && Server.bannedIP.Contains(ip))
-                Player.Message(e.Actor, "NOTE: Their IP is still banned.");
+            string ip = PlayerDB.FindIP(e.Target);
+            if (ip != null && Server.bannedIP.Contains(ip)) {
+                e.Actor.Message("NOTE: Their IP is still banned.");
+            }
         }
         
         
+        static void LogIPAction(ModAction e, string type) {
+            ItemPerms perms = CommandExtraPerms.Find("WhoIs", 1);
+            Chat.Message(ChatScope.Global, e.FormatMessage("An IP", type), perms,
+                         FilterNotItemPerms, true);
+            Chat.Message(ChatScope.Global, e.FormatMessage(e.Target, type), perms,
+                         Chat.FilterPerms, true);
+        }
+        
+        static bool FilterNotItemPerms(Player pl, object arg) {
+            return !Chat.FilterPerms(pl, arg);
+        }
+        
         static void DoBanIP(ModAction e) {
-            LevelPermission perm = CommandExtraPerms.MinPerm("whois");
-            Chat.MessageWhere(e.FormatMessage("An IP", "&8IP banned"), pl => pl.Rank < perm);
-            Chat.MessageWhere(e.FormatMessage(e.TargetName, "&8IP banned"), pl => pl.Rank >= perm);
-            
-            Logger.Log(LogType.UserActivity, "IP-BANNED: {0} by {1}.", e.Target, e.ActorName);
+            LogIPAction(e, "&8IP banned");
+            Logger.Log(LogType.UserActivity, "IP-BANNED: {0} by {1}.", e.Target, e.Actor.name);
             Server.bannedIP.Add(e.Target);
             Server.bannedIP.Save();
         }
         
         static void DoUnbanIP(ModAction e) {
-            LevelPermission perm = CommandExtraPerms.MinPerm("whois");
-            Chat.MessageWhere(e.FormatMessage("An IP", "&8IP unbanned"), pl => pl.Rank < perm);
-            Chat.MessageWhere(e.FormatMessage(e.TargetName, "&8IP unbanned"), pl => pl.Rank >= perm);
-            
-            Logger.Log(LogType.UserActivity, "IP-UNBANNED: {0} by {1}.", e.Target, e.ActorName);
+            LogIPAction(e, "&8IP unbanned");
+            Logger.Log(LogType.UserActivity, "IP-UNBANNED: {0} by {1}.", e.Target, e.Actor.name);
             Server.bannedIP.Remove(e.Target);
             Server.bannedIP.Save();
         }
@@ -171,19 +179,19 @@ namespace MCGalaxy.Core {
             if (who != null) {
                 LogAction(e, who, "&ewarned");
                 if (who.warn == 0) {
-                    Player.Message(who, "Do it again twice and you will get kicked!");
+                    who.Message("Do it again twice and you will get kicked!");
                 } else if (who.warn == 1) {
-                    Player.Message(who, "Do it one more time and you will get kicked!");
+                    who.Message("Do it one more time and you will get kicked!");
                 } else if (who.warn == 2) {
-                    Chat.MessageGlobal("{0} %Swas warn-kicked by {1}", who.ColoredName, e.ActorName);
-                    string chatMsg = "by " + e.ActorName + "%S: " + e.Reason;
-                    string kickMsg = "Kicked by " + e.ActorName + "&f: " + e.Reason;
+                    Chat.MessageGlobal("{0} &Swas warn-kicked by {1}", who.ColoredName, e.Actor.ColoredName);
+                    string chatMsg = "by " + e.Actor.ColoredName + "&S: " + e.Reason;
+                    string kickMsg = "Kicked by " + e.Actor.ColoredName + ": &f" + e.Reason;
                     who.Kick(chatMsg, kickMsg);
                 }
                 who.warn++;
             } else {
-                if (!ServerConfig.LogNotes) {
-                    Player.Message(e.Actor, "Notes logging must be enabled to warn offline players."); return;
+                if (!Server.Config.LogNotes) {
+                    e.Actor.Message("Notes logging must be enabled to warn offline players."); return;
                 }
                 LogAction(e, who, "&ewarned");
             }
@@ -196,8 +204,8 @@ namespace MCGalaxy.Core {
             string action = newRank.Permission >= e.TargetGroup.Permission ? "promoted to " : "demoted to ";
             LogAction(e, who, action + newRank.ColoredName);
             
-            if (who != null) {
-                who.SendMessage("You are now ranked " + newRank.ColoredName + "%S, type /Help for your new set of commands.");
+            if (who != null && e.Announce) {
+                who.Message("You are now ranked " + newRank.ColoredName + "&S, type /Help for your new set of commands.");
             }
             if (Server.tempRanks.Remove(e.Target)) {
                 ModerationTasks.TemprankCalcNextRun();
@@ -210,42 +218,35 @@ namespace MCGalaxy.Core {
         }
         
         static void WriteRankInfo(ModAction e, Group newRank) {
-            string year = DateTime.Now.Year.ToString();
-            string month = DateTime.Now.Month.ToString();
-            string day = DateTime.Now.Day.ToString();
-            string hour = DateTime.Now.Hour.ToString();
-            string minute = DateTime.Now.Minute.ToString();
-            string assigner = e.Actor == null ? "(console)" : e.Actor.name;
+            string assigner = e.Actor.name;
+            long time = DateTime.UtcNow.ToUnixTime();
 
-            string line = e.Target + " " + assigner + " " + minute + " " + hour + " " + day + " " + month
-                + " " + year + " " + newRank.Name + " " + e.TargetGroup.Name + " " + e.Reason.Replace(" ", "%20");
+            string line = e.Target + " " + assigner + " " + time + " " + newRank.Name
+                + " " + e.TargetGroup.Name + " " + e.Reason.Replace(" ", "%20");
             Server.RankInfo.Append(line);
         }
         
         static void AddTempRank(ModAction e, Group newRank) {
             string data = FormatModTaskData(e) + " " + e.TargetGroup.Name + " " + newRank.Name;
-            Server.tempRanks.AddOrReplace(e.Target, data);
+            Server.tempRanks.Update(e.Target, data);
             ModerationTasks.TemprankCalcNextRun();
             Server.tempRanks.Save();
         }
         
         static string FormatModTaskData(ModAction e) {
-            long assign = DateTime.UtcNow.ToUnixTime();
-            DateTime expiryTime;
+            long assign  = DateTime.UtcNow.ToUnixTime();
+            DateTime end = DateTime.MaxValue.AddYears(-1);
             
-            if (e.Duration == TimeSpan.Zero) {
-                expiryTime = DateTime.MaxValue;
-            } else {
+            if (e.Duration != TimeSpan.Zero) {
                 try {
-                    expiryTime = DateTime.UtcNow.Add(e.Duration);
+                    end = DateTime.UtcNow.Add(e.Duration);
                 } catch (ArgumentOutOfRangeException) {
-                    // user provided extreme expiry time
-                    expiryTime = DateTime.MaxValue;
+                    // user provided extreme expiry time, ignore it
                 }
             }
             
-            long expiry = expiryTime.ToUnixTime();
-            string assigner = e.Actor == null ? "(console)" : e.Actor.name;
+            long expiry = end.ToUnixTime();
+            string assigner = e.Actor.name;
             return assigner + " " + assign + " " + expiry;
         }
     }

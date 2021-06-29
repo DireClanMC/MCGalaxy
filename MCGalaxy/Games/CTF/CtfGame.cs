@@ -24,293 +24,172 @@ using System.Threading;
 using MCGalaxy.Commands.World;
 using MCGalaxy.Maths;
 using MCGalaxy.SQL;
+using BlockID = System.UInt16;
 
 namespace MCGalaxy.Games {
-    
     internal sealed class CtfData {
-        public Player p;
         public int Captures, Tags, Points;
-        public bool hasflag, tagging, TeamChatting;
-        public CtfData(Player p) { this.p = p; }
+        public bool HasFlag, TagCooldown, TeamChatting;
+        public Vec3S32 LastHeadPos;
     }
 
-    public sealed partial class CTFGame : IGame {
-        public System.Timers.Timer tagging = new System.Timers.Timer(500);
-        public bool voting = false;
-        internal int vote1 = 0, vote2 = 0, vote3 = 0;
-        internal string map1 = "", map2 = "", map3 = "";
-        public bool started = false;
+    public sealed partial class CTFGame : RoundsGame {
+        CTFMapConfig cfg = new CTFMapConfig();
+        public static CTFConfig Config = new CTFConfig();
+        public override string GameName { get { return "CTF"; } }
+        public override RoundsGameConfig GetConfig() { return Config; }
         
-        /// <summary> Gets whether CTF is currently running. </summary>
-        public override bool Running { get { return started; } }
-        
-        public CtfTeam2 Red, Blue;
-        List<CtfData> cache = new List<CtfData>();
-        
-        public CTFConfig Config = new CTFConfig();
-        CtfPlugin plugin = new CtfPlugin();
-        
-        /// <summary> Create a new CTF object </summary>
-        public CTFGame() {
-            Red = new CtfTeam2("Red", Colors.red);
-            Blue = new CtfTeam2("Blue", Colors.blue);
+        sealed class CtfTeam {
+            public string Name, Color;
+            public string ColoredName { get { return Color + Name; } }
+            public int Captures;
+            public Vec3U16 FlagPos, SpawnPos;
+            public BlockID FlagBlock;
+            public VolatileArray<Player> Members = new VolatileArray<Player>();
             
-            tagging.Elapsed += CheckTagging;
-            tagging.Start();
-            plugin.Game = this;
-            plugin.Load(false); 
-        }
-        
-        
-        internal CtfData Get(Player p) {
-            foreach (CtfData d in cache) {
-                if (d.p == p) return d;
+            public CtfTeam(string name, string color) { Name = name; Color = color; }
+            
+            public void RespawnFlag(Level lvl) {
+                Vec3U16 pos = FlagPos;
+                lvl.Blockchange(pos.X, pos.Y, pos.Z, FlagBlock);
             }
-            return null;
         }
+        
+        CtfTeam Red  = new CtfTeam("Red", Colors.red);
+        CtfTeam Blue = new CtfTeam("Blue", Colors.blue);
+        
+        public static CTFGame Instance = new CTFGame();
+        public CTFGame() { Picker = new LevelPicker(); }
 
-        
-        /// <summary> Load a map into CTF </summary>
-        public void SetMap(string mapName) {
-            MapName = mapName;
-            CmdLoad.LoadLevel(null, mapName);
-            Map = LevelInfo.FindExact(mapName);
-            Map.SaveChanges = false;
-            UpdateConfig();
+        const string ctfExtrasKey = "MCG_CTF_DATA";
+        static CtfData Get(Player p) {
+            CtfData data = TryGet(p);
+            if (data != null) return data;
+            data = new CtfData();
+            
+            // TODO: Is this even thread-safe
+            CtfStats s = LoadStats(p.name);
+            data.Captures = s.Captures; data.Points = s.Points; data.Tags = s.Tags;
+            
+            p.Extras[ctfExtrasKey] = data;
+            return data;
         }
         
-        public void UpdateConfig() {
-            Config.SetDefaults(Map);
-            Config.Retrieve(Map.name);
-            CTFConfig cfg = Config;
+        static CtfData TryGet(Player p) {
+            object data; p.Extras.TryGet(ctfExtrasKey, out data); return (CtfData)data;
+        }
+        
+        public override void UpdateMapConfig() {
+            CTFMapConfig cfg = new CTFMapConfig();
+            cfg.SetDefaults(Map);
+            cfg.Load(Map.name);
+            this.cfg = cfg;
             
             Red.FlagBlock = cfg.RedFlagBlock;
-            Red.FlagPos = new Vec3U16((ushort)cfg.RedFlagX, (ushort)cfg.RedFlagY, (ushort)cfg.RedFlagZ);
-            Red.SpawnPos = new Position(cfg.RedSpawnX, cfg.RedSpawnY, cfg.RedSpawnZ);
+            Red.FlagPos   = cfg.RedFlagPos;
+            Red.SpawnPos  = cfg.RedSpawn;
             
             Blue.FlagBlock = cfg.BlueFlagBlock;
-            Blue.FlagPos = new Vec3U16((ushort)cfg.BlueFlagX, (ushort)cfg.BlueFlagY, (ushort)cfg.BlueFlagZ);
-            Blue.SpawnPos = new Position(cfg.BlueSpawnX, cfg.BlueSpawnY, cfg.BlueSpawnZ);
-        }
-        
-        List<string> GetCtfMaps() {
-            //Load some configs
-            if (!Directory.Exists("CTF")) Directory.CreateDirectory("CTF");
-            if (!File.Exists("CTF/maps.config")) return new List<string>();
-            
-            string[] lines = File.ReadAllLines("CTF/maps.config");
-            return new List<string>(lines);
-        }
-        
-        
-        void CheckTagging(object sender, System.Timers.ElapsedEventArgs e) {
-            Player[] online = PlayerInfo.Online.Items;
-            foreach (Player p in online) {
-                if (p.level != Map) continue;
-                
-                CtfTeam2 team = TeamOf(p);
-                if (team == null || Get(p).tagging) continue;
-                if (!OnOwnTeamSide(p.Pos.BlockZ, team)) continue;
-                CtfTeam2 opposing = Opposing(team);
-                
-                Player[] opponents = opposing.Members.Items;
-                foreach (Player other in opponents) {
-                    if (!MovementCheck.InRange(p, other, 2 * 32)) continue;
-
-                    Get(other).tagging = true;
-                    Player.Message(other, p.ColoredName + " %Stagged you!");
-                    Command.all.FindByName("Spawn").Use(other, "");
-                    Thread.Sleep(300);
-                    
-                    if (Get(other).hasflag) DropFlag(p, opposing);
-                    Get(p).Points += Config.Tag_PointsGained;
-                    Get(other).Points -= Config.Tag_PointsLost;
-                    Get(p).Tags++;
-                    Get(other).tagging = false;
-                }
-            }
+            Blue.FlagPos   = cfg.BlueFlagPos;
+            Blue.SpawnPos  = cfg.BlueSpawn;
         }
 
-        static ColumnDesc[] createSyntax = new ColumnDesc[] {
-            new ColumnDesc("ID", ColumnType.Integer, priKey: true, autoInc: true, notNull: true),
-            new ColumnDesc("Name", ColumnType.VarChar, 20),
-            new ColumnDesc("Points", ColumnType.UInt24),
-            new ColumnDesc("Captures", ColumnType.UInt24),
-            new ColumnDesc("tags", ColumnType.UInt24),
-        };
         
-        /// <summary> Start the CTF game </summary>
-        public bool Start(Player p) {
-            if (started) {
-                Player.Message(p, "CTF game already running."); return false;
-            }
-            
-            List<string> maps = GetCtfMaps();
-            if (maps.Count == 0) {
-                Player.Message(p, "No CTF maps were found."); return false;
-            }
-            
-            Blue = new CtfTeam2("Blue", Colors.blue);
-            Red = new CtfTeam2("Red", Colors.red);
-            SetMap(maps[new Random().Next(maps.Count)]);
-            
-            Logger.Log(LogType.GameActivity, "[CTF] Running...");
-            started = true;
-            Database.Backend.CreateTable("CTF", createSyntax);
-            return true;
+        protected override List<Player> GetPlayers() {
+            List<Player> playing = new List<Player>();
+            playing.AddRange(Red.Members.Items);
+            playing.AddRange(Blue.Members.Items);
+            return playing;
         }
         
-        /// <summary> Stop the CTF game if running. </summary>
-        public void Stop() {
-            tagging.Stop();
-            tagging.Dispose();
-            Map = null;
-            started = false;
+        // TODO: Actually make this show something
+        public override void OutputStatus(Player p) {
+            p.Message("{0} &Steam: {1} captures", Blue.ColoredName, Blue.Captures);
+            p.Message("{0} &Steam: {1} captures", Red.ColoredName,  Red.Captures);
+        }
+
+        protected override void StartGame() {
+            Blue.RespawnFlag(Map);
+            Red.RespawnFlag(Map);
+            ResetTeams();
+
+            Database.CreateTable("CTF", ctfTable);
         }
         
-        string Vote() {
-            started = false;
-            vote1 = 0;
-            vote2 = 0;
-            vote3 = 0;
-            Random rand = new Random();
-            List<string> maps = GetCtfMaps();
-            map1 = maps[rand.Next(maps.Count)];
-            maps.Remove(map1);
-            map2 = maps[rand.Next(maps.Count)];
-            maps.Remove(map2);
-            map3 = maps[rand.Next(maps.Count)];
-            Chat.MessageLevel(Map, "%2VOTE:");
-            Chat.MessageLevel(Map, "1. " + map1 + " 2. " + map2 + " 3. " + map3);
-            voting = true;
-            int seconds = rand.Next(15, 61);
-            Chat.MessageLevel(Map, "You have " + seconds + " seconds to vote!");
-            Thread.Sleep(seconds * 1000);
-            voting = false;
-            Chat.MessageLevel(Map, "VOTING ENDED!");
-            Thread.Sleep(rand.Next(1, 10) * 1000);
-            if (vote1 > vote2 && vote1 > vote3)
-            {
-                Chat.MessageLevel(Map, map1 + " WON!");
-                return map1;
-            }
-            if (vote2 > vote1 && vote2 > vote3)
-            {
-                Chat.MessageLevel(Map, map2 + " WON!");
-                return map2;
-            }
-            if (vote3 > vote2 && vote3 > vote1)
-            {
-                Chat.MessageLevel(Map, map3 + " WON!");
-                return map3;
-            }
-            else
-            {
-                Chat.MessageLevel(Map, "There was a tie!");
-                Chat.MessageLevel(Map, "I'll choose!");
-                return maps[rand.Next(maps.Count)];
-            }
+        protected override void EndGame() {
+            ResetTeams();
+            ResetFlagsState();
         }
         
-        public override void EndRound() {
-            started = false;
-            if (Blue.Points >= Config.RoundPoints || Blue.Points > Red.Points) {
-                Chat.MessageLevel(Map, Blue.ColoredName + " %Swon this round of CTF!");
-            } else if (Red.Points >= Config.RoundPoints || Red.Points > Blue.Points) {
-                Chat.MessageLevel(Map, Red.ColoredName + " %Swon this round of CTF!");
-            } else {
-                Chat.MessageLevel(Map, "The round ended in a tie!");
-            }
-            
-            Thread.Sleep(4000);
-            //MYSQL!
-            cache.ForEach(delegate(CtfData d) {
-                              d.hasflag = false;
-                              Database.Backend.UpdateRows("CTF", "Points=@1, Captures=@2, tags=@3",
-                                                          "WHERE Name = @0", d.p.name, d.Points, d.Captures, d.Tags);
-                          });
-            
-            string nextmap = Vote();
-            Chat.MessageLevel(Map, "Starting a new game!");
+        void ResetTeams() {
             Blue.Members.Clear();
             Red.Members.Clear();
-            Thread.Sleep(2000);
-            SetMap(nextmap);
-        }
-        
-        
-        /// <summary> Called when the given player takes the opposing team's flag. </summary>
-        public void TakeFlag(Player p, CtfTeam2 team) {
-            CtfTeam2 opposing = Opposing(team);
-            Chat.MessageLevel(Map, team.Color + p.DisplayName + " took the " + opposing.ColoredName + " %Steam's FLAG");
-            Get(p).hasflag = true;
-        }
-        
-        /// <summary> Called when the given player, while holding opposing team's flag, clicks on their own flag. </summary>
-        public void ReturnFlag(Player p, CtfTeam2 team) {
-            Vec3U16 flagPos = team.FlagPos;
-            p.RevertBlock(flagPos.X, flagPos.Y, flagPos.Z);
-            p.cancelBlock = true;
-            
-            CtfData data = Get(p);
-            if (data.hasflag) {
-                Chat.MessageLevel(Map, team.Color + p.DisplayName + " RETURNED THE FLAG!");
-                data.hasflag = false;
-                data.Points += Config.Capture_PointsGained;
-                data.Captures++;
-                
-                CtfTeam2 opposing = Opposing(team);
-                team.Points++;
-                flagPos = opposing.FlagPos;
-                Map.Blockchange(flagPos.X, flagPos.Y, flagPos.Z, opposing.FlagBlock);
-                
-                if (team.Points >= Config.RoundPoints) EndRound();
-            } else {
-                Player.Message(p, "You cannot take your own flag!");
-            }
+            Blue.Captures = 0;
+            Red.Captures = 0;
         }
 
-        /// <summary> Called when the given player drops the opposing team's flag. </summary>
-        public void DropFlag(Player p, CtfTeam2 team) {
-            CtfData data = Get(p);
-            if (!data.hasflag) return;
+        void ResetFlagsState() {
+            Blue.RespawnFlag(Map);
+            Red.RespawnFlag(Map);
+            Player[] players = PlayerInfo.Online.Items;
             
-            data.hasflag = false;
-            Chat.MessageLevel(Map, team.Color + p.DisplayName + " DROPPED THE FLAG!");
-            data.Points -= Config.Capture_PointsLost;
-            
-            CtfTeam2 opposing = Opposing(team);
-            Vec3U16 pos = opposing.FlagPos;
-            Map.Blockchange(pos.X, pos.Y, pos.Z, opposing.FlagBlock);
+            foreach (Player p in players) {
+                if (p.level != Map) continue;
+                CtfData data = Get(p);
+                
+                if (!data.HasFlag) continue;
+                data.HasFlag = false;
+                ResetPlayerFlag(p, data);
+            }
         }
         
+        public override void PlayerJoinedGame(Player p) {
+            bool announce = false;
+            HandleSentMap(p, Map, Map);
+            HandleJoinedLevel(p, Map, Map, ref announce);
+        }
 
-        public void JoinTeam(Player p, CtfTeam2 team) {
-            if (Get(p) == null) {
-                cache.Add(new CtfData(p));
-            } else {
-                Get(p).hasflag = false;
-            }
+        public override void PlayerLeftGame(Player p) {
+            CtfTeam team = TeamOf(p);
+            if (team == null) return;
+            team.Members.Remove(p);
             
+            DropFlag(p, team);          
+        }
+        
+        void AutoAssignTeam(Player p) {     
+            if (Blue.Members.Count > Red.Members.Count) {
+                JoinTeam(p, Red);
+            } else if (Red.Members.Count > Blue.Members.Count) {
+                JoinTeam(p, Blue);
+            } else {
+                bool red = new Random().Next(2) == 0;
+                JoinTeam(p, red ? Red : Blue);
+            }
+        }
+        
+        void JoinTeam(Player p, CtfTeam team) {
+            Get(p).HasFlag = false;
             team.Members.Add(p);
-            Chat.MessageLevel(Map, p.ColoredName + " %Sjoined the " + team.ColoredName + " %Steam");
-            Player.Message(p, "You are now on the " + team.ColoredName + " team!");
+            Map.Message(p.ColoredName + " &Sjoined the " + team.ColoredName + " &Steam");
+            p.Message("You are now on the " + team.ColoredName + " team!");
+            TabList.Update(p, true);
         }
         
-        bool OnOwnTeamSide(int z, CtfTeam2 team) {
-            int baseZ = team.FlagPos.Z, zline = Config.ZDivider;
+        bool OnOwnTeamSide(int z, CtfTeam team) {
+            int baseZ = team.FlagPos.Z, zline = cfg.ZDivider;
             if (baseZ < zline && z < zline) return true;
             if (baseZ > zline && z > zline) return true;
             return false;
         }
         
-        public CtfTeam2 TeamOf(Player p) {
+        CtfTeam TeamOf(Player p) {
             if (Red.Members.Contains(p)) return Red;
             if (Blue.Members.Contains(p)) return Blue;
             return null;
         }
         
-        public CtfTeam2 Opposing(CtfTeam2 team) {
+        CtfTeam Opposing(CtfTeam team) {
             return team == Red ? Blue : Red;
         }
     }

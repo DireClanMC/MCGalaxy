@@ -17,6 +17,7 @@
 */
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Threading;
@@ -32,39 +33,76 @@ namespace MCGalaxy.Gui {
         delegate void StringCallback(string s);
         delegate void PlayerListCallback(List<Player> players);
         delegate void VoidDelegate();
-        bool mapgen = false;
+        bool mapgen, loaded;
 
-        PlayerCollection pc;
-        LevelCollection lc;
-        public NotifyIcon notifyIcon = new NotifyIcon();
+        NotifyIcon notifyIcon = new NotifyIcon();
         Player curPlayer;
 
         public Window() {
+            logCallback = LogMessage;
             InitializeComponent();
+        }
+        
+        // warn user if they're using the GUI with a DLL for different server version
+        static void CheckVersions() {
+            string gui_version = Server.InternalVersion;
+            string dll_version = Server.Version;
+            if (gui_version.CaselessEq(dll_version)) return;
+            
+            const string fmt = 
+@"Currently you are using:
+  {2} for {0} {1}
+  {4} for {0} {3}
+
+Trying to mix two versions is unsupported - you may experience issues";
+            string msg = string.Format(fmt, Server.SoftwareName, 
+                                       gui_version, AssemblyFile(typeof(Window), "MCGalaxy.exe"),
+                                       dll_version, AssemblyFile(typeof(Server), "MCGalaxy_.dll"));
+            RunAsync(() => Popup.Warning(msg));
+        }
+        
+        static string AssemblyFile(Type type, string defPath) {
+            try {
+                string path = type.Assembly.CodeBase;
+                return Path.GetFileName(path);
+            } catch {
+                return defPath;
+            }
         }
 
         void Window_Load(object sender, EventArgs e) {
-            main_btnProps.Enabled = false;
-            MaximizeBox = false;
+            LoadIcon();
+            // Necessary as some versions of WINE may call Window_Load multiple times
+            //  (however icon must still be reloaded each time)
+            if (loaded) return;
+            loaded = true;
+            
             Text = "Starting " + Server.SoftwareNameVersioned + "...";
             Show();
             BringToFront();
             WindowState = FormWindowState.Normal;
+            CheckVersions();
 
             InitServer();
-            foreach (string theme in MapGen.SimpleThemeNames) {
-                map_cmbType.Items.Add(theme);
+            foreach (MapGen gen in MapGen.Generators) {
+                if (gen.Type == GenType.Advanced) continue;
+                map_cmbType.Items.Add(gen.Theme);
             }
             
-            Text = ServerConfig.Name + " - " + Server.SoftwareNameVersioned;
+            Text = Server.Config.Name + " - " + Server.SoftwareNameVersioned;
             MakeNotifyIcon();
             
-            // Bind player list
-            main_Players.DataSource = pc;
             main_Players.Font = new Font("Calibri", 8.25f);
-
-            main_Maps.DataSource = new LevelCollection(); // Otherwise "-1 does not have a value" exception when clicking a row
             main_Maps.Font = new Font("Calibri", 8.25f);
+        }
+        
+        void LoadIcon() {
+            // Normally this code would be in InitializeComponent method in Window.Designer.cs,
+            //  however that doesn't work properly with some WINE versions (you get WINE icon instead)
+            try {
+                ComponentResourceManager resources = new ComponentResourceManager(typeof(Window));
+                Icon = (Icon)(resources.GetObject("$this.Icon"));
+            } catch { }
         }
         
         void UpdateNotifyIconText() {
@@ -72,7 +110,7 @@ namespace MCGalaxy.Gui {
             string players = " (" + playerCount + " players)";
             
             // ArgumentException thrown if text length is > 63
-            string text = (ServerConfig.Name + players);
+            string text = (Server.Config.Name + players);
             if (text.Length > 63) text = text.Substring(0, 63);
             notifyIcon.Text = text;
         }
@@ -94,22 +132,27 @@ namespace MCGalaxy.Gui {
             Updater.NewerVersionDetected += LogNewerVersionDetected;
 
             Server.OnURLChange += UpdateUrl;
-            Server.OnPlayerListChange += UpdateClientList;
             Server.OnSettingsUpdate += SettingsUpdate;
             Server.Background.QueueOnce(InitServerTask);
         }
         
+        // cache LogMessage, avoids new object being allocated every time
+        delegate void LogCallback(LogType type, string message);
+        LogCallback logCallback;
+        
         void LogMessage(LogType type, string message) {
+            if (!Server.Config.FileLogging[(int)type]) return;
+            
             if (InvokeRequired) {
-                BeginInvoke((Action<LogType, string>)LogMessage, type, message);
-                return;
+                BeginInvoke(logCallback, type, message); return;
             }           
             if (Server.shuttingDown) return;
             string newline = Environment.NewLine;
             
             switch (type) {
                 case LogType.Error:
-                    main_txtLog.AppendLog("!!!Error! See " + FileLogger.ErrorLogPath + " for more information." + newline);
+                    main_txtLog.AppendLog("&c!!!Error" + ExtractErrorMessage(message) 
+                                          + " - See Logs tab for more details" + newline);
                     message = FormatError(message);
                     logs_txtError.AppendText(message + newline);
                     break;
@@ -131,19 +174,41 @@ namespace MCGalaxy.Gui {
             string date = "----" + DateTime.Now + "----";
             return date + Environment.NewLine + message + Environment.NewLine + "-------------------------";
         }
+        
+        static string msgPrefix = Environment.NewLine + "Message: ";
+        static string ExtractErrorMessage(string raw) {
+            // Error messages are usually structured like so:
+            //   Type: whatever
+            //   Message: whatever
+            //   Something: whatever
+            // this code extracts the Message line from the raw message
+            int beg = raw.IndexOf(msgPrefix);
+            if (beg == -1) return "";
+            
+            beg += msgPrefix.Length;
+            int end = raw.IndexOf(Environment.NewLine, beg);
+            if (end == -1) return "";
+            
+            return " (" + raw.Substring(beg, end - beg) + ")";
+        }
+        
 
         static volatile bool msgOpen = false;
         static void LogNewerVersionDetected(object sender, EventArgs e) {
             if (msgOpen) return;
             // don't want message box blocking background scheduler thread
-            Thread thread = new Thread(ShowUpdateMessageAsync);
-            thread.Name = "MCGalaxy_UpdateMsgBox";
+            RunAsync(ShowUpdateMessageBox);
+        }
+        
+        static void RunAsync(ThreadStart func) {
+            Thread thread = new Thread(func);
+            thread.Name = "MCGalaxy_MsgBox";
             thread.Start();
         }
         
-        static void ShowUpdateMessageAsync() {
+        static void ShowUpdateMessageBox() {
             msgOpen = true;
-            if (MessageBox.Show("New version found. Would you like to update?", "Update?", MessageBoxButtons.YesNo) == DialogResult.Yes) {
+            if (Popup.YesNo("New version found. Would you like to update?", "Update?")) {
                 Updater.PerformUpdate();
             }
             msgOpen = false;
@@ -156,7 +221,7 @@ namespace MCGalaxy.Gui {
 
             OnPlayerConnectEvent.Register(Player_PlayerConnect, Priority.Low);
             OnPlayerDisconnectEvent.Register(Player_PlayerDisconnect, Priority.Low);
-            OnJoinedLevelEvent.Register(Player_OnJoinedLevel, Priority.Low);
+            OnSentMapEvent.Register(Player_OnJoinedLevel, Priority.Low);
 
             OnLevelAddedEvent.Register(Level_LevelAdded, Priority.Low);
             OnLevelRemovedEvent.Register(Level_LevelRemoved, Priority.Low);
@@ -168,141 +233,66 @@ namespace MCGalaxy.Gui {
         public void RunOnUI_Async(Action act) { BeginInvoke(act); }
         
         void Player_PlayerConnect(Player p) {
-            UpdatePlayers();
+            RunOnUI_Async(() => {
+                Main_UpdatePlayersList();
+                Players_UpdateList(); 
+            });
         }
         
         void Player_PlayerDisconnect(Player p, string reason) {
-            UpdatePlayers();
+            RunOnUI_Async(() => {
+                Main_UpdateMapList();
+                Main_UpdatePlayersList();
+                Players_UpdateList(); 
+            });
         }
         
         void Player_OnJoinedLevel(Player p, Level prevLevel, Level lvl) {
             RunOnUI_Async(() => {
-                UpdateMapList();
-                UpdatePlayerSelected(); 
+                Main_UpdateMapList();
+                Main_UpdatePlayersList();
+                Players_UpdateSelected(); 
             });
         }
         
         void Level_LevelAdded(Level lvl) {
             RunOnUI_Async(() => {
-                UpdateMapList();
-                UpdateUnloadedList();
+                Main_UpdateMapList();
+                Map_UpdateLoadedList();
+                Map_UpdateUnloadedList();
             });
         }
         
         void Level_LevelRemoved(Level lvl) {
             RunOnUI_Async(() => {
-                UpdateMapList();
-                UpdateUnloadedList();
+                Main_UpdateMapList();
+                Map_UpdateLoadedList();
+                Map_UpdateUnloadedList();
             });
         }
         
         void Level_PhysicsLevelChanged(Level lvl, int level) {
             RunOnUI_Async(() => {
-                UpdateMapList();
+                Main_UpdateMapList();
+                Map_UpdateLoadedList();
             });
         }
 
 
         void SettingsUpdate() {
-            if (Server.shuttingDown) return;
-            
-            if (InvokeRequired) {
-                Invoke(new VoidDelegate(SettingsUpdate));
-            } else {
-                Text = ServerConfig.Name + " - " + Server.SoftwareNameVersioned;
+            RunOnUI_Async(() => {
+                if (Server.shuttingDown) return;
+                Text = Server.Config.Name + " - " + Server.SoftwareNameVersioned;
                 UpdateNotifyIconText();
-            }
-        }
-        
-        delegate void LogDelegate(string message);
-
-        /// <summary> Updates the list of client names in the window </summary>
-        /// <param name="players">The list of players to add</param>
-        public void UpdateClientList() {
-            if (InvokeRequired) { Invoke(new VoidDelegate(UpdateClientList)); return; }            
-            UpdateNotifyIconText();
-            Player[] players = PlayerInfo.Online.Items;
-
-            // Try to keep the same selection on update
-            string selected = null;
-            var selectedRows = main_Players.SelectedRows;
-            if (selectedRows.Count > 0) {
-                selected = (string)selectedRows[0].Cells[0].Value;
-            }
-
-            // Update the data source and control
-            pc = new PlayerCollection();
-            foreach (Player pl in players) { pc.Add(pl); }
-            main_Players.DataSource = pc;
-            
-            // Reselect player
-            if (selected != null) {
-                foreach (DataGridViewRow row in main_Players.Rows) {
-                    string name = (string)row.Cells[0].Value;
-                    if (name.CaselessEq(selected)) row.Selected = true;
-                }
-            }
-            main_Players.Refresh();
+            });
         }
 
         public void PopupNotify(string message, ToolTipIcon icon = ToolTipIcon.Info) {
-            notifyIcon.ShowBalloonTip(3000, ServerConfig.Name, message, icon);
+            notifyIcon.ShowBalloonTip(3000, Server.Config.Name, message, icon);
         }
 
-        void UpdateMapList() {
-            Level[] loaded = LevelInfo.Loaded.Items;
-            
-            // Try to keep the same selection on update
-            string selected = null;
-            var selectedRows = main_Maps.SelectedRows;
-            if (selectedRows.Count > 0) {
-                selected = (string)selectedRows[0].Cells[0].Value;
-            }
-            
-            // Update the data source and control
-            lc = new LevelCollection();
-            foreach (Level lvl in loaded) { lc.Add(lvl); }
-            main_Maps.DataSource = lc;            
-            
-            // Reselect map
-            if (selected != null) {
-                foreach (DataGridViewRow row in main_Maps.Rows) {
-                    string name = (string)row.Cells[0].Value;
-                    if (name.CaselessEq(selected)) row.Selected = true;
-                }
-            }
-            main_Maps.Refresh();
-                        
-            
-            // Try to keep the same selection on update
-            selected = null;
-            if (map_lbLoaded.SelectedItem != null) {
-                selected = map_lbLoaded.SelectedItem.ToString();
-            }
-            
-            map_lbLoaded.Items.Clear();
-            foreach (Level lvl in loaded) {
-                map_lbLoaded.Items.Add(lvl.name);
-            }
-            
-            if (selected != null) {
-                int index = map_lbLoaded.Items.IndexOf(selected);
-                map_lbLoaded.SelectedIndex = index;
-            } else {
-                map_lbLoaded.SelectedIndex = -1;
-            }
-            UpdateSelectedMap(null, null);
-        }
-
-        /// <summary> Places the server's URL at the top of the window </summary>
-        /// <param name="s">The URL to display</param>
-        public void UpdateUrl(string s) {
-            if (InvokeRequired) {
-                StringCallback d = UpdateUrl;
-                Invoke(d, new object[] { s });
-            } else {
-                main_txtUrl.Text = s;
-            }
+        void UpdateUrl(string s) {
+            RunOnUI_Async(() => { Main_UpdateUrl(s); });
         }
 
         void Window_FormClosing(object sender, FormClosingEventArgs e) {
@@ -311,8 +301,8 @@ namespace MCGalaxy.Gui {
                 notifyIcon.Dispose();
             }
             
-            if (Server.shuttingDown || MessageBox.Show("Really shutdown the server? All players will be disconnected!", "Exit", MessageBoxButtons.OKCancel) == DialogResult.OK) {
-                if (!Server.shuttingDown) Server.Stop(false);
+            if (Server.shuttingDown || Popup.OKCancel("Really shutdown the server? All players will be disconnected!", "Exit")) {
+                Server.Stop(false, Server.Config.DefaultShutdownMessage);
                 notifyIcon.Dispose();
             } else {
                 // Prevents form from closing when user clicks the X and then hits 'cancel'
@@ -323,13 +313,13 @@ namespace MCGalaxy.Gui {
         void btnClose_Click(object sender, EventArgs e) { Close(); }
 
         void btnProperties_Click(object sender, EventArgs e) {
-            if (!prevLoaded) { PropertyForm = new PropertyWindow(); prevLoaded = true; }
-            PropertyForm.Show();
-            if (!PropertyForm.Focused) PropertyForm.Focus();
+            if (!hasPropsForm) { propsForm = new PropertyWindow(); hasPropsForm = true; }
+            propsForm.Show();
+            if (!propsForm.Focused) propsForm.Focus();
         }
 
-        public static bool prevLoaded = false;
-        Form PropertyForm;
+        public static bool hasPropsForm = false;
+        Form propsForm;
 
         void Window_Resize(object sender, EventArgs e) {
             ShowInTaskbar = WindowState != FormWindowState.Minimized;
@@ -346,9 +336,9 @@ namespace MCGalaxy.Gui {
         }      
 
        void tabs_Click(object sender, EventArgs e)  {
-            try { UpdateUnloadedList(); }
+            try { Map_UpdateUnloadedList(); }
             catch { }
-            try { UpdatePlayers(); }
+            try { Players_UpdateList(); }
             catch { }
             
             try {

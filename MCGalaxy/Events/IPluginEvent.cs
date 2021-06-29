@@ -45,11 +45,6 @@ namespace MCGalaxy.Events {
         /// <summary> Unregisters the given handler from this event. </summary>
         public static void Unregister(IMethod method) {
             IEvent<IMethod> handler = Find(method);
-            if (handler == null) {
-                string msg = MethodFormat("Method {0} was not registered as a {1} event handler", method);
-                throw new ArgumentException(msg);
-            }
-            
             handlers.Remove(handler);
         }
         
@@ -85,27 +80,20 @@ namespace MCGalaxy.Events {
             for (int i = 0; i < items.Length; i++) {
                 IEvent<IMethod> handler = items[i];
                 
-                try {
-                    action(handler.method);
-                } catch (Exception ex) {
-                    LogHandlerException(ex, handler);
-                }
+                try { action(handler.method); } 
+                catch (Exception ex) { LogHandlerException(ex, handler); }
             }
         }
         
         protected static void LogHandlerException(Exception ex, IEvent<IMethod> handler) {
             string msg = MethodFormat("Method {0} errored when calling {1} event", handler.method);
-            Logger.Log(LogType.Warning, msg);
-            Logger.LogError(ex);
+            Logger.LogError(msg, ex);
         }
         
-        static string MethodFormat(string format, IMethod handler) {
-            return String.Format(format, GetFullMethodName(handler), typeof(IMethod).Name);
-        }
-        
-        static string GetFullMethodName(object method) {
+        static string MethodFormat(string format, IMethod method) {
             Delegate del = (Delegate)((object)method);
-            return del.Method.ReflectedType.FullName + "." + del.Method.Name;
+            string fullName = del.Method.ReflectedType.FullName + "." + del.Method.Name;
+            return string.Format(format, fullName, typeof(IMethod).Name);
         }
     }
 }

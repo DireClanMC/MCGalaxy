@@ -20,27 +20,27 @@ using MCGalaxy.Maths;
 using MCGalaxy.Tasks;
 
 namespace MCGalaxy.Commands.Misc {
-    public sealed class CmdRide : Command {
+    public sealed class CmdRide : Command2 {
         public override string name { get { return "Ride"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override bool museumUsable { get { return false; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             p.onTrain = !p.onTrain;
             if (!p.onTrain) return;
             
             p.trainInvincible = true;
-            Player.Message(p, "Stand near a train to mount it");
+            p.Message("Stand near a train to mount it");
             
             SchedulerTask task = new SchedulerTask(RideCallback, p, TimeSpan.Zero, true);
-            p.CriticalTasks.Add(task);            
+            p.CriticalTasks.Add(task);
         }
         
         static void RideCallback(SchedulerTask task) {
             Player p = (Player)task.State;
             if (!p.onTrain) {
                 p.trainGrab = false;
-                Player.Message(p, "Dismounted");
+                p.Message("Dismounted");
                 
                 Server.MainScheduler.QueueOnce(TrainInvincibleCallback, p, 
                                                TimeSpan.FromSeconds(1));
@@ -48,7 +48,7 @@ namespace MCGalaxy.Commands.Misc {
                 return;
             }
             
-            Vec3S32 P = p.Pos.BlockFeetCoords;
+            Vec3S32 P = p.Pos.FeetBlockCoords;
             for (int dx = -1; dx <= 1; dx++)
                 for (int dy = -1; dy <= 1; dy++)
                     for (int dz = -1; dz <= 1; dz++)
@@ -66,7 +66,8 @@ namespace MCGalaxy.Commands.Misc {
                 else pitch = 8;
                 
                 if (dx != 0 || dy != 0 || dz != 0) {
-                    PlayerActions.MoveCoords(p, P.X + dx, P.Y + dy, P.Z + dz, yaw, pitch);
+                    Position pos = Position.FromFeetBlockCoords(P.X + dx, P.Y + dy, P.Z + dz);
+                    p.SendPos(Entities.SelfID, pos, new Orientation(yaw, pitch));
                 }
                 return;
             }
@@ -79,8 +80,8 @@ namespace MCGalaxy.Commands.Misc {
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Ride");
-            Player.Message(p, "%HRides a nearby train.");
+            p.Message("&T/Ride");
+            p.Message("&HRides a nearby train.");
         }
     }
 }

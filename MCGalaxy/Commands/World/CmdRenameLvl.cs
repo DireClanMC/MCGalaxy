@@ -16,10 +16,9 @@
     permissions and limitations under the Licenses.
  */
 using System;
-using System.Collections.Generic;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdRenameLvl : Command {
+    public sealed class CmdRenameLvl : Command2 {
         public override string name { get { return "RenameLvl"; } }
         public override string type { get { return CommandTypes.World; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
@@ -28,34 +27,25 @@ namespace MCGalaxy.Commands.World {
         }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] args = message.SplitSpaces();
             if (args.Length != 2) { Help(p); return; }
+            LevelConfig cfg;
+                       
+            string src = Matcher.FindMaps(p, args[0]);
+            if (src == null) return;
+            if (!LevelInfo.Check(p, data.Rank, src, "rename this map", out cfg)) return;
             
-            Level lvl = Matcher.FindLevels(p, args[0]);
-            if (lvl == null) return;
-            string newName = args[1].ToLower();
-            if (!Formatter.ValidName(p, newName, "level")) return;
-            
-            if (LevelInfo.MapExists(newName)) { Player.Message(p, "Level already exists."); return; }
-            if (lvl == Server.mainLevel) { Player.Message(p, "Cannot rename the main level."); return; }
-            if (!LevelInfo.ValidateAction(p, lvl.name, "rename this level")) return;
-            
-            List<Player> players = lvl.getPlayers();
-            lvl.Unload();
-            
-            LevelActions.Rename(lvl.name, newName);
-            CmdLoad.LoadLevel(p, newName);
-            Chat.MessageGlobal("Renamed {0} to {1}", lvl.name, newName);
-            // Move all the old players to the renamed map
-            foreach (Player pl in players)
-                PlayerActions.ChangeMap(pl, newName);
+            string dst = args[1].ToLower();
+            if (!Formatter.ValidMapName(p, dst)) return;
+
+            if (!LevelActions.Rename(p, src, dst)) return;
+            Chat.MessageGlobal("Level {0} &Swas renamed to {1}", cfg.Color + src, cfg.Color + dst);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/RenameLvl [level] [new name]");
-            Player.Message(p, "%HRenames [level] to [new name]");
-            Player.Message(p, "%HNote: Portals going to [level] will no longer work.");
+            p.Message("&T/RenameLvl [level] [new name]");
+            p.Message("&HRenames [level] to [new name]");
         }
     }
 }

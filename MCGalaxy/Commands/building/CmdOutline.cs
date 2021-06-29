@@ -18,7 +18,6 @@
 using System;
 using MCGalaxy.Drawing.Brushes;
 using MCGalaxy.Drawing.Ops;
-using MCGalaxy.Maths;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Building {
@@ -28,7 +27,7 @@ namespace MCGalaxy.Commands.Building {
         
         protected override DrawOp GetDrawOp(DrawArgs dArgs) {
             if (dArgs.Message.Length == 0) {
-                Player.Message(dArgs.Player, "Block name is required."); return null;
+                dArgs.Player.Message("Block name is required."); return null;
             }
             
             BlockID target;
@@ -48,7 +47,7 @@ namespace MCGalaxy.Commands.Building {
         protected override DrawMode GetMode(string[] parts) {
             if (parts.Length == 1) return DrawMode.normal;
             
-            string type = parts[parts.Length - 1];
+            string type = parts[1];
             if (type == "down")  return DrawMode.down;
             if (type == "up")    return DrawMode.up;
             if (type == "layer") return DrawMode.layer;
@@ -57,14 +56,15 @@ namespace MCGalaxy.Commands.Building {
         }
         
         protected override void GetBrush(DrawArgs dArgs) {
-            dArgs.BrushArgs = dArgs.Message.Splice(1, dArgs.DefaultBrushEndCount);
+            dArgs.BrushArgs = dArgs.Message.Splice(dArgs.ModeArgsCount + 1, 0);
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Outline [block] <brush args> <mode>");
-            Player.Message(p, "%HOutlines [block] with output of your current brush.");
-            Player.Message(p, "   %HModes: &fall/up/layer/down (default all)");
-            Player.Message(p, BrushHelpLine);
+            p.Message("&T/Outline [block] <brush args>");
+            p.Message("&HOutlines [block] with output of your current brush.");
+            p.Message("&T/Outline [block] [mode] <brush args>");
+            p.Message("&HModes: &fall/up/layer/down (default all)");
+            p.Message(BrushHelpLine);
         }
     }
 }

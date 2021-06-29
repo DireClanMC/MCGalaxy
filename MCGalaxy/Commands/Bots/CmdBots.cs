@@ -15,50 +15,52 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
  */
+using System;
 using System.Collections.Generic;
 
 namespace MCGalaxy.Commands.Bots {
-    public sealed class CmdBots : Command {
+    public sealed class CmdBots : Command2 {
         public override string name { get { return "Bots"; } }
         public override string shortcut { get { return "BotList"; } }
         public override string type { get { return CommandTypes.Other; } }
-        public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Builder; } }
 
-        public override void Use(Player p, string message) { 
-            Level lvl = p == null ? null : p.level;
+        public override void Use(Player p, string message, CommandData data) { 
+            Level lvl = p.IsSuper ? null : p.level;
             string[] args = message.SplitSpaces(2);
-            int ignored, offset = 0;
+            int offset = 0;
             
-            if (args.Length == 2 || !(message.Length == 0 || args[0].CaselessEq("all") || int.TryParse(args[0], out ignored))) {
+            if (args.Length == 2 || (message.Length > 0 && !IsListModifier(args[0]))) {
                 lvl = Matcher.FindLevels(p, args[0]);
                 offset = 1;
                 if (lvl == null) return;
             }
             
-            PlayerBot[] bots = lvl.Bots.Items;            
+            PlayerBot[] bots = lvl.Bots.Items;
             string cmd = (lvl == p.level) ? "bots" : "bots " + lvl.name;
             string modifier = args.Length > offset ? args[offset] : "";
 
-            Player.Message(p, "Bots in " + lvl.ColoredName + ":");
+            p.Message("Bots in " + lvl.ColoredName + ":");
             MultiPageOutput.Output(p, bots, FormatBot, cmd, "Bots", modifier, false);
         }
         
         static string FormatBot(PlayerBot bot) {
             string desc = bot.DisplayName;
-            if (bot.DisplayName != bot.name) desc += "%S(" + bot.name + ")";
+            if (bot.DisplayName != bot.name) desc += "&S(&1" + bot.name + "&S)";
             
-            if (bot.AIName.Length > 0) desc += "[" + bot.AIName + "]";
-            else if (bot.hunt) desc += "[Hunt]";
+            if (!String.IsNullOrEmpty(bot.AIName)) {
+                desc += "[" + bot.AIName + "]";
+            } else if (bot.hunt) { desc += "[Hunt]"; }            
             if (bot.kill) desc += "-kill";
+            
             return desc;
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Bots");
-            Player.Message(p, "%HShows a list of bots on your level, and their AIs and levels");
-            Player.Message(p, "%T/Bots [level]");
-            Player.Message(p, "%HShows bots on the given level");
+            p.Message("&T/Bots");
+            p.Message("&HShows a list of bots on your level, and their AIs and levels");
+            p.Message("&T/Bots [level]");
+            p.Message("&HShows bots on the given level");
         }
     }
 }

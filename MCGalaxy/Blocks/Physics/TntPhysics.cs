@@ -24,7 +24,7 @@ namespace MCGalaxy.Blocks.Physics {
     
     public static class TntPhysics {
         
-        static void ToggleFuse(Level lvl, ushort x, ushort y, ushort z) {
+        internal static void ToggleFuse(Level lvl, ushort x, ushort y, ushort z) {
             if (lvl.GetBlock(x, y, z) == Block.StillLava) {
                 lvl.Blockchange(x, y, z, Block.Air);
             } else {
@@ -37,6 +37,23 @@ namespace MCGalaxy.Blocks.Physics {
             if (rand.Next(1, 11) <= 7)
                 lvl.AddUpdate(C.Index, Block.Air, default(PhysicsArgs));
         }
+        
+        public static void DoSmallTnt(Level lvl, ref PhysInfo C) {
+            ushort x = C.X, y = C.Y, z = C.Z;
+            if (lvl.physics < 3) {
+                lvl.Blockchange(x, y, z, Block.Air);
+            } else {
+                if (C.Data.Data < 5 && lvl.physics == 3) {
+                    C.Data.Data++;
+                    ToggleFuse(lvl, x, (ushort)(y + 1), z);
+                    return;
+                }
+                MakeExplosion(lvl, x, y, z, 0);
+            }
+        }
+        
+        public static void DoBigTnt(Level lvl, ref PhysInfo C) { DoLargeTnt(lvl, ref C, 1); }     
+        public static void DoNukeTnt(Level lvl, ref PhysInfo C) { DoLargeTnt(lvl, ref C, 4); }
         
         public static void DoLargeTnt(Level lvl, ref PhysInfo C, int power) {
             ushort x = C.X, y = C.Y, z = C.Z;
@@ -59,65 +76,8 @@ namespace MCGalaxy.Blocks.Physics {
             }
         }
         
-        public static void DoSmallTnt(Level lvl, ref PhysInfo C) {
-            ushort x = C.X, y = C.Y, z = C.Z;
-            Player p = GetPlayer(ref C.Data);
-            
-            if (p != null && p.PlayingTntWars) {
-                int power = 2, threshold = 3;
-                TntWarsGame game = TntWarsGame.GameIn(p);
-                switch (game.Difficulty) {
-                    case TntWarsGame.TntWarsDifficulty.Easy:
-                        threshold = 7; break;
-                    case TntWarsGame.TntWarsDifficulty.Normal:
-                        threshold = 5; break;
-                    case TntWarsGame.TntWarsDifficulty.Extreme:
-                        power = 3; break;
-                }
-                
-                if ((C.Data.Data >> 4) < threshold) {
-                    C.Data.Data += (1 << 4);
-                    ToggleFuse(lvl, x, (ushort)(y + 1), z);
-                    return;
-                }
-                if (p.TntWarsKillStreak >= game.Config.StreakTwoAmount && game.Config.Streaks)
-                    power++;
-                MakeExplosion(lvl, x, y, z, power - 2, true, game);
-                
-                List<Player> Killed = new List<Player>();
-                Player[] players = PlayerInfo.Online.Items;
-                foreach (Player p1 in players) {
-                    if (p1.level == lvl && p1.PlayingTntWars && p1 != p
-                        && Math.Abs(p1.Pos.BlockX - x) + Math.Abs(p1.Pos.BlockY - y) + Math.Abs(p1.Pos.BlockZ - z) < ((power * 3) + 1)) {
-                        Killed.Add(p1);
-                    }
-                }
-                game.HandleKill(p, Killed);
-            } else if (lvl.physics < 3) {
-                lvl.Blockchange(x, y, z, Block.Air);
-            } else {
-                if (C.Data.Data < 5 && lvl.physics == 3) {
-                    C.Data.Data++;
-                    ToggleFuse(lvl, x, (ushort)(y + 1), z);
-                    return;
-                }
-                MakeExplosion(lvl, x, y, z, 0);
-            }
-        }
-        
-        static Player GetPlayer(ref PhysicsArgs args) {
-            if (args.Type1 != PhysicsArgs.Custom) return null;
-            
-            int id = args.Value1 | args.Value2 << 8 | (args.Data & 0xF) << 16;
-            Player[] players = PlayerInfo.Online.Items;
-            for (int i = 0; i < players.Length; i++) {
-                if (players[i].SessionID == id) return players[i];
-            }
-            return null;
-        }
-        
         public static void MakeExplosion(Level lvl, ushort x, ushort y, ushort z, int size,
-                                         bool force = false, TntWarsGame game = null) {
+                                         bool force = false, TWGame game = null) {
             Random rand = new Random();
             if ((lvl.physics < 2 || lvl.physics == 5) && !force) return;
             
@@ -132,20 +92,24 @@ namespace MCGalaxy.Blocks.Physics {
             Explode(lvl, x, y, z, size + 3, rand, 3, game);
         }
         
+        static bool IsFuse(BlockID b, int dx, int dy, int dz) {
+            return dx == 0 && dy == 1 && dz == 0 && b == Block.StillLava;
+        }
+        
         static void Explode(Level lvl, ushort x, ushort y, ushort z,
-                            int size, Random rand, int prob, TntWarsGame game) {
+                            int size, Random rand, int prob, TWGame game) {
             for (int xx = (x - size); xx <= (x + size ); ++xx)
                 for (int yy = (y - size); yy <= (y + size); ++yy)
                     for (int zz = (z - size); zz <= (z + size); ++zz)
             {
                 int index;
-                BlockID block = lvl.GetBlock((ushort)xx, (ushort)yy, (ushort)zz, out index);
-                if (block == Block.Invalid) continue;
+                BlockID b = lvl.GetBlock((ushort)xx, (ushort)yy, (ushort)zz, out index);
+                if (b == Block.Invalid) continue;
                 
                 bool doDestroy = prob < 0 || rand.Next(1, 10) < prob;
-                if (doDestroy && Block.Convert(block) != Block.TNT) {
-                    if (game != null && block != Block.Air) {
-                        if (game.InZone((ushort)xx, (ushort)yy, (ushort)zz, false))
+                if (doDestroy && Block.Convert(b) != Block.TNT) {
+                    if (game != null && b != Block.Air && !IsFuse(b, xx - x, yy - y, zz - z)) {
+                        if (game.InZone((ushort)xx, (ushort)yy, (ushort)zz, game.tntImmuneZones))
                             continue;
                     }
                     
@@ -156,13 +120,13 @@ namespace MCGalaxy.Blocks.Physics {
                         lvl.AddUpdate(index, Block.Air, default(PhysicsArgs));
                     } else {
                         PhysicsArgs args = default(PhysicsArgs);
-                        args.Type1 = PhysicsArgs.Drop; args.Value1 = 50;
+                        args.Type1 = PhysicsArgs.Drop;      args.Value1 = 50;
                         args.Type2 = PhysicsArgs.Dissipate; args.Value2 = 8;
                         lvl.AddCheck(index, false, args);
                     }
-                } else if (block == Block.TNT) {
+                } else if (b == Block.TNT) {
                     lvl.AddUpdate(index, Block.TNT_Small, default(PhysicsArgs));
-                } else if (block == Block.TNT_Small || block == Block.TNT_Big || block == Block.TNT_Nuke) {
+                } else if (b == Block.TNT_Small || b == Block.TNT_Big || b == Block.TNT_Nuke) {
                     lvl.AddCheck(index);
                 }
             }

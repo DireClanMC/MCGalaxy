@@ -1,8 +1,7 @@
 ﻿// Part of fCraft | Copyright 2009-2015 Matvei Stefarov <me@matvei.org> | BSD-3 | See LICENSE.txt
-using System.Windows.Forms;
-using System.Drawing;
 using System;
-using MCGalaxy;
+using System.Drawing;
+using System.Windows.Forms;
 
 namespace MCGalaxy.Gui.Popups {
     internal sealed partial class TokenSelector : Form {
@@ -38,9 +37,10 @@ namespace MCGalaxy.Gui.Popups {
             btn.TabIndex = index;
             toolTip.SetToolTip(btn, token.Description);
             
-            btn.Text = token.Trigger;
+            btn.Text   = token.Trigger;
             btn.Click += delegate { Token = token.Trigger; DialogResult = DialogResult.OK; Close(); };
             btn.Margin = new Padding(0);
+            btn.UseMnemonic = false;
             btn.UseVisualStyleBackColor = false;
             btn.Font = new Font("Microsoft Sans Serif", 9.5F, FontStyle.Regular, GraphicsUnit.Point, 0);
             Controls.Add(btn);

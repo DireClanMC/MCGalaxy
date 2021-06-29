@@ -18,7 +18,6 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.Common;
 using System.IO;
 using System.Text;
 using MySql.Data.MySqlClient;
@@ -26,43 +25,40 @@ using MySql.Data.MySqlClient;
 namespace MCGalaxy.SQL {
 
     public sealed class MySQLBackend : IDatabaseBackend {
-
         public static IDatabaseBackend Instance = new MySQLBackend();
-        static ParameterisedQuery queryInstance = new MySQLParameterisedQuery();
-        
-        static string connFormat = "Data Source={0};Port={1};User ID={2};Password={3};Pooling={4};Treat Tiny As Boolean=false;";
-        public override string ConnectionString {
-            get { return String.Format(connFormat, ServerConfig.MySQLHost, ServerConfig.MySQLPort,
-                                       ServerConfig.MySQLUsername, ServerConfig.MySQLPassword, ServerConfig.DatabasePooling); }
-        }
-        public override bool EnforcesTextLength { get { return true; } }
-
         public MySQLBackend() {
-            CaselessWhereSuffix = " COLLATE utf8_general_ci";
-            CaselessLikeSuffix = "";
+            // MySQL uses case insensitive collation by default
+            CaselessWhereSuffix = "";
+            CaselessLikeSuffix  = "";
+        }
+        
+        public override bool EnforcesTextLength { get { return true; } }
+        public override bool MultipleSchema { get { return true; } }     
+        
+        internal override IDbConnection CreateConnection() {
+            const string format = "Data Source={0};Port={1};User ID={2};Password={3};Pooling={4};Treat Tiny As Boolean=false;";
+            string str = string.Format(format, Server.Config.MySQLHost, Server.Config.MySQLPort,
+                                       Server.Config.MySQLUsername, Server.Config.MySQLPassword, Server.Config.DatabasePooling);
+            return new MySqlConnection(str);
+        }
+        
+        internal override IDbCommand CreateCommand(string sql, IDbConnection conn) {
+            return new MySqlCommand(sql, (MySqlConnection)conn);
+        }
+        
+        internal override IDbDataParameter CreateParameter() {
+            return new MySqlParameter();
         }
 
         
         public override void CreateDatabase() {
-            ParameterisedQuery query = GetStaticParameterised();
-            Database.Execute(query, "CREATE DATABASE if not exists `" + ServerConfig.MySQLDatabaseName + "`", true);
+            string sql = "CREATE DATABASE if not exists `" + Server.Config.MySQLDatabaseName + "`";
+            Database.Do(sql, true, null, null);
         }
         
-        public override BulkTransaction CreateBulk() {
-            return new MySQLBulkTransaction(ConnectionString);
-        }
-        
-        public override ParameterisedQuery CreateParameterised() {
-            return new MySQLParameterisedQuery();
-        }
-        
-        protected internal override ParameterisedQuery GetStaticParameterised() {
-            return queryInstance;
-        }       
-                
-        public override string FastGetDateTime(IDataReader reader, int col) {
-            DateTime date = reader.GetDateTime(col);
-            return date.ToString("yyyy-MM-dd HH:mm:ss");
+        public override string RawGetDateTime(IDataRecord record, int col) {
+            DateTime date = record.GetDateTime(col);
+            return date.ToString(Database.DateFormat);
         }
         
         protected internal override void ParseCreate(ref string cmd) {
@@ -86,48 +82,25 @@ namespace MCGalaxy.SQL {
             cmd = cmd.Insert(cmd.LastIndexOf(")"), ", PRIMARY KEY (`" + name + "`)");
         }
         
-        
+
+        static object IterateExists(IDataRecord record, object arg) { return ""; }
         public override bool TableExists(string table) {
-            ValidateTable(table);
-            const string syntax = "SELECT * FROM information_schema.tables WHERE table_name = @0 AND table_schema = @1";
-            using (DataTable results = Database.Fill(syntax, table, ServerConfig.MySQLDatabaseName)) {
-                return results.Rows.Count > 0;
-            }
+            return Database.Iterate("SHOW TABLES LIKE '" + table + "'",
+                                    null, IterateExists) != null;
         }
         
         public override List<string> AllTables() {
-            using (DataTable results = Database.Fill("SHOW TABLES")) {
-                List<string> tables = new List<string>(results.Rows.Count);
-                foreach (DataRow row in results.Rows) {
-                    tables.Add(row[0].ToString());
-                }
-                return tables;
-            }
+            return GetStrings("SHOW TABLES");
         }
         
         public override List<string> ColumnNames(string table) {
-            ValidateTable(table);
-            using (DataTable results = Database.Fill("DESCRIBE `" + table + "`")) {
-                List<string> columns = new List<string>(results.Rows.Count);
-                foreach (DataRow row in results.Rows) {
-                    columns.Add(row["Field"].ToString());
-                }
-                return columns;
-            }
+            Database.ValidateName(table);
+            return GetStrings("DESCRIBE `" + table + "`");
         }
         
-        public override void RenameTable(string srcTable, string dstTable) {
-            ValidateTable(srcTable);
-            ValidateTable(dstTable);
-            string syntax = "RENAME TABLE `" + srcTable + "` TO `" + dstTable + "`";
-            Database.Execute(syntax);
+        public override string RenameTableSql(string srcTable, string dstTable) {
+            return "RENAME TABLE `" + srcTable + "` TO `" + dstTable + "`";
         }
-        
-        public override void ClearTable(string table) {
-            ValidateTable(table);
-            string syntax = "TRUNCATE TABLE `" + table + "`";
-            Database.Execute(syntax);
-        }        
         
         protected override void CreateTableColumns(StringBuilder sql, ColumnDesc[] columns) {
             string priKey = null;
@@ -138,8 +111,6 @@ namespace MCGalaxy.SQL {
                 if (col.PrimaryKey) priKey = col.Column;
                 if (col.AutoIncrement) sql.Append(" AUTO_INCREMENT");
                 if (col.NotNull) sql.Append(" NOT NULL");
-                if (col.DefaultValue != null)
-                    sql.Append(" DEFAULT ").Append(col.DefaultValue);
                 
                 if (i < columns.Length - 1) {
                     sql.Append(',');
@@ -148,86 +119,40 @@ namespace MCGalaxy.SQL {
                 }
                 sql.AppendLine();
             }
-        }        
+        }
         
         public override void PrintSchema(string table, TextWriter w) {
-            string pri = "";
             w.WriteLine("CREATE TABLE IF NOT EXISTS `{0}` (", table);
+            List<string[]> fields = new List<string[]>();
+            Database.Iterate("DESCRIBE `" + table + "`", fields, Database.ReadFields);
             
-            using (DataTable schema = Database.Fill("DESCRIBE `" + table + "`")) {
-                string[] data = new string[schema.Columns.Count];
-                foreach (DataRow row in schema.Rows) {
-                    for (int col = 0; col < schema.Columns.Count; col++) {
-                        data[col] = row[col].ToString();
-                    }
-                    
-                    if (data[3].CaselessEq("pri")) pri = data[0];
-                    string value = data[2].CaselessEq("no") ? "NOT NULL" : "DEFAULT NULL";
-                    if (data[4].Length > 0) value += " DEFAULT '" + data[4] + "'";
-                    if (data[5].Length > 0) value += " " + data[5];
+            const int i_name = 0, i_type = 1, i_null = 2, i_key = 3, i_def = 4, i_extra = 5;
+            string pri = "";
+            
+            for (int i = 0; i < fields.Count; i++) {
+                string[] field = fields[i];
+                if (field[i_key].CaselessEq("pri")) pri = field[i_name];
+                
+                string meta = field[i_null].CaselessEq("no") ? "NOT NULL" : "DEFAULT NULL";
+                if (field[i_def].Length > 0)   meta += " DEFAULT '" + field[i_def] + "'";
+                if (field[i_extra].Length > 0) meta += " " + field[i_extra];
 
-                    string suffix = pri.Length == 0 && row == schema.Rows[schema.Rows.Count - 1] ? "" : ",";
-                    w.WriteLine("`{0}` {1} {2}{3}", row[0], row[1], value, suffix);
-                }
+                string suffix = pri.Length == 0 && (i == fields.Count - 1) ? "" : ",";
+                w.WriteLine("`{0}` {1} {2}{3}", field[i_name], field[i_type], meta, suffix);
             }
             
             if (pri.Length > 0) w.Write("PRIMARY KEY (`{0}`)", pri);
             w.WriteLine(");");
         }
-                
-        public override void AddColumn(string table, ColumnDesc col, string colAfter) {
-            ValidateTable(table);
-            string syntax = "ALTER TABLE `" + table + "` ADD COLUMN " 
-                + col.Column + " " + col.FormatType();
-            if (colAfter.Length > 0) syntax += " AFTER " + colAfter;
-            Database.Execute(syntax);
+        
+        public override string AddColumnSql(string table, ColumnDesc col, string colAfter) {
+            string sql = "ALTER TABLE `" + table + "` ADD COLUMN " + col.Column + " " + col.FormatType();
+            if (colAfter.Length > 0) sql += " AFTER " + colAfter;
+            return sql;
         }
         
-        public override void AddOrReplaceRow(string table, string columns, params object[] args) {
-            ValidateTable(table);
-            DoInsert("REPLACE INTO", table, columns, args);
+        public override string AddOrReplaceRowSql(string table, string columns, object[] args) {
+            return InsertSql("REPLACE INTO", table, columns, args);
         }
     }
-    
-    
-    public sealed class MySQLBulkTransaction : BulkTransaction {
-
-        public MySQLBulkTransaction(string connString) {
-            connection = new MySqlConnection(connString);
-            connection.Open();
-            connection.ChangeDatabase(ServerConfig.MySQLDatabaseName);
-
-            transaction = connection.BeginTransaction();
-        }
-
-        public override IDbCommand CreateCommand(string query) {
-            return new MySqlCommand(query, (MySqlConnection)connection, (MySqlTransaction)transaction);
-        }
-        
-        public override IDataParameter CreateParam(string paramName, DbType type) {
-            MySqlParameter arg = new MySqlParameter(paramName, null);
-            arg.DbType = type;
-            return arg;
-        }
-    }
-
-    public sealed class MySQLParameterisedQuery : ParameterisedQuery {
-        protected override bool MultipleSchema { get { return true; } }
-        
-        protected override IDbConnection CreateConnection(string connString) {
-            return new MySqlConnection(connString);
-        }
-        
-        protected override IDbCommand CreateCommand(string query, IDbConnection conn) {
-            return new MySqlCommand(query, (MySqlConnection)conn);
-        }
-        
-        protected override DbDataAdapter CreateDataAdapter(string query, IDbConnection conn) {
-            return new MySqlDataAdapter(query, (MySqlConnection)conn);
-        }
-        
-        protected override IDbDataParameter CreateParameter() {
-            return new MySqlParameter();
-        }
-    }    
 }

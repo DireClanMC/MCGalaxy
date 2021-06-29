@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2010 MCSharp team (Modified for use with MCZall/MCLawl/MCGalaxy)
     
     Dual-licensed under the Educational Community License, Version 2.0 and
@@ -16,7 +16,7 @@
     permissions and limitations under the Licenses.
  */
 using MCGalaxy.Bots;
-using MCGalaxy.SQL;
+using MCGalaxy.DB;
 
 namespace MCGalaxy.Commands.Chatting {    
     public class CmdColor : EntityPropertyCmd {
@@ -24,55 +24,55 @@ namespace MCGalaxy.Commands.Chatting {
         public override string type { get { return CommandTypes.Chat; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Operator, "+ can change the color of others"),
-                    new CommandPerm(LevelPermission.Operator, "+ can change the color of bots") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can change the color of others"),
+                    new CommandPerm(LevelPermission.Operator, "can change the color of bots") }; }
         }
         public override CommandAlias[] Aliases {
             get { return new[] { new CommandAlias("Colour"), new CommandAlias("XColor", "-own") }; }
         }        
-        public override void Use(Player p, string message) { UseBotOrPlayer(p, message, "color"); }
+        public override void Use(Player p, string message, CommandData data) { 
+            UseBotOrPlayer(p, data, message, "color"); 
+        }
 
         protected override void SetBotData(Player p, PlayerBot bot, string colName) {
-            if (!LevelInfo.ValidateAction(p, bot.level.name, "change color of that bot")) return;
-            
             string color = colName.Length == 0 ? "&1" : Matcher.FindColor(p, colName);
             if (color == null) return;
             
-            Player.Message(p, "You changed the color of bot " + bot.ColoredName + 
-                           " %Sto " + color + Colors.Name(color));
+            p.Message("You changed the color of bot " + bot.ColoredName + 
+                      " &Sto " + color + Colors.Name(color));
             bot.color = color;
             
             bot.GlobalDespawn();
             bot.GlobalSpawn();
-            BotsFile.Save(bot.level);
+            BotsFile.Save(p.level);
         }
         
-        protected override void SetPlayerData(Player p, Player who, string colName) {
-            string color = "";
-            if (colName.Length == 0) {
-                Chat.MessageGlobal(who, who.ColoredName + " %Shad their color removed.", false);
-                who.color = who.group.Color;
-            } else {
-                color = Matcher.FindColor(p, colName);
-                if (color == null) return;
-                if (color == who.color) { Player.Message(p, who.ColoredName + " %Salready has that color."); return; }
-                
-                Chat.MessageGlobal(who, who.ColoredName + " %Shad their color changed to " + color + Colors.Name(color) + "%S.", false);
-                who.color = color;
-            }
+        protected override void SetPlayerData(Player p, string target, string colName) {
+            string col = "";
+            Player who = PlayerInfo.FindExact(target);
             
-            Entities.GlobalRespawn(who);
-            who.SetPrefix();
-            Database.Backend.UpdateRows("Players", "color = @1", "WHERE Name = @0", who.name, color);
+            if (colName.Length == 0) {
+                col = Group.GroupIn(target).Color;
+                
+                PlayerDB.Update(target, PlayerData.ColumnColor, "");
+                MessageAction(p, target, who, "λACTOR &Sremoved λTARGET color");
+            } else {
+                col = Matcher.FindColor(p, colName);
+                if (col == null) return;
+                
+                PlayerDB.Update(target, PlayerData.ColumnColor, col);
+                MessageAction(p, target, who, "λACTOR &Schanged λTARGET color to " + col + Colors.Name(col));
+            }
+            if (who != null) who.UpdateColor(col);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Color [player] [color]");
-            Player.Message(p, "%HSets the nick color of that player");
-            Player.Message(p, "%H  If [color] is not given, reverts to player's rank color.");
-            Player.Message(p, "%H/Color bot [bot] [color]");
-            Player.Message(p, "%TSets the name color of that bot.");
-            Player.Message(p, "%HTo see a list of all colors, use /Help colors.");
+            p.Message("&T/Color [player] [color]");
+            p.Message("&HSets the nick color of that player");
+            p.Message("&H  If [color] is not given, reverts to player's rank color.");
+            p.Message("&T/Color bot [bot] [color]");
+            p.Message("&HSets the name color of that bot.");
+            p.Message("&HTo see a list of all colors, use /Help colors.");
         }
     }
 }

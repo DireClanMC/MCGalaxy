@@ -17,6 +17,7 @@
  */
 using System;
 using MCGalaxy.Bots;
+using MCGalaxy.Network;
 
 namespace MCGalaxy.Commands.CPE {
     public class CmdSkin : EntityPropertyCmd {
@@ -24,64 +25,77 @@ namespace MCGalaxy.Commands.CPE {
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Operator, "+ can change the skin of others"),
-                    new CommandPerm(LevelPermission.Operator, "+ can change the skin of bots") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can change the skin of others"),
+                    new CommandPerm(LevelPermission.Operator, "can change the skin of bots") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.IndexOf(' ') == -1) {
                 message = "-own " + message;
                 message = message.TrimEnd();
             }
-            UseBotOrPlayer(p, message, "skin");
+            UseBotOrPlayer(p, data, message, "skin");
         }
 
         protected override void SetBotData(Player p, PlayerBot bot, string skin) {
-            skin = GetSkin(skin, bot.name);
+            skin = ParseSkin(p, skin, bot.name);
+            if (skin == null) return;
+            
             bot.SkinName = skin;
-            Player.Message(p, "You changed the skin of bot " + bot.ColoredName + " %Sto &c" + skin);
+            p.Message("You changed the skin of bot " + bot.ColoredName + " &Sto &c" + skin);
             
             bot.GlobalDespawn();
             bot.GlobalSpawn();
-            BotsFile.Save(bot.level);
+            BotsFile.Save(p.level);
         }
         
-        protected override void SetPlayerData(Player p, Player who, string skin) {
-            skin = GetSkin(skin, who.truename);
-            who.SkinName = skin;
-            Entities.GlobalRespawn(who);
+        protected override void SetPlayerData(Player p, string target, string skin) {
+            string rawName = target.RemoveLastPlus();
+            skin = ParseSkin(p, skin, rawName);    
+            if (skin == null) return;
             
-            if (p != who) {
-                Player.SendChatFrom(who, who.ColoredName + "'s %Sskin was changed to &c" + skin, false);
+            Player who = PlayerInfo.FindExact(target);
+            if (p == who) {
+                p.Message("Changed your own skin to &c" + skin);
             } else {
-                Player.Message(who, "Changed your own skin to &c" + skin);
+                MessageAction(p, target, who, "λACTOR &Schanged λTARGET skin to &c" + skin);
             }
             
-            if (skin == who.truename) {
-                Server.skins.Remove(who.name);
+            if (who != null) who.SkinName = skin;
+            if (who != null) Entities.GlobalRespawn(who);
+            
+            if (skin == rawName) {
+                Server.skins.Remove(target);
             } else {
-                Server.skins.AddOrReplace(who.name, skin);
+                Server.skins.Update(target, skin);
             }
             Server.skins.Save();
         }
         
-        static string GetSkin(string skin, string defSkin) {
+        static string ParseSkin(Player p, string skin, string defSkin) {
             if (skin.Length == 0) skin = defSkin;
             if (skin[0] == '+')
-                skin = "http://skins.mojang.com/" + skin.Substring(1) + ".png";
+                skin = "https://minotar.net/skin/" + skin.Substring(1) + ".png";
             
-            CmdTexture.FilterURL(ref skin);
+            if (skin.CaselessStarts("http://") || skin.CaselessStarts("https")) {
+                HttpUtil.FilterURL(ref skin);
+            }
+            
+            if (skin.Length > NetUtils.StringSize) {
+                p.Message("&WThe skin must be " + NetUtils.StringSize + " characters or less."); 
+                return null;
+            }
             return skin;
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Skin [name] [skin] %H- Sets the skin of that player.");
-            Player.Message(p, "%T/Skin bot [name] [skin] %H- Sets the skin of that bot.");
-            Player.Message(p, "%H[skin] can be:");
-            Player.Message(p, "%H - a ClassiCube player's name (e.g Hetal)");
-            Player.Message(p, "%H - a Minecraft player's name, if you put a + (e.g +Hypixel)");
-            Player.Message(p, "%H - a direct url to a skin");
-            Player.Message(p, "%HDirect url skins also apply to non human models (e.g pig)");
+            p.Message("&T/Skin [name] [skin] &H- Sets the skin of that player.");
+            p.Message("&T/Skin bot [name] [skin] &H- Sets the skin of that bot.");
+            p.Message("&H[skin] can be:");
+            p.Message("&H - a ClassiCube player's name (e.g Hetal)");
+            p.Message("&H - a Minecraft player's name, if you put a + (e.g +Hypixel)");
+            p.Message("&H - a direct url to a skin");
+            p.Message("&HDirect url skins also apply to non human models (e.g pig)");
         }
     }
 }

@@ -22,20 +22,19 @@ namespace MCGalaxy.Commands.Chatting {
     public sealed class CmdMe : MessageCmd {
         public override string name { get { return "Me"; } }
         public override string type { get { return CommandTypes.Chat; } }
-        public override bool SuperUseable { get { return false; } }
+        public override bool MessageBlockRestricted { get { return true; } }
         public override bool UseableWhenFrozen { get { return true; } }
         
-        public override void Use(Player p, string message) {
-            if (message.Length == 0) { Player.Message(p, "You"); return; }
-            if (p.joker) { Player.Message(p, "Cannot use /me while jokered."); return; }
+        public override void Use(Player p, string message, CommandData data) {
+            if (message.Length == 0) { p.Message("You"); return; }
+            if (p.joker) { p.Message("Cannot use /me while jokered."); return; }
             
-            string msg = p.color + "*" + Colors.Strip(p.DisplayName) + " " + message;
-            if (TryMessage(p, msg))
-                OnPlayerActionEvent.Call(p, PlayerAction.Me, message);
+            string msg = p.color + "*" + Colors.StripUsed(p.DisplayName) + " " + message;
+            TryMessage(p, msg, true);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "What do you need help with, m'boy?! Are you stuck down a well?!");
+            p.Message("What do you need help with, m'boy?! Are you stuck down a well?!");
         }
     }
 }

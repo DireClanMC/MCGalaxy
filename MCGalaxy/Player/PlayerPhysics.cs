@@ -40,7 +40,7 @@ namespace MCGalaxy.Blocks.Physics {
                 
                 // We can activate only one walkthrough block per movement
                 if (!hitWalkthrough) {
-                    HandleWalkthrough handler = p.level.walkthroughHandlers[block];
+                    HandleWalkthrough handler = p.level.WalkthroughHandlers[block];
                     if (handler != null && handler(p, block, xP, yP, zP)) {
                         p.lastWalkthrough = p.level.PosToInt(xP, yP, zP);
                         hitWalkthrough = true;
@@ -48,16 +48,23 @@ namespace MCGalaxy.Blocks.Physics {
                 }
                 
                 // Some blocks will cause death of players
-                if (!p.level.Props[block].KillerBlock) continue;               
-                if (block == Block.TNT_Explosion && p.PlayingTntWars) continue; // TODO: hardcoded behaviour is icky
+                if (!p.level.Props[block].KillerBlock) continue;
                 if (block == Block.Train && p.trainInvincible) continue;
-                p.HandleDeath(block);
+                if (p.level.Config.KillerBlocks) p.HandleDeath(block);
             }
             
             if (!hitWalkthrough) p.lastWalkthrough = -1;
         }
         
-        internal static void Fall(Player p, AABB bb) {
+        internal static void Fall(Player p, AABB bb, bool movingDown) {
+            // Client position is slightly more precise than server's
+            // If don't adjust, it's possible for player to land on edge of a block and not die    
+            // Only do when not moving down, so hitting a pillar while falling doesn't trigger
+            if (!movingDown) {
+                bb.Min.X -= 1; bb.Max.X += 1;
+                bb.Min.Z -= 1; bb.Max.Z += 1;
+            }
+            
             bb.Min.Y -= 2; // test block below player feet
             Vec3S32 min = bb.BlockMin, max = bb.BlockMax;
             bool allGas = true;
@@ -67,19 +74,20 @@ namespace MCGalaxy.Blocks.Physics {
             {
                 BlockID block = GetSurvivalBlock(p, x, min.Y, z);
                 byte collide = p.level.CollideType(block);
-                allGas = allGas && collide == CollideType.WalkThrough;                
+                allGas = allGas && collide == CollideType.WalkThrough;
                 if (!CollideType.IsSolid(collide)) continue;
                 
                 int fallHeight = p.startFallY - bb.Min.Y;
-                if (fallHeight > p.level.Config.FallHeight * 32)
+                if (fallHeight > p.level.Config.FallHeight * 32) {
                     p.HandleDeath(Block.Air, null, false, true);
+                }
                 
                 p.startFallY = -1;          
                 return;
             }
             
             if (!allGas) return;
-            if (bb.Min.Y > p.lastFallY) p.startFallY = -1; // flying up resets fall height            
+            if (bb.Min.Y > p.lastFallY) p.startFallY = -1; // flying up resets fall height
             p.startFallY = Math.Max(bb.Min.Y, p.startFallY);
         }
         

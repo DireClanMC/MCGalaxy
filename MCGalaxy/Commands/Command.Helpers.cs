@@ -16,9 +16,9 @@
     permissions and limitations under the Licenses.
  */
 using System;
-using System.Text;
 using MCGalaxy.Commands;
 using MCGalaxy.Eco;
+using MCGalaxy.Games;
 
 namespace MCGalaxy {
     
@@ -30,9 +30,9 @@ namespace MCGalaxy {
             if (enable == CommandEnable.Economy && !Economy.Enabled)
                 return "economy is disabled.";
             
-            if (enable == bothFlags && !(Server.zombie.Running || Server.lava.active))
+            if (enable == bothFlags && !(ZSGame.Instance.Running || LSGame.Instance.Running))
                 return "neither zombie nor lava survival is running.";
-            if (enable == CommandEnable.Zombie && !Server.zombie.Running)
+            if (enable == CommandEnable.Zombie && !ZSGame.Instance.Running)
                 return "zombie survival is not running.";
             if (enable == CommandEnable.Lava)
                 return "lava survival is not running.";
@@ -40,7 +40,7 @@ namespace MCGalaxy {
         }
         
         protected bool CheckSuper(Player p, string message, string type) {
-            if (message.Length > 0 || !Player.IsSuper(p)) return false;
+            if (message.Length > 0 || !p.IsSuper) return false;
             SuperRequiresArgs(name, p, type);
             return true;
         }
@@ -48,31 +48,79 @@ namespace MCGalaxy {
         protected void SuperRequiresArgs(Player p, string type) { SuperRequiresArgs(name, p, type); }
         
         protected internal static void SuperRequiresArgs(string cmd, Player p, string type) {
-            string src = p == null ? "console" : "IRC";
-            Player.Message(p, "When using /{0} from {2}, you must provide a {1}.", cmd, type, src);
+            p.Message("When using /{0} from {2}, you must provide a {1}.", cmd, type, p.SuperName);
         }
         
-        protected bool HasExtraPerm(Player p, int num) {
-            return p == null || p.Rank >= CommandExtraPerms.MinPerm(name, num);
+        protected bool HasExtraPerm(Player p, string cmd, LevelPermission plRank, int num) {
+            return CommandExtraPerms.Find(cmd, num).UsableBy(plRank);
         }
         
-        protected bool CheckExtraPerm(Player p, int num) {
-            if (HasExtraPerm(p, num)) return true;
+        protected bool HasExtraPerm(Player p, LevelPermission plRank, int num) {
+            return HasExtraPerm(p, name, plRank, num);
+        }
+        
+        protected bool CheckExtraPerm(Player p, CommandData data, int num) {
+            if (HasExtraPerm(p, data.Rank, num)) return true;
             
             CommandExtraPerms perms = CommandExtraPerms.Find(name, num);
-            Formatter.MessageNeedMinPerm(p, perms.Description, perms.MinRank);
+            perms.MessageCannotUse(p);
             return false;
         }
         
-        protected static void MessageTooHighRank(Player p, string action, bool canAffectOwnRank) {
-            MessageTooHighRank(p, action, p.group, canAffectOwnRank);
+        protected internal static bool CheckRank(Player p, CommandData data, Player target, 
+                                                 string action, bool canAffectOwnRank) {
+            return CheckRank(p, data, target.name, target.Rank, action, canAffectOwnRank);
         }
         
-        protected static void MessageTooHighRank(Player p, string action, Group grp, bool canAffectGroup) {
-            if (canAffectGroup)
-                Player.Message(p, "Can only {0} players ranked {1} %Sor below", action, grp.ColoredName);
-            else
-                Player.Message(p, "Can only {0} players ranked below {1}", action, grp.ColoredName);
+        protected internal static bool CheckRank(Player p, CommandData data, 
+                                                 string plName, LevelPermission plRank,
+                                                 string action, bool canAffectOwnRank) {
+            if (p.name.CaselessEq(plName)) return true;
+            if (p.IsConsole || plRank < data.Rank) return true;
+            if (canAffectOwnRank && plRank == data.Rank) return true;
+            
+            if (canAffectOwnRank) {
+                p.Message("Can only {0} players ranked {1} &Sor below", action, p.group.ColoredName);
+            } else {
+                p.Message("Can only {0} players ranked below {1}", action, p.group.ColoredName);
+            }
+            return false;
+        }
+        
+        protected string CheckOwn(Player p, string name, string type) {
+            if (name.CaselessEq("-own")) {
+                if (p.IsSuper) { SuperRequiresArgs(p, type); return null; }
+                return p.name;
+            }
+            return name;
+        }
+        
+        
+        protected static bool IsListModifier(string str) {
+            int ignored;
+            return str.CaselessEq("all") || int.TryParse(str, out ignored);
+        }      
+        
+        protected internal static bool IsCreateCommand(string str) {
+            return str.CaselessEq("create") || str.CaselessEq("add") || str.CaselessEq("new");
+        } 
+        
+        protected internal static bool IsDeleteCommand(string str) {
+            return str.CaselessEq("del") || str.CaselessEq("delete") || str.CaselessEq("remove");
+        }
+        
+        protected internal static bool IsEditCommand(string str) {
+            return str.CaselessEq("edit") || str.CaselessEq("change") || str.CaselessEq("modify")
+                || str.CaselessEq("move") || str.CaselessEq("update");
+        }  
+
+        protected internal static bool IsInfoCommand(string str) {
+            return str.CaselessEq("about") || str.CaselessEq("info") || str.CaselessEq("status")
+                || str.CaselessEq("check");
+        }
+        
+        protected internal static bool IsListCommand(string str) {
+            return str.CaselessEq("list") || str.CaselessEq("view");
         }
     }
     

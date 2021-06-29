@@ -39,41 +39,40 @@ namespace MCGalaxy.Drawing.Ops {
     
     public static class DrawOpPerformer {
         
-        public static Level Setup(DrawOp op, Player p, Vec3S32[] marks) {
-            op.SetMarks(marks);
-            Level lvl = p == null ? null : p.level;
-            op.SetLevel(lvl);
-            op.Player = p;
-            return lvl;
+        static bool CannotBuildIn(Player p, Level lvl) {
+            Zone[] zones = lvl.Zones.Items;
+            for (int i = 0; i < zones.Length; i++) {
+                // player could potentially modify blocks in this particular zone
+                if (zones[i].Access.CheckAllowed(p)) return false;
+            }
+            return !lvl.BuildAccess.CheckDetailed(p);
         }
         
         public static bool Do(DrawOp op, Brush brush, Player p,
                               Vec3S32[] marks, bool checkLimit = true) {
-            Level lvl = Setup(op, p, marks);
+            Level lvl = p.level;
+            op.Setup(p, lvl, marks);
             
-            if (lvl != null && !lvl.Config.DrawingAllowed) {
-                Player.Message(p, "Drawing commands are turned off on this map.");
+            if (lvl != null && !lvl.Config.Drawing && !op.AlwaysUsable) {
+                p.Message("Drawing commands are turned off on this map.");
                 return false;
             }
-            if (lvl != null && !lvl.BuildAccess.CheckDetailed(p)) {
-                Player.Message(p, "Hence you cannot use draw commands on this map.");
-                return false;
-            }
+            if (lvl != null && CannotBuildIn(p, lvl)) return false;
             
             long affected = op.BlocksAffected(lvl, marks);
-            if (p != null && op.AffectedByTransform)
+            if (op.AffectedByTransform)
                 p.Transform.GetBlocksAffected(ref affected);
             if (checkLimit && !op.CanDraw(marks, p, affected)) return false;
             
             if (brush != null && affected != -1) {
                 const string format = "{0}({1}): affecting up to {2} blocks";
-                if (p == null || !p.Ignores.DrawOutput) {
-                    Player.Message(p, format, op.Name, brush.Name, affected);
+                if (!p.Ignores.DrawOutput) {
+                    p.Message(format, op.Name, brush.Name, affected);
                 }
             } else if (affected != -1) {
                 const string format = "{0}: affecting up to {1} blocks";
-                if (p == null || !p.Ignores.DrawOutput) {
-                    Player.Message(p, format, op.Name, affected);
+                if (!p.Ignores.DrawOutput) {
+                    p.Message(format, op.Name, affected);
                 }
             }
             
@@ -81,7 +80,7 @@ namespace MCGalaxy.Drawing.Ops {
             return true;
         }
         
-        internal static void DoQueuedDrawOp(Player p, DrawOp op, Brush brush, Vec3S32[] marks) {
+        static void DoQueuedDrawOp(Player p, DrawOp op, Brush brush, Vec3S32[] marks) {
             PendingDrawOp item = new PendingDrawOp();
             item.Op = op; item.Brush = brush; item.Marks = marks;
 
@@ -103,51 +102,36 @@ namespace MCGalaxy.Drawing.Ops {
                     
                     // Flush any remaining draw ops if the player has left the server.
                     // (so as to not keep alive references)
-                    if (p.disconnected) {
+                    if (p.Socket != null && p.Socket.Disconnected) {
                         p.PendingDrawOps.Clear();
                         return;
                     }
                 }
-                
-                UndoDrawOpEntry entry = new UndoDrawOpEntry();
-                entry.DrawOpName = item.Op.Name;
-                entry.LevelName = item.Op.Level.name;
-                entry.Start = DateTime.UtcNow;
-                // Use same time method as DoBlockchange writing to undo buffer
-                int timeDelta = (int)DateTime.UtcNow.Subtract(Server.StartTime).TotalSeconds;
-                entry.Start = Server.StartTime.AddTicks(timeDelta * TimeSpan.TicksPerSecond);
-                
-                if (item.Brush != null) item.Brush.Configure(item.Op, p);
-                bool needReload = DoDrawOp(item, p);
-                timeDelta = (int)DateTime.UtcNow.Subtract(Server.StartTime).TotalSeconds + 1;
-                entry.End = Server.StartTime.AddTicks(timeDelta * TimeSpan.TicksPerSecond);
-                
-                if (item.Op.Undoable) p.DrawOps.Add(entry);
-                if (p.DrawOps.Count > 200) p.DrawOps.RemoveFirst();
-                
-                if (needReload) DoReload(p, item.Op.Level);
-                item.Op.TotalModified = 0; // reset total modified (as drawop instances are reused in static mode)
+                Execute(p, item.Op, item.Brush, item.Marks);
             }
         }
         
-        static bool DoDrawOp(PendingDrawOp item, Player p) {
-            Level lvl = item.Op.Level;
-            DrawOpOutputter outputter = new DrawOpOutputter(item.Op);
+        internal static void Execute(Player p, DrawOp op, Brush brush, Vec3S32[] marks) {
+            UndoDrawOpEntry entry = new UndoDrawOpEntry();
+            entry.Init(op.Name, op.Level.name);
             
-            if (item.Op.AffectedByTransform) {
-                p.Transform.Perform(item.Marks, p, lvl, item.Op, item.Brush, outputter.Output);
+            if (brush != null) brush.Configure(op, p);
+            DrawOpOutputter outputter = new DrawOpOutputter(op);
+            
+            if (op.AffectedByTransform) {
+                p.Transform.Perform(marks, op, brush, outputter.Output);
             } else {
-                item.Op.Perform(item.Marks, item.Brush, outputter.Output);
+                op.Perform(marks, brush, outputter.Output);
             }
-            return item.Op.TotalModified >= outputter.reloadThreshold;
+            bool needsReload = op.TotalModified >= outputter.reloadThreshold;
+            
+            if (op.Undoable) entry.Finish(p);
+            if (needsReload) DoReload(p, op.Level);
+            op.TotalModified = 0; // reset total modified (as drawop instances are reused in static mode)
         }
 
         static void DoReload(Player p, Level lvl) {
-            Player[] players = PlayerInfo.Online.Items;
-            foreach (Player pl in players) {
-                if (pl.level.name.CaselessEq(lvl.name))
-                    LevelActions.ReloadMap(p, pl, true);
-            }
+            LevelActions.ReloadAll(lvl, p, true);
             Server.DoGC();
         }
 
@@ -156,7 +140,7 @@ namespace MCGalaxy.Drawing.Ops {
             readonly DrawOp op;
             internal readonly int reloadThreshold;
             
-            public DrawOpOutputter(DrawOp op) { 
+            public DrawOpOutputter(DrawOp op) {
                 this.op = op;
                 reloadThreshold = op.Level.ReloadThreshold;
             }
@@ -176,11 +160,20 @@ namespace MCGalaxy.Drawing.Ops {
                 if (old == Block.custom_block) old = (BlockID)(Block.Extended | lvl.FastGetExtTile(b.X, b.Y, b.Z));
                 #endif
                 
-                if (old == Block.Invalid) return;                
-                // Check to make sure the block is actually different and that we can change it
-                if (old == b.Block || !lvl.CheckAffectPermissions(p, b.X, b.Y, b.Z, old, b.Block)) return;
+                // Check to make sure the block is actually different and that can be used
+                if (old == b.Block || !p.group.Blocks[old] || !p.group.Blocks[b.Block]) return;
                 
-                // Set the block (inlined)              
+                // Check if player can affect block at coords in world
+                AccessController denier = lvl.CanAffect(p, b.X, b.Y, b.Z);
+                if (denier != null) {
+                    if (p.lastAccessStatus < DateTime.UtcNow) {
+                        denier.CheckDetailed(p);
+                        p.lastAccessStatus = DateTime.UtcNow.AddSeconds(2);
+                    }
+                    return;
+                }
+                
+                // Set the block (inlined)
                 lvl.Changed = true;
                 if (b.Block >= Block.Extended) {
                     #if TEN_BIT_BLOCKS
@@ -196,21 +189,19 @@ namespace MCGalaxy.Drawing.Ops {
                     }
                 }
                 
-                if (p != null) {
-                    lvl.BlockDB.Cache.Add(p, b.X, b.Y, b.Z, op.Flags, old, b.Block);
-                    p.SessionModified++; p.TotalModified++; p.TotalDrawn++; // increment block stats inline
-                }
+                lvl.BlockDB.Cache.Add(p, b.X, b.Y, b.Z, op.Flags, old, b.Block);
+                p.SessionModified++; p.TotalModified++; p.TotalDrawn++; // increment block stats inline
                 
                 // Potentially buffer the block change
                 if (op.TotalModified == reloadThreshold) {
-                    if (p == null || !p.Ignores.DrawOutput) {
-                        Player.Message(p, "Changed over {0} blocks, preparing to reload map..", reloadThreshold);
+                    if (!p.Ignores.DrawOutput) {
+                        p.Message("Changed over {0} blocks, preparing to reload map..", reloadThreshold);
                     }
-
-                    lock (lvl.queueLock)
-                        lvl.blockqueue.Clear();
+                    lvl.blockqueue.ClearAll();
                 } else if (op.TotalModified < reloadThreshold) {
-                    if (!Block.VisuallyEquals(old, b.Block)) BlockQueue.Add(p, index, b.Block);
+                    if (!Block.VisuallyEquals(old, b.Block)) {
+                        lvl.blockqueue.Add(p, index, b.Block);
+                    }
 
                     if (lvl.physics > 0) {
                         if (old == Block.Sponge && b.Block != Block.Sponge)
@@ -224,7 +215,7 @@ namespace MCGalaxy.Drawing.Ops {
                 op.TotalModified++;
                 
                 
-                // Attempt to prevent the BlockDB from growing too large (> 1,000,000 entries)
+                // Attempt to prevent BlockDB in-memory cache from growing too large (> 1,000,000 entries)
                 int count = lvl.BlockDB.Cache.Count;
                 if (count == 0 || (count % 1000000) != 0) return;
                 
@@ -236,7 +227,7 @@ namespace MCGalaxy.Drawing.Ops {
                 }
                 
                 using (IDisposable wLock = lvl.BlockDB.Locker.AccquireWrite(100)) {
-                    if (wLock != null) lvl.BlockDB.WriteEntries();
+                    if (wLock != null) lvl.BlockDB.FlushCache();
                 }
                 
                 if (!hasReadLock) return;

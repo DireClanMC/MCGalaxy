@@ -16,45 +16,42 @@
     permissions and limitations under the Licenses.
  */
 using System;
-using System.Text.RegularExpressions;
+using MCGalaxy.DB;
 using MCGalaxy.SQL;
 
 namespace MCGalaxy.Commands.Chatting {
-    public sealed class CmdSend : Command {
+    public sealed class CmdSend : Command2 {
         public override string name { get { return "Send"; } }
         public override string type { get { return CommandTypes.Chat; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Builder; } }
         public override bool UseableWhenFrozen { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             string[] parts = message.SplitSpaces(2);
-            if (message.Length == 0 || parts.Length == 1) { Help(p); return; }
-            if (!MessageCmd.CanSpeak(p, name)) return;
+            if (parts.Length <= 1) { Help(p); return; }
+            if (!MessageCmd.CanSpeak(p, "Send")) return;
 
-            string receiverName = PlayerInfo.FindMatchesPreferOnline(p, parts[0]);
-            if (receiverName == null) return;
-            string senderName = p == null ? "(console)" : p.name;
-            string senderNick = p == null ? "(console)" : p.ColoredName;
-
+            string name = PlayerDB.MatchNames(p, parts[0]);
+            if (name == null) return;
             message = parts[1];
-            //DB
+            
             if (message.Length >= 256 && Database.Backend.EnforcesTextLength) {
-                Player.Message(p, "Message was too long. It has been trimmed to:");
-                Player.Message(p, message.Substring(0, 255));
-                message = message.Substring(0, 255);
+            	message = message.Substring(0, 255);
+                p.Message("&WMessage was too long. It has been trimmed to:");
+                p.Message(message);
             }
             
-            Database.Backend.CreateTable("Inbox" + receiverName, createInbox);
-            Database.Backend.AddRow("Inbox" + receiverName, "PlayerFrom, TimeSent, Contents",
-                                    senderName, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), message);
+            Database.CreateTable("Inbox" + name, createInbox);
+            Database.AddRow("Inbox" + name, "PlayerFrom, TimeSent, Contents",
+                            p.name, DateTime.Now.ToString(Database.DateFormat), message);
+            p.CheckForMessageSpam();
 
-            Player receiver = PlayerInfo.FindExact(receiverName);
-            Player.Message(p, "Message sent to {0}%S.", 
-                           PlayerInfo.GetColoredName(p, receiverName));
-            if (receiver == null) return;
+            Player target = PlayerInfo.FindExact(name);
+            p.Message("Message sent to {0}&S.", p.FormatNick(name));
+            if (target == null) return;
             
-            if (Chat.NotIgnoring(receiver, p)) {
-                Player.Message(receiver, "Message recieved from {0}%S. Check %T/inbox", senderNick);
+            if (!Chat.Ignoring(target, p)) {
+                target.Message("Message received from {0}&S. Check &T/Inbox", target.FormatNick(p));
             }
         }
         
@@ -65,8 +62,8 @@ namespace MCGalaxy.Commands.Chatting {
         };
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Send [name] [message]");
-            Player.Message(p, "%HSends [message] to [name], which can be read with %T/inbox");
+            p.Message("&T/Send [name] [message]");
+            p.Message("&HSends [message] to [name], which can be read with &T/Inbox");
         }
     }
 }

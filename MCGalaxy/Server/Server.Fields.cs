@@ -17,8 +17,6 @@
  */
 using System;
 using System.Collections.Generic;
-using System.Threading;
-using MCGalaxy.Games;
 using MCGalaxy.Network;
 using MCGalaxy.Tasks;
 
@@ -31,11 +29,8 @@ namespace MCGalaxy {
         public delegate void VoidHandler();
         
         public static event MessageEventHandler OnURLChange;
-        public static event VoidHandler OnPlayerListChange;
         public static event VoidHandler OnSettingsUpdate;
-        
-        public static IRCBot IRC;
-        public static Thread locationChecker;
+        public static ServerConfig Config = new ServerConfig();
         public static DateTime StartTime;
         
         public static PlayerExtList AutoloadMaps;
@@ -43,59 +38,45 @@ namespace MCGalaxy {
         public static PlayerMetaList Notes = new PlayerMetaList("text/notes.txt");
         
         /// <summary> *** DO NOT USE THIS! *** Use VersionString, as this field is a constant and is inlined if used. </summary>
-        public const string InternalVersion = "1.9.0.4";
-        public static Version Version { get { return new Version(InternalVersion); } }
-        public static string VersionString { get { return InternalVersion; } }
+        public const string InternalVersion = "1.9.3.2";
+        public static string Version { get { return InternalVersion; } }
         
         public static string SoftwareName = "MCGalaxy";
-        public static string SoftwareNameVersioned { get { return SoftwareName + " " + VersionString; } }
+        static string fullName;
+        public static string SoftwareNameVersioned {
+            // By default, if SoftwareName gets externally changed, that is reflected in SoftwareNameVersioned too
+            get { return fullName ?? SoftwareName + " " + Version; }
+            set { fullName = value; }
+        }
 
         // URL hash for connecting to the server
         public static string Hash = String.Empty, URL = String.Empty;
-        public static INetworkListen Listener;
+        public static INetListen Listener;
 
         //Other
-        public static bool ServerSetupFinished = false;
-        public static CTFGame ctf;
+        public static bool SetupFinished, CLIMode;
         
-        public static PlayerList bannedIP, whiteList, ircControllers, invalidIds;
+        public static PlayerList bannedIP, whiteList, invalidIds;
         public static PlayerList ignored, hidden, agreed, vip, noEmotes, lockdown;
         public static PlayerExtList models, skins, reach, rotations, modelScales;
         public static PlayerExtList frozen, muted, tempBans, tempRanks;
         
-        public static readonly List<string> Devs = new List<string>(), Mods = new List<string>();
-        public static readonly List<string> Opstats = new List<string>(
-            new string[] { "ban", "tempban", "xban", "banip", "kick", "warn", "mute", "freeze", "setrank" }
-        );
+        public static readonly List<string> Devs = new List<string>() { "Hetal", "venom983", "UclCommander" };
+        public static readonly List<string> Opstats = new List<string>() { "ban", "tempban", "xban", "banip", "kick", "warn", "mute", "freeze", "setrank" };
 
         public static Level mainLevel;
         [Obsolete("Use LevelInfo.Loaded.Items")]
         public static List<Level> levels;
 
-        public static List<string> reviewlist = new List<string>();
-        public static List<string> messages = new List<string>();
-        [Obsolete("Use %S or ServerConfig.DefaultColor")]
-        public static string DefaultColor;
-        [Obsolete("Use ServerConfig.Currency")]
-        public static string moneys;
-        public static string IP;
+        public static PlayerList reviewlist = new PlayerList();
+        static string[] announcements = new string[0];
         public static string RestartPath;
-        
-        //Global VoteKick In Progress Flag
-        public static bool voteKickInProgress = false;
-        public static int voteKickVotesNeeded = 0;
 
         // Extra storage for custom commands
         public static ExtrasCollection Extras = new ExtrasCollection();
-
-        // Games
-        public static ZSGame zombie;
         
-        public static int YesVotes = 0, NoVotes = 0;
-        public static bool voting = false, votingforlevel = false;
-
-        public static LavaSurvival lava;
-        public static CountdownGame Countdown;
+        public static int YesVotes, NoVotes;
+        public static bool voting;
         
         public static Scheduler MainScheduler = new Scheduler("MCG_MainScheduler");
         public static Scheduler Background = new Scheduler("MCG_BackgroundScheduler");
@@ -104,9 +85,7 @@ namespace MCGalaxy {
 
         public const byte version = 7;
         public static string salt = "";
-        public static bool chatmod = false, flipHead = false;
-
-        public static bool shuttingDown = false;
-        public static bool mono { get { return (Type.GetType("Mono.Runtime") != null); } }
+        public static bool chatmod, flipHead;
+        public static bool shuttingDown;
     }
 }

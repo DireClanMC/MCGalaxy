@@ -16,6 +16,7 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using System.IO;
 using MCGalaxy.Drawing;
 using MCGalaxy.Drawing.Ops;
 using MCGalaxy.DB;
@@ -24,27 +25,28 @@ using MCGalaxy.Maths;
 using BlockID = System.UInt16;
 
 namespace MCGalaxy.Commands.Moderation {    
-    public sealed class CmdRestoreSelection : Command {        
+    public sealed class CmdRestoreSelection : Command2 {        
         public override string name { get { return "RS"; } }
         public override string shortcut { get { return "RestoreSelection"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
-            if (!Formatter.ValidName(p, name, "level")) return;
+            if (!Formatter.ValidMapName(p, message)) return;
             
-            if (LevelInfo.ExistsBackup(p.level.name, message)) {
-                Player.Message(p, "Select two corners for restore.");
-                p.MakeSelection(2, "Selecting region for %SRestore", message, DoRestore);
+            string path = LevelInfo.BackupFilePath(p.level.name, message);
+            if (File.Exists(path)) {
+                p.Message("Select two corners for restore.");
+                p.MakeSelection(2, "Selecting region for &SRestore", path, DoRestore);
             } else {
-                Player.Message(p, "Backup " + message + " does not exist.");
+                p.Message("Backup " + message + " does not exist.");
             }
         }
         
         bool DoRestore(Player p, Vec3S32[] marks, object state, BlockID block) {
-            string path = LevelInfo.BackupFilePath(p.level.name, (string)state);
+            string path = (string)state;
             Level source = IMapImporter.Formats[0].Read(path, "templevel", false);
             
             RestoreSelectionDrawOp op = new RestoreSelectionDrawOp();
@@ -57,8 +59,8 @@ namespace MCGalaxy.Commands.Moderation {
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/RestoreSelection [backup name]");
-            Player.Message(p, "%HRestores a previous backup of the current selection");
+            p.Message("&T/RestoreSelection [backup name]");
+            p.Message("&HRestores a previous backup of the current selection");
         }
     }
 }

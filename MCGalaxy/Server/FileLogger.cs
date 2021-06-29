@@ -58,6 +58,7 @@ namespace MCGalaxy {
         
         static void LogMessage(LogType type, string message) {
             if (String.IsNullOrEmpty(message)) return;
+            if (!Server.Config.FileLogging[(int)type]) return;
             
             if (type == LogType.Error) {
                 StringBuilder sb = new StringBuilder();
@@ -84,10 +85,16 @@ namespace MCGalaxy {
                 if (msgCache.Count > 0) FlushCache(msgPath, msgCache);
             }
         }
+        
+        const int MAX_LOG_SIZE = 1024 * 1024 * 1024; // 1 GB
 
         static void FlushCache(string path, Queue<string> cache) {
             //TODO: not happy about constantly opening and closing a stream like this but I suppose its ok (Pidgeon)
             using (StreamWriter w = new StreamWriter(path, true)) {
+            
+                // Failsafe in case something has gone catastrophically wrong
+                if (w.BaseStream.Length > MAX_LOG_SIZE) { cache.Clear(); return; }
+                
                 while (cache.Count > 0) {
                     string item = cache.Dequeue();
                     item = Colors.Strip(item);

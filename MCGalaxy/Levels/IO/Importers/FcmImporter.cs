@@ -25,15 +25,16 @@ namespace MCGalaxy.Levels.IO {
     public sealed class FcmImporter : IMapImporter {
 
         public override string Extension { get { return ".fcm"; } }
+        public override string Description { get { return "fCraft/800Craft/ProCraft map"; } }
         
         public override Vec3U16 ReadDimensions(Stream src) {
             BinaryReader reader = new BinaryReader(src);
-            return ReadDimensions(reader);
+            return ReadHeader(reader);
         }
         
         public override Level Read(Stream src, string name, bool metadata) {
             BinaryReader reader = new BinaryReader(src);
-            Vec3U16 dims = ReadDimensions(reader);
+            Vec3U16 dims = ReadHeader(reader);
             Level lvl = new Level(name, dims.X, dims.Y, dims.Z);
 
             lvl.spawnx = (ushort)(reader.ReadInt32() / 32);
@@ -42,8 +43,8 @@ namespace MCGalaxy.Levels.IO {
             lvl.rotx = reader.ReadByte();
             lvl.roty = reader.ReadByte();
 
-            reader.ReadUInt32(); // date modified
-            reader.ReadUInt32(); // date created
+            reader.ReadUInt32();  // date modified
+            reader.ReadUInt32();  // date created
             reader.ReadBytes(16); // uuid
             reader.ReadBytes(26); // layer index
             int metaSize = reader.ReadInt32();            
@@ -59,17 +60,16 @@ namespace MCGalaxy.Levels.IO {
                     try {
                         ParseZone(lvl, value);
                     } catch (Exception ex) {
-                        Logger.Log(LogType.Warning, "Error importing zone '" + key + "' from fCraft map");
-                        Logger.LogError(ex);
+                        Logger.LogError("Error importing zone '" + key + "' from fCraft map", ex);
                     }
                 }
-                int read = ds.Read(lvl.blocks, 0, lvl.blocks.Length);
+                ReadFully(ds, lvl.blocks, lvl.blocks.Length);
             }
             ConvertCustom(lvl);
             return lvl;
         }
         
-        static Vec3U16 ReadDimensions(BinaryReader reader) {
+        static Vec3U16 ReadHeader(BinaryReader reader) {
             if (reader.ReadInt32() != 0x0FC2AF40 || reader.ReadByte() != 13) {
                 throw new InvalidDataException( "Unexpected constant in .fcm file" );
             }
@@ -82,7 +82,7 @@ namespace MCGalaxy.Levels.IO {
         }
         
         static string ReadString(BinaryReader reader) {
-            int length = reader.ReadUInt16();
+            int length  = reader.ReadUInt16();
             byte[] data = reader.ReadBytes(length);
             return Encoding.ASCII.GetString(data);
         }
@@ -91,7 +91,7 @@ namespace MCGalaxy.Levels.IO {
         static void ParseZone(Level lvl, string raw) {
             string[] parts = raw.Split(comma);
             string[] header = parts[0].SplitSpaces();
-            Zone zone = new Zone(lvl);
+            Zone zone = new Zone();
             
             // fCraft uses Z for height
             zone.Config.Name = header[0];

@@ -23,26 +23,25 @@ namespace MCGalaxy.Eco {
         
         public TitleItem() {
             Aliases = new string[] { "titles", "title" };
-            AllowsNoArgs = true;
         }
         
         public override string Name { get { return "Title"; } }
         
-        protected override void DoPurchase(Player p, string message, string[] args) {
-            if (args.Length == 1) {
-                Command.all.FindByName("Title").Use(p, "-own");
-                Player.Message(p, "%aYour title was removed for free."); return;
+        protected internal override void OnPurchase(Player p, string title) {
+            if (title.Length == 0) {
+                UseCommand(p, "Title", "-own");
+                p.Message("&aYour title was removed for free."); return;
             }
             
-            string title = message.SplitSpaces(2)[1]; // keep spaces this way
+        	if (!CheckPrice(p)) return;
             if (title == p.title) {
-                Player.Message(p, "%cYou already have that title."); return;
+                p.Message("&WYou already have that title."); return;
             }
             if (title.Length >= 20) {
-                Player.Message(p, "%cTitles must be under 20 characters."); return;
+                p.Message("&WTitles must be under 20 characters."); return;
             }
             
-            Command.all.FindByName("Title").Use(p, "-own " + title);
+            UseCommand(p, "Title", "-own " + title);
             Economy.MakePurchase(p, Price, "%3Title: %f" + title);
         }
     }
@@ -50,27 +49,26 @@ namespace MCGalaxy.Eco {
     public sealed class NickItem : SimpleItem {
         
         public NickItem() {
-            Aliases = new string[] { "nickname", "nick", "nicks", "name", "names" };
-            AllowsNoArgs = true;
+            Aliases = new string[] { "nickname", "nick", "name" };
         }
         
         public override string Name { get { return "Nickname"; } }
         
-        protected override void DoPurchase(Player p, string message, string[] args) {
-            if (args.Length == 1) {
-                Command.all.FindByName("Nick").Use(p, "-own");
-                Player.Message(p, "%aYour nickname was removed for free."); return;
+        protected internal override void OnPurchase(Player p, string nick) {
+            if (nick.Length == 0) {
+                UseCommand(p, "Nick", "-own");
+                p.Message("&aYour nickname was removed for free."); return;
             }
             
-            string nick = message.SplitSpaces(2)[1]; // keep spaces this way
+        	if (!CheckPrice(p)) return;
             if (nick == p.DisplayName) {
-                Player.Message(p, "%cYou already have that nickname."); return;
+                p.Message("&WYou already have that nickname."); return;
             }
             if (nick.Length >= 30) {
-                Player.Message(p, "%cNicknames must be under 30 characters."); return;
+                p.Message("&WNicknames must be under 30 characters."); return;
             }
             
-            Command.all.FindByName("Nick").Use(p, "-own " + nick);
+            UseCommand(p, "Nick", "-own " + nick);
             Economy.MakePurchase(p, Price, "%3Nickname: %f" + nick);
         }
     }
@@ -78,21 +76,24 @@ namespace MCGalaxy.Eco {
     public sealed class TitleColorItem : SimpleItem {
         
         public TitleColorItem() {
-            Aliases = new string[] { "tcolor", "tcolors", "titlecolor", "titlecolors", "tc" };
+            Aliases = new string[] { "tcolor", "tcolour", "titlecolor", "titlecolour" };
         }
         
         public override string Name { get { return "TitleColor"; } }
         
-        protected override void DoPurchase(Player p, string message, string[] args) {            
-            string color = Matcher.FindColor(p, args[1]);
+        protected internal override void OnPurchase(Player p, string args) {
+            if (args.Length == 0) { OnStoreCommand(p); return; }
+            string color = Matcher.FindColor(p, args);
+            
             if (color == null) return;
             string colName = Colors.Name(color);
+            if (!CheckPrice(p)) return;
             
             if (color == p.titlecolor) {
-                Player.Message(p, "%cYou already have a " + color + colName + "%c titlecolor"); return;
+                p.Message("&WYour title color is already " + color + colName); return;
             }
             
-            Command.all.FindByName("TColor").Use(p, "-own " + colName);
+            UseCommand(p, "TColor", "-own " + colName);
             Economy.MakePurchase(p, Price, "%3Titlecolor: " + color + colName);
         }
     }
@@ -100,21 +101,24 @@ namespace MCGalaxy.Eco {
     public sealed class ColorItem : SimpleItem {
         
         public ColorItem() {
-            Aliases = new string[] { "colors", "color", "colours", "colour" };
+            Aliases = new string[] { "color", "colour" };
         }
         
         public override string Name { get { return "Color"; } }
 
-        protected override void DoPurchase(Player p, string message, string[] args) {
-            string color = Matcher.FindColor(p, args[1]);
+        protected internal override void OnPurchase(Player p, string args) {
+            if (args.Length == 0) { OnStoreCommand(p); return; }
+            string color = Matcher.FindColor(p, args);
+            
             if (color == null) return;
             string colName = Colors.Name(color);
+            if (!CheckPrice(p)) return;
             
             if (color == p.color) {
-                Player.Message(p, "%cYou already have a " + color + colName + "%c color"); return;
+                p.Message("&WYour color is already " + color + colName); return;
             }
             
-            Command.all.FindByName("Color").Use(p, "-own " + colName);
+            UseCommand(p, "Color", "-own " + colName);
             Economy.MakePurchase(p, Price, "%3Color: " + color + colName);
         }
     }

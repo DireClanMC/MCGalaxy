@@ -19,6 +19,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using MCGalaxy.Events.LevelEvents;
+using MCGalaxy.SQL;
 
 namespace MCGalaxy {
 
@@ -50,36 +51,29 @@ namespace MCGalaxy {
         // TODO: support loading other map files eventually
         public static string[] AllMapFiles() {
             return Directory.GetFiles("levels", "*.lvl");
-        }       
+        }
+        
+        public static string[] AllMapNames() {
+            string[] files = AllMapFiles();
+            for (int i = 0; i < files.Length; i++) {
+                files[i] = Path.GetFileNameWithoutExtension(files[i]);
+            }
+            return files;
+        }
         
         public static bool MapExists(string name) {
             return File.Exists(MapPath(name));
         }
-        
-        public static bool ExistsBackup(string name, string backup) {
-            return File.Exists(BackupFilePath(name, backup));
-        }
-        
-        
-        /// <summary> Relative path of a deleted level's map file </summary>
-        public static string DeletedPath(string name) {
-            return "levels/deleted/" + name + ".lvl";
-        }
-        
+                
         /// <summary> Relative path of a level's map file </summary>
         public static string MapPath(string name) {
             return "levels/" + name.ToLower() + ".lvl";
         }
         
-        /// <summary> Relative path of a level's previous save map file </summary>
-        public static string PrevPath(string name) {
-            return "levels/prev/" + name.ToLower() + ".lvl.prev";
-        }
-        
 
         /// <summary> Relative path of a level's backup folder </summary>
         public static string BackupBasePath(string name) {
-            return ServerConfig.BackupDirectory + "/" + name;
+            return Server.Config.BackupDirectory + "/" + name;
         }
         
         /// <summary> Relative path of a level's backup map directory </summary>
@@ -113,48 +107,69 @@ namespace MCGalaxy {
                
         
         /// <summary> Relative path of a level's property file </summary>
-        public static string PropertiesPath(string name) {
+        public static string PropsPath(string name) {
             return "levels/level properties/" + name + ".properties";
+        }
+        
+        public static LevelConfig GetConfig(string map) {
+            Level lvl; return GetConfig(map, out lvl);
         }
         
         internal static LevelConfig GetConfig(string map, out Level lvl) {
             lvl = FindExact(map);
             if (lvl != null) return lvl.Config;
             
-            string propsPath = PropertiesPath(map);
+            string propsPath = PropsPath(map);
             LevelConfig cfg = new LevelConfig();
-            cfg.Reset(0);
-            LevelConfig.Load(propsPath, cfg); 
+            cfg.Load(propsPath);
             return cfg;
         }
         
-        internal static bool ValidateAction(Player p, string map, string action) {
-            if (p == null) return true;
-            LevelAccessController visit, build;
-            Level lvl = null;
-            LevelConfig cfg = GetConfig(map, out lvl); 
+        public static bool Check(Player p, LevelPermission plRank, string map, string action, out LevelConfig cfg) {
+            Level lvl; cfg = GetConfig(map, out lvl);
+            if (p.IsConsole) return true;
+            if (lvl != null) return Check(p, plRank, lvl, action);
             
-            if (lvl != null) {
-                visit = lvl.VisitAccess;
-                build = lvl.BuildAccess;
-            } else {
-                visit = new LevelAccessController(cfg, map, true);
-                build = new LevelAccessController(cfg, map, false);
+            AccessController visit = new LevelAccessController(cfg, map, true);
+            AccessController build = new LevelAccessController(cfg, map, false);
+            if (!visit.CheckDetailed(p, plRank) || !build.CheckDetailed(p, plRank)) {
+                p.Message("Hence, you cannot {0}.", action); return false;
             }
-            
-            if (!visit.CheckDetailed(p) || !build.CheckDetailed(p)) {
-                Player.Message(p, "Hence, you cannot {0}.", action);
-                return false;
+            return true;
+        }
+        
+        public static bool Check(Player p, LevelPermission plRank, string map, string action) {
+            LevelConfig ignored;
+            return Check(p, plRank, map, action, out ignored);
+        }
+        
+        public static bool Check(Player p, LevelPermission plRank, Level lvl, string action) {
+            if (p.IsConsole) return true;
+            if (!lvl.VisitAccess.CheckDetailed(p, plRank) || !lvl.BuildAccess.CheckDetailed(p, plRank)) {
+                p.Message("Hence, you cannot {0}.", action); return false;
+            }
+            return true;
+        }
+        
+        public static bool ValidName(string map) {
+            foreach (char c in map) {
+                if (!Database.ValidNameChar(c)) return false;
             }
             return true;
         }
         
         public static bool IsRealmOwner(string name, string map) {
-            Level lvl = null;
-            LevelConfig cfg = GetConfig(map, out lvl); 
-            string[] owners = cfg.RealmOwner.Replace(" ", "").Split(',');
-            
-            if (owners.Length > 0 && owners[0].Length > 0) {
+            LevelConfig cfg = GetConfig(map); 
+            return IsRealmOwner(map, cfg, name);
+        }
+        
+        public static bool IsRealmOwner(Level lvl, string name) {
+            return IsRealmOwner(lvl.name, lvl.Config, name);
+        }
+        
+        public static bool IsRealmOwner(string map, LevelConfig cfg, string name) {
+            string[] owners = cfg.RealmOwner.SplitComma();
+            if (owners.Length > 0) {
                 foreach (string owner in owners) {
                     if (owner.CaselessEq(name)) return true;
                 }
@@ -163,7 +178,7 @@ namespace MCGalaxy {
             
             // For backwards compatibility, treat name+XYZ map names as belonging to name+
             // If no + though, don't use because otherwise people can register accounts and claim maps
-            return ServerConfig.ClassicubeAccountPlus && map.CaselessStarts(name);
+            return Server.Config.ClassicubeAccountPlus && map.CaselessStarts(name);
         }
     }
 }

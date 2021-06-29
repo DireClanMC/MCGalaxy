@@ -24,27 +24,27 @@ namespace MCGalaxy.Eco {
         
         public LoginMessageItem() {
             Aliases = new string[] { "login", "loginmsg", "loginmessage" };
-            AllowsNoArgs = true;
         }
         
         public override string Name { get { return "LoginMessage"; } }
         
-        protected override void DoPurchase(Player p, string message, string[] args) {
-            if (args.Length == 1) {
-                Command.all.FindByName("LoginMessage").Use(p, "-own");
-                Player.Message(p, "%aYour login message was removed for free.");
+        protected internal override void OnPurchase(Player p, string msg) {
+            if (msg.Length == 0) {
+                PlayerDB.SetLoginMessage(p.name, "");
+                p.Message("&aYour login message was removed for free.");
                 return;
             }
             
-            string text = message.SplitSpaces(2)[1]; // keep spaces this way
-            if (text == PlayerDB.GetLoginMessage(p)) {
-                Player.Message(p, "%cYou already have that login message."); return;
+        	if (!CheckPrice(p)) return;
+            if (msg == PlayerDB.GetLoginMessage(p)) {
+                p.Message("&WYou already have that login message."); return;
             }
-            if (text.Length > NetUtils.StringSize) {
-                Player.Message(p, "%cLogin message must be 64 characters or less."); return;
+            if (msg.Length > NetUtils.StringSize) {
+                p.Message("&WLogin message must be 64 characters or less."); return;
             }
-            Command.all.FindByName("LoginMessage").Use(p, "-own " + text);
-            Economy.MakePurchase(p, Price, "%3LoginMessage: %f" + text);
+            
+            UseCommand(p, "LoginMessage", "-own " + msg);
+            Economy.MakePurchase(p, Price, "%3LoginMessage: %f" + msg);
         }
     }
     
@@ -52,27 +52,27 @@ namespace MCGalaxy.Eco {
         
         public LogoutMessageItem() {
             Aliases = new string[] { "logout", "logoutmsg", "logoutmessage" };
-            AllowsNoArgs = true;
         }
         
         public override string Name { get { return "LogoutMessage"; } }
 
-        protected override void DoPurchase(Player p, string message, string[] args) {
-            if (args.Length == 1) {
-                Command.all.FindByName("LogoutMessage").Use(p, "-own");
-                Player.Message(p, "%aYour logout message was removed for free.");
+        protected internal override void OnPurchase(Player p, string msg) {
+            if (msg.Length == 0) {
+                PlayerDB.SetLogoutMessage(p.name, "");
+                p.Message("&aYour logout message was removed for free.");
                 return;
+        	}
+            
+        	if (!CheckPrice(p)) return;    
+            if (msg == PlayerDB.GetLogoutMessage(p)) {
+                p.Message("&WYou already have that logout message."); return;
+            }       
+            if (msg.Length > NetUtils.StringSize) {
+                p.Message("&WLogin message must be 64 characters or less."); return;
             }
             
-            string text = message.SplitSpaces(2)[1]; // keep spaces this way         
-            if (text == PlayerDB.GetLogoutMessage(p)) {
-                Player.Message(p, "%cYou already have that logout message."); return;
-            }       
-            if (text.Length > NetUtils.StringSize) {
-                Player.Message(p, "%cLogin message must be 64 characters or less."); return;
-            }            
-            Command.all.FindByName("LogoutMessage").Use(p, "-own " + text);
-            Economy.MakePurchase(p, Price, "%3LogoutMessage: %f" + text);
+            UseCommand(p, "LogoutMessage", "-own " + msg);
+            Economy.MakePurchase(p, Price, "%3LogoutMessage: %f" + msg);
         }
     }
 }

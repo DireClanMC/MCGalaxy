@@ -15,7 +15,6 @@
     or implied. See the Licenses for the specific language governing
     permissions and limitations under the Licenses.
  */
-using System.IO;
 using MCGalaxy.DB;
 
 namespace MCGalaxy.Commands.Chatting {
@@ -25,30 +24,26 @@ namespace MCGalaxy.Commands.Chatting {
         public override string type { get { return CommandTypes.Chat; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Operator, "+ can change the logout message of others") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can change the logout message of others") }; }
         }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (!MessageCmd.CanSpeak(p, name)) return;
-            UsePlayer(p, message, "logout message");
+            UsePlayer(p, data, message, "logout message");
         }
         
-        protected override void SetPlayerData(Player p, Player who, string logoutMsg) {
-            if (logoutMsg.Length == 0) {
-                string path = PlayerDB.LogoutPath(who.name);
-                if (File.Exists(path)) File.Delete(path);
-                Player.Message(p, "Logout message of {0} %Swas removed.",
-                               who.ColoredName);
-            } else {
-                PlayerDB.SetLogoutMessage(who.name, logoutMsg);
-                Player.Message(p, "Logout message of {0} %Swas changed to: {1}",
-                               who.ColoredName, logoutMsg);
+        protected override void SetPlayerData(Player p, string target, string msg) {
+            PlayerDB.SetLogoutMessage(target, msg);
+            if (msg.Length == 0) {
+                p.Message("Logout message of {0} &Swas removed.", p.FormatNick(target));
+            } else {                
+                p.Message("Logout message of {0} &Swas changed to: {1}", p.FormatNick(target), msg);
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/LogoutMessage [player] [message]");
-            Player.Message(p, "%HSets the logout message shown for that player.");
+            p.Message("&T/LogoutMessage [player] [message]");
+            p.Message("&HSets the logout message shown for that player.");
         }
     }
 }

@@ -19,14 +19,15 @@ using System;
 using MCGalaxy.Tasks;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdPause : Command {
+    public sealed class CmdPause : Command2 {
         public override string name { get { return "Pause"; } }
         public override string type { get { return CommandTypes.World; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             int seconds = 30;
-            Level lvl = p != null ? p.level : Server.mainLevel;
+            Level lvl = p.IsSuper ? Server.mainLevel : p.level;
+            
             if (message.Length > 0) {
                 string[] parts = message.SplitSpaces();
                 if (parts.Length == 1) {
@@ -43,17 +44,16 @@ namespace MCGalaxy.Commands.World {
                 }
             }
             
-            if (!LevelInfo.ValidateAction(p, lvl.name, "pause physics on this level")) return;
-            bool enabled = lvl.physPause;
-            lvl.PhysicsEnabled = enabled;
-            lvl.physPause = !lvl.physPause;
+            if (!LevelInfo.Check(p, data.Rank, lvl, "pause physics on this level")) return;
+            bool enabled = lvl.PhysicsPaused;
+            lvl.PhysicsPaused = !lvl.PhysicsPaused;
             
             if (enabled) {
-                Chat.MessageGlobal("Physics on {0} %Swere re-enabled.", lvl.ColoredName);
+                Chat.MessageGlobal("Physics on {0} &Swere re-enabled.", lvl.ColoredName);
             } else {
                 Server.MainScheduler.QueueOnce(PauseCallback, lvl.name,
                                                TimeSpan.FromSeconds(seconds));
-                Chat.MessageGlobal("Physics on {0} %Swere temporarily disabled.", lvl.ColoredName);
+                Chat.MessageGlobal("Physics on {0} &Swere temporarily disabled.", lvl.ColoredName);
             }
         }
         
@@ -62,15 +62,15 @@ namespace MCGalaxy.Commands.World {
             Level lvl = LevelInfo.FindExact(lvlName);
             if (lvl == null) return;
             
-            lvl.PhysicsEnabled = true;
-            Chat.MessageGlobal("Physics on {0} %Swere re-enabled.", lvl.ColoredName);
+            lvl.PhysicsPaused = false;
+            Chat.MessageGlobal("Physics on {0} &Swere re-enabled.", lvl.ColoredName);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Pause [map] [seconds]");
-            Player.Message(p, "%HPauses physics on the given map for the specified number of seconds.");
-            Player.Message(p, "%H  If [map] is not given, pauses physics on the current map.");
-            Player.Message(p, "%H  If [seconds] is not given, pauses physics for 30 seconds.");
+            p.Message("&T/Pause [level] [seconds]");
+            p.Message("&HPauses physics on the given level for the given number of seconds.");
+            p.Message("&H  If [level] is not given, pauses physics on the current level.");
+            p.Message("&H  If [seconds] is not given, pauses physics for 30 seconds.");
         }
     }
 }

@@ -14,6 +14,7 @@ permissions and limitations under the Licenses.
 */
 using System;
 using System.Collections.Generic;
+using System.Net;
 using MCGalaxy.Drawing;
 using MCGalaxy.Drawing.Transforms;
 using MCGalaxy.Events.PlayerEvents;
@@ -26,22 +27,8 @@ using BlockID = System.UInt16;
 
 namespace MCGalaxy {
     
-    public enum VoteKickChoice { NotYetVoted, Yes, No }
-
     public partial class Player : IDisposable {
 
-        internal class PendingItem {
-            public string Name;
-            public DateTime Connected;
-            
-            public PendingItem(string name) {
-                Name = name;
-                Connected = DateTime.UtcNow;
-            }
-        }
-        internal static List<PendingItem> pendingNames = new List<PendingItem>();
-        internal static object pendingLock = new object();
-        public static List<Player> connections = new List<Player>(ServerConfig.MaxPlayers);
         public PlayerIgnores Ignores = new PlayerIgnores();
         public static string lastMSG = "";
         public Zone ZoneIn;
@@ -52,8 +39,7 @@ namespace MCGalaxy {
         internal string currentTpa = "";
 
         public string truename;
-        internal bool nonPlayerClient = false;
-        public INetworkSocket Socket;
+        public INetSocket Socket;
         public PingList Ping = new PingList();
         public BlockID MaxRawBlock = Block.OriginalMaxBlock;
         
@@ -61,22 +47,23 @@ namespace MCGalaxy {
         public bool IsAfk, AutoAfk;
         public bool cmdTimer;
         public bool UsingWom;
-        public string BrushName = "normal", DefaultBrushArgs = "";
+        public string BrushName = "Normal", DefaultBrushArgs = "";
         public Transform Transform = NoTransform.Instance;
         public string afkMessage;
-        public bool disconnected, ClickToMark = true;
+        public bool ClickToMark = true;
 
         public string name;
         public string DisplayName;
         public int warn = 0;
         public byte id;
+        public IPAddress IP;
         public string ip;
         public string color;
         public Group group;
-        public LevelPermission oHideRank = LevelPermission.Null;
-        public bool otherRankHidden;
+        public LevelPermission hideRank = LevelPermission.Banned;
         public bool hidden;
         public bool painting;
+        public bool checkingBotInfo;
         public bool muted;
         public bool jailed;
         public bool agreed = true;
@@ -89,40 +76,45 @@ namespace MCGalaxy {
         public DateTime NextReviewTime, NextEat, NextTeamInvite;
         public float ReachDistance = 5;
         public bool hackrank;
-        public bool SuperUser;
+              
+        public string SuperName;
+        /// <summary> Whether this player is a 'Super' player (Console, IRC, etc) </summary>
+        public bool IsSuper;
+        /// <summary> Whether this player is the console player instance. </summary>
+        public bool IsConsole { get { return this == Player.Console; } }
         
-        public string FullName { get { return color + prefix + DisplayName; } }
-        
+        public virtual string FullName { get { return color + prefix + DisplayName; } }  
         public string ColoredName { get { return color + DisplayName; } }
+        public string GroupPrefix { get { return group.Prefix.Length == 0 ? "" : "&f" + group.Prefix; } }
 
         public bool deleteMode;
         public bool ignoreGrief;
-        public bool parseEmotes = ServerConfig.ParseEmotes;
+        public bool parseEmotes = Server.Config.ParseEmotes;
         public bool opchat;
         public bool adminchat;
-        public bool onWhitelist;
         public bool whisper;
         public string whisperTo = "";
         string partialMessage = "";
 
         public bool trainGrab;
         public bool onTrain, trainInvincible;
+        int mbRecursion;
 
         public bool frozen;
         public string following = "";
         public string possess = "";
-
         // Only used for possession.
         //Using for anything else can cause unintended effects!
-        public bool canBuild = true;
-        /// <summary> Whether the player has build permission in the current world. </summary>
+        public bool possessed;
+        
+        /// <summary> Whether the player has permission to build in the current level. </summary>
         public bool AllowBuild = true;
 
         public int money;
         public long TotalModified, TotalDrawn, TotalPlaced, TotalDeleted;
         public int SessionModified;
         public int TimesVisited, TimesBeenKicked, TimesDied;
-        public int TotalMessagesSent; // TODO: implement this
+        public int TotalMessagesSent;
         
         DateTime startTime;
         public TimeSpan TotalTime {
@@ -133,15 +125,23 @@ namespace MCGalaxy {
         public DateTime FirstLogin, LastLogin;
 
         public bool staticCommands;
-        public DateTime ZoneSpam;
+        internal DateTime lastAccessStatus;
         public VolatileArray<SchedulerTask> CriticalTasks = new VolatileArray<SchedulerTask>();
 
         public bool aiming;
+        public Weapon weapon;
         public bool isFlying;
 
         public bool joker;
-        public bool adminpen;
+        public bool Unverified, verifiedPass;
         public bool voice;
+        
+        public CommandData DefaultCmdData {
+            get { 
+                CommandData data = default(CommandData);
+                data.Rank = Rank; return data;
+            }
+        }
 
         public bool useCheckpointSpawn;
         public int lastCheckpointIndex = -1;
@@ -157,30 +157,22 @@ namespace MCGalaxy {
         /// <summary> Temp unique ID for this session only. </summary>
         public int SessionID;
 
-        //Countdown
-        public int CountdownFreezeX;
-        public int CountdownFreezeZ;
-
-        //Tnt Wars
-        public bool PlayingTntWars;
-        public int CurrentAmountOfTnt;
-        public int CurrentTntGameNumber; //For keeping track of which game is which
-        public int TntWarsHealth = 2;
-        public int TntWarsKillStreak;
-        public float TntWarsScoreMultiplier = 1f;
-        public int TNTWarsLastKillStreakAnnounced;
-        public bool inTNTwarsMap;
-        public Player HarmedBy = null; //For Assists
-
         public List<CopyState> CopySlots = new List<CopyState>();
         public int CurrentCopySlot;
+        public CopyState CurrentCopy { 
+            get { return CurrentCopySlot >= CopySlots.Count ? null : CopySlots[CurrentCopySlot]; }
+            set {
+                while (CurrentCopySlot >= CopySlots.Count) { CopySlots.Add(null); }
+                CopySlots[CurrentCopySlot] = value;
+            }
+        }
         
         // BlockDefinitions
         internal int gbStep = 0, lbStep = 0;
         internal BlockDefinition gbBlock, lbBlock;
 
         //Undo
-        internal VolatileArray<UndoDrawOpEntry> DrawOps = new VolatileArray<UndoDrawOpEntry>();
+        public VolatileArray<UndoDrawOpEntry> DrawOps = new VolatileArray<UndoDrawOpEntry>();
         internal readonly object pendingDrawOpsLock = new object();
         internal List<PendingDrawOp> PendingDrawOps = new List<PendingDrawOp>();
 
@@ -194,19 +186,20 @@ namespace MCGalaxy {
         //Games
         public DateTime lastDeath = DateTime.UtcNow;
 
-        public BlockID ModeBlock;
-        public BlockID RawHeldBlock = Block.Stone;
+        public BlockID ModeBlock = Block.Invalid;
+        /// <summary> The block ID the client specifies it is currently holding in hand. </summary>
+        /// <remarks> This ignores /bind and /mode. GetHeldBlock() is usually preferred. </remarks>
+        public BlockID ClientHeldBlock = Block.Stone;
         public BlockID[] BlockBindings = new BlockID[Block.ExtendedCount];        
         public string[] CmdBindings = new string[10];
-        public string[] CmdArgsBindings = new string[10];
         
         public string lastCMD = "";
         public DateTime lastCmdTime;
         public sbyte c4circuitNumber = -1;
 
-        public Level level = Server.mainLevel;
+        public Level level;
         public bool Loading = true; //True if player is loading a map.
-        internal int UsingGoto = 0, GeneratingMap = 0, LoadingMuseum = 0, UsingDelay = 0;
+        internal int UsingGoto = 0, GeneratingMap = 0, LoadingMuseum = 0;
         public Vec3U16 lastClick = Vec3U16.Zero;
         
         public Position PreTeleportPos;
@@ -216,34 +209,24 @@ namespace MCGalaxy {
         public string summonedMap;
         internal Position tempPos;
 
-        // CmdVoteKick
-        public VoteKickChoice voteKickChoice = VoteKickChoice.NotYetVoted;
-
         // Extra storage for custom commands
         public ExtrasCollection Extras = new ExtrasCollection();
         
         SpamChecker spamChecker;
         internal DateTime cmdUnblocked;
 
-        //Chatrooms
-        public string Chatroom;
-        public List<string> spyChatRooms = new List<string>();
-        public DateTime lastchatroomglobal;
-
         public WarpList Waypoints = new WarpList();
         public DateTime LastPatrol;
         public LevelPermission Rank { get { return group.Permission; } }
 
+        /// <summary> Whether player has completed login process and been sent initial map. </summary>
         public bool loggedIn;
         public bool verifiedName;
         bool gotSQLData;
         
-        /// <summary> Returns whether the given player is console or IRC. </summary>
-        public static bool IsSuper(Player p) { return p == null || p.SuperUser; }
         
-        
-        public bool cancelcommand, cancelchat, cancelmove, cancelBlock, cancelmysql;
-        public bool cancelmessage, cancellogin, cancelconnecting;        
+        public bool cancelcommand, cancelchat, cancelmove;
+        public bool cancellogin, cancelconnecting, cancelDeath;     
       
         /// <summary> Called when a player removes or places a block.
         /// NOTE: Currently this prevents the OnBlockChange event from being called. </summary>
@@ -257,7 +240,7 @@ namespace MCGalaxy {
         public delegate bool SelectionHandler(Player p, Vec3S32[] marks, object state, BlockID block);
         
         /// <summary> Called when the player has provided a mark for a selection. </summary>
-        /// <remarks> i is the index of the mark, so the 'first' mark has i of 0. </remarks>
+        /// <remarks> i is the index of the mark, so the 'first' mark has 0 for i. </remarks>
         public delegate void SelectionMarkHandler(Player p, Vec3S32[] marks, int i, object state, BlockID block);
     }
 }

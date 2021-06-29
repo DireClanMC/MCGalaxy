@@ -23,16 +23,17 @@ using MCGalaxy.Tasks;
 
 namespace MCGalaxy.Commands.Misc {
     
-    public sealed class CmdHackRank : Command {
+    public sealed class CmdHackRank : Command2 {
         public override string name { get { return "HackRank"; } }
         public override string type { get { return CommandTypes.Other; } }
+        public override bool MessageBlockRestricted { get { return true; } }
         public override bool SuperUseable { get { return false; } }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { Help(p); return; }
             
             if (p.hackrank) {
-                Player.Message(p, Colors.red + "You have already hacked a rank!"); return;
+                p.Message("&WYou have already hacked a rank!"); return;
             }
             
             Group grp = Matcher.FindRanks(p, message);
@@ -47,12 +48,12 @@ namespace MCGalaxy.Commands.Misc {
         }
 
         void DoKick(Player p, Group newRank) {
-            if (!ServerConfig.HackrankKicks) return;
+            if (!Server.Config.HackrankKicks) return;
             HackRankArgs args = new HackRankArgs();
             args.name = p.name; args.newRank = newRank;
             
-            TimeSpan delay = TimeSpan.FromSeconds(ServerConfig.HackrankKickDelay);
-            Server.MainScheduler.QueueOnce(HackRankCallback, args, delay);
+            Server.MainScheduler.QueueOnce(HackRankCallback, args, 
+                                           Server.Config.HackrankKickDelay);
         }
         
         void HackRankCallback(SchedulerTask task) {
@@ -61,14 +62,14 @@ namespace MCGalaxy.Commands.Misc {
             if (who == null) return;
 
             string msg = "for hacking the rank " + args.newRank.ColoredName;
-            who.Leave("kicked (" + msg + "%S)", "Kicked " + msg);
+            who.Leave("kicked (" + msg + "&S)", "Kicked " + msg);
         }
         
         class HackRankArgs { public string name; public Group newRank; }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/HackRank [rank] %H- Hacks a rank");
-            Player.Message(p, "%HTo see available ranks, type %T/ViewRanks");
+            p.Message("&T/HackRank [rank] &H- Hacks a rank");
+            p.Message("&HTo see available ranks, type &T/ViewRanks");
         }
     }
 }

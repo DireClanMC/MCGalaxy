@@ -16,35 +16,34 @@
     permissions and limitations under the Licenses.
 */
 namespace MCGalaxy.Commands.Scripting {
-    public sealed class CmdCmdUnload : Command {
+    public sealed class CmdCmdUnload : Command2 {
         public override string name { get { return "CmdUnload"; } }
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Nobody; } }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
-            if (message.Length == 0) { Help(p); return; }
-            string cmdName = message.SplitSpaces()[0];
+        public override void Use(Player p, string cmdName, CommandData data) {
+            if (cmdName.Length == 0) { Help(p); return; }
             
-            Command cmd = Command.all.Find(cmdName);
+            string cmdArgs = "";
+            Command.Search(ref cmdName, ref cmdArgs);
+            Command cmd = Command.Find(cmdName);
+            
             if (cmd == null) {
-                Player.Message(p, "\"{0}\" is not a valid or loaded command.", cmdName); return;
+                p.Message("\"{0}\" is not a valid or loaded command.", cmdName); return;
             }
             
-            if (Command.core.Contains(cmd)) {
-                Player.Message(p, "/{0} is a core command, you cannot unload it.", cmdName); return;
+            if (Command.IsCore(cmd)) {
+                p.Message("/{0} is a core command, you cannot unload it.", cmdName); return;
             }
-            
-            Command.all.Remove(cmd);
-            foreach (Group grp in Group.GroupList) {
-               grp.Commands.Remove(cmd);
-            }
-            Player.Message(p, "Command was successfully unloaded.");
+   
+            Command.Unregister(cmd);
+            p.Message("Command was successfully unloaded.");
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/CmdUnload [command]");
-            Player.Message(p, "%HUnloads a command from the server.");
+            p.Message("&T/CmdUnload [command]");
+            p.Message("&HUnloads a command from the server.");
         }
     }
 }

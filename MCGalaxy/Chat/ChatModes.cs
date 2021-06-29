@@ -22,32 +22,35 @@ namespace MCGalaxy {
         public static bool Handle(Player p, string text) {
             if (text.Length >= 2 && text[0] == '@' && text[1] == '@') {
                 text = text.Remove(0, 2);
-                DoConsolePM(p, text);
+                DoPM(p, Player.Console, text);
                 return true;
             }
             
-            if (text[0] == '@' || (p != null && p.whisper)) {
+            if (text[0] == '@' || p.whisper) {
                 if (text[0] == '@') text = text.Remove(0, 1).Trim();
                 
-                if (p == null || p.whisperTo.Length == 0) {
-                    int sepIndex = text.IndexOf(' ');
-                    if (sepIndex != -1) {
-                        string target = text.Substring(0, sepIndex);
-                        text = text.Substring(sepIndex + 1);
-                        HandleWhisper(p, target, text);
-                    } else {
-                        Player.Message(p, "No message entered");
+                string target = p.whisperTo;
+                if (target.Length == 0) {
+                    text.Separate(out target, out text);
+                    
+                    if (text.Length == 0) {
+                        p.Message("No message entered");
+                        return true;
                     }
-                } else {
-                    HandleWhisper(p, p.whisperTo, text);
                 }
+
+                Player who = PlayerInfo.FindMatches(p, target);
+                if (who == null) return true;
+                if (who == p) { p.Message("Trying to talk to yourself, huh?"); return true; }
+                
+                DoPM(p, who, text);
                 return true;
             }
             
-            if (p != null && p.opchat) {
+            if (p.opchat) {
                 MessageOps(p, text);
                 return true;
-            } else if (p != null && p.adminchat) {
+            } else if (p.adminchat) {
                 MessageAdmins(p, text);
                 return true;
             } else if (text[0] == '#') {
@@ -55,86 +58,45 @@ namespace MCGalaxy {
                     MessageOps(p, text.Substring(2));
                     return true;
                 } else {
-                    Player.Message(p, "%HIf you meant to send this to opchat, use %T##" + text.Substring(1));
+                    p.Message("&HIf you meant to send this to opchat, use &T##" + text.Substring(1));
                 }
             } else if (text[0] == '+') {
                 if (text.Length > 1 && text[1] == '+') {
                     MessageAdmins(p, text.Substring(2));
                     return true;
                 } else {
-                    Player.Message(p, "%HIf you meant to send this to adminchat, use %T++" + text.Substring(1));
+                    p.Message("&HIf you meant to send this to adminchat, use &T++" + text.Substring(1));
                 }
             }
             return false;
         }
         
         public static void MessageOps(Player p, string message) {
-            LevelPermission rank = CommandExtraPerms.MinPerm("OpChat", LevelPermission.Operator);
             if (!MessageCmd.CanSpeak(p, "OpChat")) return;
-            MessageStaff(p, message, rank, "Ops");
+            MessageStaff(p, message, Chat.OpchatPerms, "Ops");
         }
 
         public static void MessageAdmins(Player p, string message) {
-            LevelPermission rank = CommandExtraPerms.MinPerm("AdminChat", LevelPermission.Admin);
             if (!MessageCmd.CanSpeak(p, "AdminChat")) return;
-            MessageStaff(p, message, rank, "Admins");
+            MessageStaff(p, message, Chat.AdminchatPerms, "Admins");
         }
         
         public static void MessageStaff(Player p, string message,
-                                        LevelPermission perm, string group) {
-            string displayName = p == null ? "(console)" : p.ColoredName;
-            string name = p == null ? "(console)" : p.name;
-            string format = "To " + group + " &f-{0}&f- {1}";
+                                        ItemPerms perms, string group) {
+            if (message.Length == 0) { p.Message("No message to send."); return; }
             
-            if (message.Length == 0) { Player.Message(p, "No message to send."); return; }
-            
-            Chat.MessageWhere(format,
-                              pl => (p == pl || pl.Rank >= perm) && Chat.NotIgnoring(pl, p),
-                              displayName, message);
-            
-            if (p != null) p.CheckForMessageSpam();
-            Logger.Log(LogType.StaffChat, "({0}): {1}: {2}", group, name, message);
-            Server.IRC.Say(displayName + "%S: " + message, true);
+            string chatMsg = "To " + group + " &f-λNICK&f- " + message;
+            Chat.MessageChat(ChatScope.Perms, p, chatMsg, perms, null, true);
         }
         
-        static void HandleWhisper(Player p, string target, string message) {
-            Player who = PlayerInfo.FindMatches(p, target);
-            if (who == null) return;
-            if (who == p) { Player.Message(p, "Trying to talk to yourself, huh?"); return; }
+        static void DoPM(Player p, Player target, string message) {
+            if (message.Length == 0) { p.Message("No message entered"); return; }
+            Logger.Log(LogType.PrivateChat, "{0} @{1}: {2}", p.name, target.name, message);
             
-            if (who.Ignores.All) {
-                DoFakePM(p, who, message);
-            } else if (p != null && who.Ignores.Names.CaselessContains(p.name)) {
-                DoFakePM(p, who, message);
-            } else {
-                DoPM(p, who, message);
+            if (!p.IsConsole) {
+                p.Message("[<] {0}: &f{1}", p.FormatNick(target), message);
             }
-            
-            if (p != null) p.CheckForMessageSpam();
-        }
-        
-        static void DoConsolePM(Player p, string message) {
-            if (message.Length < 1) { Player.Message(p, "No message entered"); return; }
-            Player.Message(p, "[<] Console: &f" + message);
-            string name = p == null ? "(console)" : p.name;
-            Logger.Log(LogType.PrivateChat, "{0} @(console): {1}", name, message);
-            
-            if (p != null) p.CheckForMessageSpam();
-        }
-        
-        static void DoFakePM(Player p, Player who, string message) {
-            string name = p == null ? "(console)" : p.name;
-            Logger.Log(LogType.PrivateChat, "{0} @{1}: {2}", name, who.name, message);
-            Player.Message(p, "[<] {0}: &f{1}", who.ColoredName, message);
-        }
-        
-        static void DoPM(Player p, Player who, string message) {
-            string name = p == null ? "(console)" : p.name;
-            string fullName = p == null ? "%S(console)" : p.ColoredName;
-            
-            Logger.Log(LogType.PrivateChat, "{0} @{1}: {2}", name, who.name, message);
-            Player.Message(p, "[<] {0}: &f{1}", who.ColoredName, message);
-            Player.Message(who, "&9[>] {0}: &f{1}", fullName, message);
+            Chat.MessageChat(ChatScope.PM, p, "&9[>] λNICK: &f" + message, target, null);
         }
     }
 }

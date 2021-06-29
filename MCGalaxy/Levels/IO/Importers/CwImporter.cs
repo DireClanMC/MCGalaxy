@@ -25,6 +25,7 @@ namespace MCGalaxy.Levels.IO {
     public sealed class CwImporter : IMapImporter {
 
         public override string Extension { get { return ".cw"; } }
+        public override string Description { get { return "ClassiCube/ClassicalSharp map"; } }
 
         public override Vec3U16 ReadDimensions(Stream src) {
             throw new NotSupportedException();
@@ -43,18 +44,44 @@ namespace MCGalaxy.Levels.IO {
             return lvl;
         }
         
-        void ReadData(NbtCompound root, string name, out Level lvl) {
+        static void ReadData(NbtCompound root, string name, out Level lvl) {
             if (root["FormatVersion"].ByteValue > 1)
                 throw new NotSupportedException("Only version 1 of ClassicWorld format is supported.");
             
-            short x = root["X"].ShortValue, y = root["Y"].ShortValue, z = root["Z"].ShortValue;
-            if (x <= 0 || y <= 0 || z <= 0)
-                throw new InvalidDataException("Level dimensions must be > 0.");
+            ushort width  = (ushort)root["X"].ShortValue;
+            ushort height = (ushort)root["Y"].ShortValue;
+            ushort length = (ushort)root["Z"].ShortValue;
+            byte[] blocks = root["BlockArray"].ByteArrayValue;            
+            lvl = new Level(name, width, height, length, blocks);
             
-            lvl = new Level(name, (ushort)x, (ushort)y, (ushort)z);
-            lvl.blocks = root["BlockArray"].ByteArrayValue;
+            ReadSpawn(root, lvl);           
+            #if TEN_BIT_BLOCKS
+            // Can't use ConvertCustom, as that changes lvl.blocks
+            // (aka the array containing the lower 8 bits of block ids)
+            if (root.Contains("BlockArray2")) {
+                ReadExtBlocks(root, lvl); return;
+            }
+            #endif
             ConvertCustom(lvl);
+        }
+        
+        #if TEN_BIT_BLOCKS
+        static void ReadExtBlocks(NbtCompound root, Level lvl) {
+            byte[] lo = root["BlockArray"].ByteArrayValue;
+            byte[] hi = root["BlockArray2"].ByteArrayValue;
             
+            for (int i = 0; i < lo.Length; i++) {
+                if (hi[i] == 0 && lo[i] <= Block.CpeMaxBlock) continue;
+                ushort x, y, z;
+                
+                lvl.IntToPos(i, out x, out y, out z);
+                int b = ((hi[i] << 8) | lo[i]) + Block.Extended;
+                lvl.SetBlock(x, y, z, (BlockID)b);
+            }
+        }
+        #endif
+        
+        static void ReadSpawn(NbtCompound root, Level lvl) {
             if (!root.Contains("Spawn")) return;
             NbtTag spawn = root["Spawn"];
             lvl.spawnx = (ushort)spawn["X"].ShortValue;
@@ -64,7 +91,7 @@ namespace MCGalaxy.Levels.IO {
             lvl.roty = spawn["P"].ByteValue;
         }
         
-        void ReadMetadata(NbtCompound root, Level lvl) {
+        static void ReadMetadata(NbtCompound root, Level lvl) {
             if (!root.Contains("CPE")) return;
             NbtCompound cpe = (NbtCompound)root["CPE"];
             
@@ -81,27 +108,24 @@ namespace MCGalaxy.Levels.IO {
         
         static void ParseEnvMapAppearance(NbtCompound cpe, Level lvl) {
             NbtCompound comp = (NbtCompound)cpe["EnvMapAppearance"];
-            lvl.Config.HorizonBlock = comp["EdgeBlock"].ByteValue;
-            lvl.Config.EdgeBlock = comp["SideBlock"].ByteValue;
-            lvl.Config.EdgeLevel = comp["SideLevel"].ShortValue;
-            
-            if (lvl.Config.EdgeLevel == -1)
-                lvl.Config.EdgeLevel = (short)(lvl.Height / 2);
+            lvl.Config.HorizonBlock = Block.FromRaw(comp["EdgeBlock"].ByteValue);
+            lvl.Config.EdgeBlock    = Block.FromRaw(comp["SideBlock"].ByteValue);
+            lvl.Config.EdgeLevel    = comp["SideLevel"].ShortValue;
             if (!comp.Contains("TextureURL")) return;
             
             string url = comp["TextureURL"].StringValue;
             if (url.CaselessEnds(".png"))
-                lvl.Config.Terrain = url == ServerConfig.DefaultTerrain ? "" : url;
+                lvl.Config.Terrain = url == Server.Config.DefaultTerrain ? "" : url;
             else
-                lvl.Config.TexturePack = url == ServerConfig.DefaultTexture ? "" : url;
+                lvl.Config.TexturePack = url == Server.Config.DefaultTexture ? "" : url;
         }
         
         static void ParseEnvColors(NbtCompound cpe, Level lvl) {
             NbtCompound comp = (NbtCompound)cpe["EnvColors"];
-            lvl.Config.SkyColor = GetColor(comp, "Sky");
-            lvl.Config.CloudColor = GetColor(comp, "Cloud");
-            lvl.Config.FogColor = GetColor(comp, "Fog");
-            lvl.Config.LightColor = GetColor(comp, "Sunlight");
+            lvl.Config.SkyColor    = GetColor(comp, "Sky");
+            lvl.Config.CloudColor  = GetColor(comp, "Cloud");
+            lvl.Config.FogColor    = GetColor(comp, "Fog");
+            lvl.Config.LightColor  = GetColor(comp, "Sunlight");
             lvl.Config.ShadowColor = GetColor(comp, "Ambient");
         }
         
@@ -123,7 +147,10 @@ namespace MCGalaxy.Levels.IO {
                 
                 NbtCompound props = (NbtCompound)tag;
                 BlockDefinition def = new BlockDefinition();
-                def.BlockID = props["ID"].ByteValue;
+                def.RawID = props["ID"].ByteValue;
+                // can't change "ID" to short since backwards compatibility
+                if (props.Contains("ID2")) def.RawID = (ushort)props["ID2"].ShortValue;
+                
                 def.Name = props["Name"].StringValue;
                 def.CollideType = props["CollideType"].ByteValue;
                 def.Speed = props["Speed"].FloatValue;
@@ -141,21 +168,24 @@ namespace MCGalaxy.Levels.IO {
                 def.FogR = fog[1]; def.FogG = fog[2]; def.FogB = fog[3];
                 
                 byte[] tex = props["Textures"].ByteArrayValue;
-                def.TopTex = tex[0]; def.BottomTex = tex[1];
-                def.LeftTex = tex[2]; def.RightTex = tex[3];
-                def.FrontTex = tex[4]; def.BackTex = tex[5];
+                ImportTexs(def, tex, 0);
+                if (tex.Length > 6) ImportTexs(def, tex, 6);
 
                 byte[] coords = props["Coords"].ByteArrayValue;
                 def.MinX = coords[0]; def.MinZ = coords[1]; def.MinY = coords[2];
                 def.MaxX = coords[3]; def.MaxZ = coords[4]; def.MaxY = coords[5];
                 
-                // Don't define level custom block if same as global custom block
                 BlockID block = def.GetBlock();
+                if (block >= Block.ExtendedCount) {
+                    Logger.Log(LogType.Warning, "Cannot import custom block {0} (ID {1})",
+                               def.Name, def.RawID);
+                    continue;
+                }
+                
+                // Don't define level custom block if same as global custom block
                 BlockDefinition globalDef = BlockDefinition.GlobalDefs[block];
                 if (PropsEquals(def, globalDef)) continue;
                 
-                def.SideTex = def.LeftTex;
-                def.Version2 = true;
                 lvl.UpdateCustomBlock(block, def);
                 hasBlockDefs = true;
             }
@@ -164,14 +194,21 @@ namespace MCGalaxy.Levels.IO {
                 BlockDefinition.Save(false, lvl);
         }
         
+        static void ImportTexs(BlockDefinition def, byte[] tex, int i) {
+            int s = i == 0 ? 0 : 8;
+            def.TopTex   |= (ushort)(tex[i+0] << s); def.BottomTex |= (ushort)(tex[i+1] << s);
+            def.LeftTex  |= (ushort)(tex[i+2] << s); def.RightTex  |= (ushort)(tex[i+3] << s);
+            def.FrontTex |= (ushort)(tex[i+4] << s); def.BackTex   |= (ushort)(tex[i+5] << s);
+        }
+        
         static bool PropsEquals(BlockDefinition a, BlockDefinition b) {
             if (b == null || b.Name == null) return false;
-            return a.Name == b.Name && a.CollideType == b.CollideType && a.Speed == b.Speed && a.TopTex == b.TopTex 
-                && a.BottomTex == b.BottomTex && a.BlocksLight == b.BlocksLight && a.WalkSound == b.WalkSound 
-                && a.FullBright == b.FullBright && a.Shape == b.Shape && a.BlockDraw == b.BlockDraw 
-                && a.FogDensity == b.FogDensity && a.FogR == b.FogR && a.FogG == b.FogG && a.FogB == b.FogB 
-                && a.MinX == b.MinX && a.MinY == b.MinY && a.MinZ == b.MinZ && a.MaxX == b.MaxX 
-                && a.MaxY == b.MaxY && a.MaxZ == b.MaxZ && a.LeftTex == b.LeftTex && a.RightTex == b.RightTex 
+            return a.Name == b.Name && a.CollideType == b.CollideType && a.Speed == b.Speed && a.TopTex == b.TopTex
+                && a.BottomTex == b.BottomTex && a.BlocksLight == b.BlocksLight && a.WalkSound == b.WalkSound
+                && a.FullBright == b.FullBright && a.Shape == b.Shape && a.BlockDraw == b.BlockDraw
+                && a.FogDensity == b.FogDensity && a.FogR == b.FogR && a.FogG == b.FogG && a.FogB == b.FogB
+                && a.MinX == b.MinX && a.MinY == b.MinY && a.MinZ == b.MinZ && a.MaxX == b.MaxX
+                && a.MaxY == b.MaxY && a.MaxZ == b.MaxZ && a.LeftTex == b.LeftTex && a.RightTex == b.RightTex
                 && a.FrontTex == b.FrontTex && a.BackTex == b.BackTex;
         }
     }

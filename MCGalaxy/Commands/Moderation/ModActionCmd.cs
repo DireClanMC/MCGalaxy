@@ -31,6 +31,7 @@ namespace MCGalaxy.Commands.Moderation {
         /// <summary> Expands @[rule number] to the actual rule with that number. </summary>
         public static string ExpandReason(Player p, string reason) {
             if (reason.Length == 0 || reason[0] != '@') return reason;
+            
             reason = reason.Substring(1);
             int num;
             if (!int.TryParse(reason, out num)) return "@" + reason;
@@ -40,7 +41,7 @@ namespace MCGalaxy.Commands.Moderation {
             string rule;
             if (sections.TryGetValue(num, out rule)) return rule;
             
-            Player.Message(p, "No rule has number \"{0}\". Current rule numbers are: {1}",
+            p.Message("No rule has number \"{0}\". Current rule numbers are: {1}",
                            num, sections.Keys.Join(n => n.ToString()));
             return null;
         }
@@ -78,40 +79,44 @@ namespace MCGalaxy.Commands.Moderation {
             }
         }
         
-        /// <summary> Changes the rank of the given player from the old to the new rank. </summary>
-        internal static void ChangeRank(string name, Group oldRank, Group newRank,
-                                        Player who, bool saveToNewRank = true) {
-            Server.reviewlist.Remove(name);
-            oldRank.Players.Remove(name);
-            oldRank.Players.Save();
-            
-            if (saveToNewRank) {
-                newRank.Players.Add(name);
-                newRank.Players.Save();
-            }
-            if (who == null) return;
-
-            Entities.DespawnEntities(who, false);
-            string dbCol = PlayerData.FindDBColor(who);
-            if (dbCol.Length == 0) who.color = newRank.Color;
-            
+        static void ChangeOnlineRank(Player who, Group newRank) {
             who.group = newRank;
-            AccessResult access = who.level.BuildAccess.Check(who);
-            who.AllowBuild = access == AccessResult.Whitelisted || access == AccessResult.Allowed;
+            who.AllowBuild = who.level.BuildAccess.CheckAllowed(who);
+            if (who.hidden && who.hideRank < who.Rank) who.hideRank = who.Rank;
             
+            who.SetColor(PlayerInfo.DefaultColor(who));
             who.SetPrefix();
-            who.Send(Packet.UserType(who));
+            
+            Entities.DespawnEntities(who, false);
+            who.Send(Packet.UserType(who.UserType()));
+            
             who.SendCurrentBlockPermissions();
             Entities.SpawnEntities(who, false);
             CheckBlockBindings(who);
+            
+            who.CheckIsUnverified();
+        }
+        
+        /// <summary> Changes the rank of the given player from the old to the new rank. </summary>
+        internal static void ChangeRank(string name, Group oldRank, Group newRank,
+                                        Player who, bool saveToNewRank = true) {
+            if (who != null) ChangeOnlineRank(who, newRank);
+            Server.reviewlist.Remove(name);
+            
+            oldRank.Players.Remove(name);
+            oldRank.Players.Save();
+            
+            if (!saveToNewRank) return;
+            newRank.Players.Add(name);
+            newRank.Players.Save();
         }
         
         static void CheckBlockBindings(Player who) {
             BlockID block = who.ModeBlock;
-            if (block != Block.Air && !CommandParser.IsBlockAllowed(who, "place", block)) {
-                who.ModeBlock = Block.Air;
-                Player.Message(who, "   Hence, &b{0} %Smode was turned &cOFF",
-                               Block.GetName(who, block));
+            if (block != Block.Invalid && !CommandParser.IsBlockAllowed(who, "place", block)) {
+                who.ModeBlock = Block.Invalid;
+                who.Message("   Hence, &b{0} &Smode was turned &cOFF",
+                            Block.GetName(who, block));
             }
             
             for (int b = 0; b < who.BlockBindings.Length; b++) {
@@ -120,10 +125,20 @@ namespace MCGalaxy.Commands.Moderation {
                 
                 if (!CommandParser.IsBlockAllowed(who, "place", block)) {
                     who.BlockBindings[b] = (BlockID)b;
-                    Player.Message(who, "   Hence, binding for &b{0} %Swas unbound",
-                                   Block.GetName(who, (BlockID)b));
+                    who.Message("   Hence, binding for &b{0} &Swas unbound",
+                                Block.GetName(who, (BlockID)b));
                 }
             }
+        }
+        
+        internal static Group CheckTarget(Player p, CommandData data, string action, string target) {
+            if (p.name.CaselessEq(target)) {
+                p.Message("You cannot {0} yourself", action); return null; 
+            }
+            
+            Group group = PlayerInfo.GetGroup(target);
+            if (!Command.CheckRank(p, data, target, group.Permission, action, false)) return null;
+            return group;
         }
         
         
@@ -139,24 +154,24 @@ namespace MCGalaxy.Commands.Moderation {
             if (match != null) {
                 if (match.RemoveLastPlus().CaselessEq(name.RemoveLastPlus())) return match;
                 // Not an exact match, may be wanting to ban a non-existent account
-                Player.Message(p, "1 player matches \"{0}\": {1}", name, match);
+                p.Message("1 player matches \"{0}\": {1}", name, match);
             }
 
             if (confirmed != null) return name;
             string msgReason = String.IsNullOrEmpty(reason) ? "" : " " + reason;
-            Player.Message(p, "If you still want to {0} \"{1}\", use %T/{3} {1}{4}{2} confirm",
+            p.Message("If you still want to {0} \"{1}\", use &T/{3} {1}{4}{2} confirm",
                            action, name, msgReason, cmd, cmdSuffix);
             return null;
         }
         
         static string MatchName(Player p, ref string name) {
-            int matches = 0;
+            int matches;
             Player target = PlayerInfo.FindMatches(p, name, out matches);
             if (matches > 1) return null;
             if (matches == 1) { name = target.name; return name; }
             
-            Player.Message(p, "Searching PlayerDB...");
-            return PlayerInfo.FindOfflineNameMatches(p, name);
+            p.Message("Searching PlayerDB...");
+            return PlayerDB.MatchNames(p, name);
         }
         
         static string IsConfirmed(string reason) {
@@ -169,32 +184,37 @@ namespace MCGalaxy.Commands.Moderation {
         }
         
         
+        static bool ValidIP(string str) {
+            // IPAddress.TryParse returns "0.0.0.123" for "123", we do not want that behaviour
+            return str.IndexOf(':') >= 0 || str.Split('.').Length == 4;
+        }
+        
         /// <summary> Attempts to either parse the message directly as an IP,
         /// or finds the IP of the account whose name matches the message. </summary>
         /// <remarks> "@input" can be used to always find IP by matching account name. <br/>
         /// Warns the player if the input matches both an IP and an account name. </remarks>
-        internal static string FindIP(Player p, string message, string action, string cmd) {
+        internal static string FindIP(Player p, string message, string cmd, out string name) {
             IPAddress ip;
-            // TryParse returns "0.0.0.123" for "123", we do not want that behaviour
-            if (IPAddress.TryParse(message, out ip) && message.Split('.').Length == 4) {
-                string account = ServerConfig.ClassicubeAccountPlus ? message + "+" : message;
-                if (PlayerInfo.FindName(account) == null) return message;
+            name = null;
+            
+            if (IPAddress.TryParse(message, out ip) && ValidIP(message)) {
+                string account = Server.Config.ClassicubeAccountPlus ? message + "+" : message;
+                if (PlayerDB.FindName(account) == null) return message;
 
                 // Some classicube.net accounts can be parsed as valid IPs, so warn in this case.
-                Player.Message(p, "Note: \"{0}\" is an IP, but also an account name. "
-                               + "If you meant to {1} the account, use %T/{2} @{0}",
-                               message, action, cmd);
+                p.Message("Note: \"{0}\" is both an IP and an account name. "
+                          + "If you meant the account, use &T/{1} @{0}", message, cmd);
                 return message;
             }
             
             if (message[0] == '@') message = message.Remove(0, 1);
             Player who = PlayerInfo.FindMatches(p, message);
-            if (who != null) return who.ip;
+            if (who != null) { name = who.name; return who.ip; }
             
-            Player.Message(p, "Searching PlayerDB..");
-            string databaseIP;
-            PlayerInfo.FindOfflineIPMatches(p, message, out databaseIP);
-            return databaseIP;
+            p.Message("Searching PlayerDB..");
+            string dbIP;
+            name = PlayerDB.FindOfflineIPMatches(p, message, out dbIP);
+            return dbIP;
         }
     }
 }

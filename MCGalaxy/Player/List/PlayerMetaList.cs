@@ -22,6 +22,7 @@ using System.IO;
 namespace MCGalaxy {
     
     /// <summary> Represents a list of metadata about players. (such as rank info, ban info, notes). </summary>
+    /// <remarks> Unlike other player lists, this list is NOT kept in memory. </remarks>
     public sealed class PlayerMetaList {
         
         public readonly string file;
@@ -37,7 +38,6 @@ namespace MCGalaxy {
                 File.Create(file).Dispose();
         }
 
-        /// <summary> Adds the given line to the end of the file. </summary>
         public void Append(string data) {
             lock (locker) {
                 using (StreamWriter w = new StreamWriter(file, true))
@@ -45,42 +45,18 @@ namespace MCGalaxy {
             }
         }
         
-        
-        /// <summary> Finds all lines which caselessly start with the given name. </summary>
-        public IEnumerable<string> Find(string name) {
-            if (!File.Exists(file)) yield break;
+        public List<string> FindAllExact(string name) {
+            List<string> entries = new List<string>();
+            if (!File.Exists(file)) return entries;
             name += " ";
             
             using (StreamReader r = new StreamReader(file)) {
                 string line;
                 while ((line = r.ReadLine()) != null) {
-                    if (line.CaselessStarts(name)) yield return line;
+                    if (line.CaselessStarts(name)) entries.Add(line);
                 }
             }
-            yield break;
-        }
-
-        public List<string> FindMatches(Player p, string name, string group) {
-            int matches = 0;
-            return Matcher.FindMulti<string>(p, name, out matches, AllLines(),
-                                             null, GetName, group);
-        }
-        
-        IEnumerable<string> AllLines() {
-            if (!File.Exists(file)) yield break;
-            
-            using (StreamReader r = new StreamReader(file)) {
-                string line;
-                while ((line = r.ReadLine()) != null) {
-                    yield return line;
-                }
-            }
-            yield break;
-        }
-        
-        public static string GetName(string line) {
-            int index = line.IndexOf(' ');
-            return index == -1 ? line : line.Substring(0, index);
+            return entries;
         }
     }
 }

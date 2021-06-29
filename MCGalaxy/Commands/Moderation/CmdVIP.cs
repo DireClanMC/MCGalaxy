@@ -18,82 +18,72 @@
 using System.Collections.Generic;
 
 namespace MCGalaxy.Commands.Moderation {
-    public sealed class CmdVIP : Command {
+    public sealed class CmdVIP : Command2 {
         public override string name { get { return "VIP"; } }
         public override string type { get { return CommandTypes.Moderation; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
 
-        public override void Use(Player p, string message) {
-            if (message.Length == 0) { Help(p); return; }
+        public override void Use(Player p, string message, CommandData data) {
+            if (message.Length == 0) { List(p, ""); return; }
             string[] args = message.SplitSpaces();
+            string cmd = args[0];
             
-            if (args[0].CaselessEq("add")) {
+            if (IsCreateCommand(cmd)) {
                 if (args.Length < 2) { Help(p); return; }
-                AddVIP(p, args[1]);
-            } else if (args[0].CaselessEq("remove")) {
+                Add(p, args[1]);
+            } else if (IsDeleteCommand(cmd)) {
                 if (args.Length < 2) { Help(p); return; }
-                RemoveVIP(p, args[1]);
-            } else if (args[0].CaselessEq("list")) {
-                ListVIPs(p, args);
+                Remove(p, args[1]);
+            } else if (IsListCommand(cmd)) {
+                string modifier = args.Length > 1 ? args[1] : "";
+                List(p, modifier);
             } else if (args.Length == 1) {
-                AddVIP(p, args[0]);
+                Add(p, args[0]);
             } else {
                 Help(p);
             }
         }
         
-        static void AddVIP(Player p, string name) {
+        static void Add(Player p, string name) {
             name = PlayerInfo.FindMatchesPreferOnline(p, name);
             if (name == null) return;
             
-            if (Server.vip.Contains(name)) {
-                Player.Message(p, PlayerInfo.GetColoredName(p, name) + " %Sis already a VIP.");
+            if (!Server.vip.Add(name)) {
+                p.Message("{0} &Sis already a VIP.", p.FormatNick(name));
             } else {
-                Server.vip.Add(name);
-                Server.vip.Save(false);
-                Player.Message(p, PlayerInfo.GetColoredName(p, name) + " %Sis now a VIP.");
+                Server.vip.Save();
+                p.Message("{0} &Sis now a VIP.", p.FormatNick(name));
                 
                 Player vip = PlayerInfo.FindExact(name);
-                if (vip != null) Player.Message(vip, "You are now a VIP!");
+                if (vip != null) vip.Message("You are now a VIP!");
             }
         }
         
-        void RemoveVIP(Player p, string name) {
+        static void Remove(Player p, string name) {
             name = PlayerInfo.FindMatchesPreferOnline(p, name);
             if (name == null) return;
             
-            if (!Server.vip.Contains(name)) {
-                Player.Message(p, PlayerInfo.GetColoredName(p, name) + " %Sis not a VIP.");
+            if (!Server.vip.Remove(name)) {
+                p.Message("{0} &Sis not a VIP.", p.FormatNick(name));
             } else {
-                Server.vip.Remove(name);
-                Server.vip.Save(false);
-                Player.Message(p, PlayerInfo.GetColoredName(p, name) + " %Sis no longer a VIP.");
+                Server.vip.Save();
+                p.Message("{0} &Sis no longer a VIP.", p.FormatNick(name));
                 
                 Player vip = PlayerInfo.FindExact(name);
-                if (vip != null) Player.Message(vip, "You are no longer a VIP!");
+                if (vip != null) vip.Message("You are no longer a VIP!");
             }
         }
         
-        static void ListVIPs(Player p, string[] args) {
-            List<string> list = Server.vip.All();
-            string modifier = args.Length > 1 ? args[1] : "";
-            
-            if (list.Count == 0) {
-                Player.Message(p, "There are no VIPs.");
-            } else {
-                Player.Message(p, "VIPs:");
-                MultiPageOutput.Output(p, list, 
-                                       (name) => PlayerInfo.GetColoredName(p, name),
-                                       "VIP list", "players", modifier, false);
-            }
+        static void List(Player p, string modifier) {
+            Server.vip.Output(p, "VIPs", "VIP list", modifier);
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/VIP add/remove [player]");
-            Player.Message(p, "%HAdds or removes [player] from the VIP list.");
-            Player.Message(p, "%T/VIP list");
-            Player.Message(p, "%HLists all players who are on the VIP list.");
-            Player.Message(p, "%H  VIPs can join regardless of the player limit.");
+            p.Message("&T/VIP add/remove [player]");
+            p.Message("&HAdds or removes [player] from the VIP list.");
+            p.Message("&T/VIP list");
+            p.Message("&HLists all players who are on the VIP list.");
+            p.Message("&H  VIPs can join regardless of the player limit.");
         }
     }
 }

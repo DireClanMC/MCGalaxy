@@ -34,7 +34,6 @@ namespace MCGalaxy.Drawing.Ops {
         
         internal Draw.Bitmap Source;
         internal bool DualLayer, LayerMode;
-        internal string Filename;
         public ImagePalette Palette;
         
         internal Vec3S32 dx, dy, adj;
@@ -65,9 +64,7 @@ namespace MCGalaxy.Drawing.Ops {
             
             Source.Dispose();
             Source = null;
-            if (Filename == "tempImage_" + Player.name)
-                File.Delete("extra/images/tempImage_" + Player.name + ".bmp");
-            Player.Message(Player, "Finished printing image using {0} palette.", Palette.Name);
+            Player.Message("Finished printing image using {0} palette.", Palette.Name);
         }
         
         void CalcLayerColors() {
@@ -107,10 +104,12 @@ namespace MCGalaxy.Drawing.Ops {
         
         void OutputPixels(PixelGetter pixels, DrawOpOutput output) {
             int width = pixels.Width, height = pixels.Height;
-            for (int yy = 0; yy < height; yy++)
+            int srcY = height - 1; // need to flip coords in bitmap vertically
+            
+            for (int yy = 0; yy < height; yy++, srcY--)
                 for (int xx = 0; xx < width; xx++) 
             {
-                Pixel P = pixels.Get(xx, yy);
+                Pixel P = pixels.Get(xx, srcY);
                 ushort x = (ushort)(Origin.X + dx.X * xx + dy.X * yy);
                 ushort y = (ushort)(Origin.Y + dx.Y * xx + dy.Y * yy);
                 ushort z = (ushort)(Origin.Z + dx.Z * xx + dy.Z * yy);
@@ -142,6 +141,7 @@ namespace MCGalaxy.Drawing.Ops {
                 dir = m[1].Z <= m[0].Z ? 3 : 2;
             }
             
+            // TODO: Rewrite to use dirX/dirZ instead
             // Calculate back layer offset
             if (dir == 0) adj.Z = -1;
             if (dir == 1) adj.Z = +1;

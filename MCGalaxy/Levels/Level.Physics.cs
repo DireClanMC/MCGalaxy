@@ -40,10 +40,12 @@ namespace MCGalaxy {
                     if (blocks[i] > 183 && Block.NeedRestart(blocks[i]))
                         AddCheck(i);
             }
-        	
-        	if (physics != level) OnPhysicsLevelChangedEvent.Call(this, level);
-            physics = level;
-            //StartPhysics(); This isnt needed, the physics will start when we set the new value above
+            
+            if (physics != level) OnPhysicsLevelChangedEvent.Call(this, level);
+            if (level > 0 && physics == 0) StartPhysics();
+            
+            Physicsint     = level;
+            Config.Physics = level;
         }
         
         public void StartPhysics() {
@@ -53,59 +55,57 @@ namespace MCGalaxy {
                 
                 physThread = new Thread(PhysicsLoop);
                 physThread.Name = "MCG_Physics_" + name;
-                PhysicsEnabled = true;
                 physThread.Start();
                 physThreadStarted = true;
             }
         }
 
-        /// <summary> Gets or sets a value indicating whether physics are enabled. </summary>
-        public bool PhysicsEnabled;
-
         void PhysicsLoop() {
             int wait = Config.PhysicsSpeed;
             while (true) {
-                if (!PhysicsEnabled) { Thread.Sleep(500); continue; }
-
                 try {
+                    
+                    if (PhysicsPaused) {
+                        if (physics == 0) break;
+                        Thread.Sleep(500); continue; 
+                    } 
+                    
                     if (wait > 0) Thread.Sleep(wait);
-                    if (physics == 0 || ListCheck.Count == 0)
-                    {
+                    if (physics == 0) break;
+                    
+                    // No block calculations in this tick
+                    if (ListCheck.Count == 0) {
                         lastCheck = 0;
                         wait = Config.PhysicsSpeed;
-                        if (physics == 0) break;
                         continue;
                     }
 
-                    DateTime start = DateTime.UtcNow;
-                    if (physics > 0) {
-                        try {
-                            lock (physStepLock)
-                                CalcPhysics();
-                        } catch (Exception ex) {
-                            Logger.Log(LogType.Warning, "Level physics error");
-                            Logger.LogError(ex);
+                    DateTime tickStart = default(DateTime);
+                    try {
+                        lock (physTickLock) {
+                            tickStart = DateTime.UtcNow;
+                            PhysicsTick();
                         }
+                    } catch (Exception ex) {
+                        Logger.LogError("Error in physics tick", ex);
                     }
 
-                    TimeSpan delta = DateTime.UtcNow - start;
-                    wait = Config.PhysicsSpeed - (int)delta.TotalMilliseconds;
+                    // Measure how long this physics tick took to execute
+                    TimeSpan elapsed = DateTime.UtcNow - tickStart;
+                    wait = Config.PhysicsSpeed - (int)elapsed.TotalMilliseconds;
 
+                    // Check if tick took too long to execute (server is falling behind)
                     if (wait < (int)(-Config.PhysicsOverload * 0.75f)) {
                         if (wait < -Config.PhysicsOverload) {
-                            if (!ServerConfig.PhysicsRestart) SetPhysics(0);
+                            if (!Server.Config.PhysicsRestart) SetPhysics(0);
                             ClearPhysics();
-
                             Chat.MessageGlobal("Physics shutdown on {0}", ColoredName);
+                            
                             Logger.Log(LogType.Warning, "Physics shutdown on " + name);
                             OnPhysicsStateChangedEvent.Call(this, PhysicsState.Stopped);
                             wait = Config.PhysicsSpeed;
                         } else {
-                            Player[] online = PlayerInfo.Online.Items;
-                            foreach (Player p in online) {
-                                if (p.level != this) continue;
-                                Player.Message(p, "Physics warning!");
-                            }
+                            Message("Physics warning!");
                             Logger.Log(LogType.Warning, "Physics warning on " + name);
                             OnPhysicsStateChangedEvent.Call(this, PhysicsState.Warning);
                         }
@@ -114,6 +114,8 @@ namespace MCGalaxy {
                     wait = Config.PhysicsSpeed;
                 }
             }
+            
+            lastCheck = 0;
             physThreadStarted = false;
         }
 
@@ -130,15 +132,15 @@ namespace MCGalaxy {
             return default(PhysicsArgs);
         }
 
-        public void CalcPhysics() {
+        void PhysicsTick() {
             lastCheck = ListCheck.Count;
             const uint mask = PhysicsArgs.TypeMask;
             
-            HandlePhysics[] handlers = physicsHandlers;
-            ExtraInfoHandler extraHandler = ExtraInfoPhysics.DoNormal;
+            HandlePhysics[] handlers = PhysicsHandlers;
+            ExtraInfoHandler extraHandler = ExtraInfoPhysics.normalHandler;
             if (physics == 5) {
                 handlers = physicsDoorsHandlers;
-                extraHandler = ExtraInfoPhysics.DoDoorsOnly;
+                extraHandler = ExtraInfoPhysics.doorsHandler;
             }
             
             PhysInfo C;
@@ -204,8 +206,7 @@ namespace MCGalaxy {
                 }
             }
             
-            if (bulkSender != null)
-                bulkSender.Send(true);
+            if (bulkSender != null) bulkSender.Flush();
             ListUpdate.Clear(); listUpdateExists.Clear();
         }
         
@@ -263,7 +264,7 @@ namespace MCGalaxy {
                     Blockchange((ushort)x, (ushort)y, (ushort)z, block, true, data);
                     return true;
                 }
-
+                
                 if (listUpdateExists.TrySetOn(x, y, z)) {
                 } else if (block == Block.Sand || block == Block.Gravel)  {
                     RemoveUpdatesAtPos(index);
@@ -315,11 +316,15 @@ namespace MCGalaxy {
         }
         
         
+        void ClearPhysicsLists() {
+            ListCheck.Count  = 0; listCheckExists.Clear();
+            ListUpdate.Count = 0; listUpdateExists.Clear();
+        }
+        
         public void ClearPhysics() {
             for (int i = 0; i < ListCheck.Count; i++ )
                 RevertPhysics(ListCheck.Items[i]);
-            ListCheck.Clear(); listCheckExists.Clear();
-            ListUpdate.Clear(); listUpdateExists.Clear();
+            ClearPhysicsLists();
         }
         
         void RevertPhysics(Check C) {
@@ -352,7 +357,7 @@ namespace MCGalaxy {
             if (Props[block].IsMessageBlock || Props[block].IsPortal) return false;
             if (Props[block].IsDoor || Props[block].IsTDoor) return false;
             if (Props[block].OPBlock) return false;
-            return physicsHandlers[block] != null;
+            return PhysicsHandlers[block] != null;
         }
         
         internal bool CheckSpongeWater(ushort x, ushort y, ushort z) {
@@ -385,8 +390,8 @@ namespace MCGalaxy {
             return false;
         }
 
-        public void MakeExplosion(ushort x, ushort y, ushort z, int size, bool force = false, TntWarsGame CheckForExplosionZone = null) {
-            TntPhysics.MakeExplosion(this, x, y, z, size, force, CheckForExplosionZone);
+        public void MakeExplosion(ushort x, ushort y, ushort z, int size, bool force = false) {
+            TntPhysics.MakeExplosion(this, x, y, z, size, force, null);
         }
     }
     

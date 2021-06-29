@@ -17,60 +17,90 @@
  */
 
 namespace MCGalaxy.Commands {
-    public abstract class EntityPropertyCmd : Command {
+    public abstract class EntityPropertyCmd : Command2 {
         
-        protected void UseBotOrPlayer(Player p, string message, string type) {
-            if (message.Length == 0) { Help(p); return; }
-            bool isBot = message.CaselessStarts("bot ");
-            string[] args = message.SplitSpaces(isBot ? 3 : 2);
-            if (!CheckOwn(p, args, "player or bot name")) return;
-            
-            Player who = null;
-            PlayerBot bot = null;
-            if (isBot) bot = Matcher.FindBots(p, args[1]);
-            else who = PlayerInfo.FindMatches(p, args[0]);
-            if (bot == null && who == null) return;
-
-            if (isBot) {
-                if (!CheckExtraPerm(p, 2)) return;
-                
-                if (!LevelInfo.ValidateAction(p, bot.level.name, "change the " + type + " of that bot")) return;
-                SetBotData(p, bot, args.Length > 2 ? args[2] : "");
+        protected void UseBotOrOnline(Player p, CommandData data, string message, string type) {
+            if (message.CaselessStarts("bot ")) {
+                UseBot(p,    data, message, type);
             } else {
-                if (p != who && !CheckExtraPerm(p, 1)) return;
-                
-                if (p != null && who.Rank > p.Rank) {
-                    MessageTooHighRank(p, "change the " + type + " of", true); return;
-                }
-                SetPlayerData(p, who, args.Length > 1 ? args[1] : "");
+                UseOnline(p, data, message, type);
             }
         }
         
-        protected void UsePlayer(Player p, string message, string type) {
+        protected void UseBotOrPlayer(Player p, CommandData data, string message, string type) {
+            if (message.CaselessStarts("bot ")) {
+                UseBot(p,    data, message, type);
+            } else {
+                UsePlayer(p, data, message, type);
+            }
+        }
+        
+        void UseBot(Player p, CommandData data, string message, string type) {
+            string[] args = message.SplitSpaces(3);
+            PlayerBot bot = Matcher.FindBots(p, args[1]);
+            
+            if (bot == null) return;
+            if (!CheckExtraPerm(p, data, 2)) return;
+            
+            if (!LevelInfo.Check(p, data.Rank, p.level, "change the " + type + " of that bot")) return;
+            if (!bot.EditableBy(p, "change the " + type + " of")) { return; }
+            SetBotData(p, bot, args.Length > 2 ? args[2] : "");
+        }
+        
+        protected void UseOnline(Player p, CommandData data, string message, string type) {
             if (message.Length == 0) { Help(p); return; }
             string[] args = message.SplitSpaces(2);
-            if (!CheckOwn(p, args, "player name")) return;
+            string name   = CheckOwn(p, args[0], "player name");
+            if (name == null) return;
             
-            Player who = PlayerInfo.FindMatches(p, args[0]);
+            Player who = PlayerInfo.FindMatches(p, name);
             if (who == null) return;
             
-            if (p != null && who.Rank > p.Rank) {
-                MessageTooHighRank(p, "change the " + type + " of", true); return;
-            }
-            if (p != who && !CheckExtraPerm(p, 1)) return;
-            SetPlayerData(p, who, args.Length > 1 ? args[1] : "");
+            if (p != who && !CheckExtraPerm(p, data, 1)) return;
+            if (!CheckRank(p, data, who, "change the " + type + " of", true)) return;
+            SetOnlineData(p, who, args.Length > 1 ? args[1] : "");
         }
         
-        bool CheckOwn(Player p, string[] args, string type) {
-            if (args[0].CaselessEq("-own")) {
-                if (Player.IsSuper(p)) { SuperRequiresArgs(p, type); return false; }
-                args[0] = p.name;
-            }
-            return true;
+        protected void UsePlayer(Player p, CommandData data, string message, string type) {
+            if (message.Length == 0) { Help(p); return; }
+            string[] args = message.SplitSpaces(2);
+            string target = CheckOwn(p, args[0], "player name");
+            if (target == null) return;
+            
+            target = PlayerInfo.FindMatchesPreferOnline(p, target);
+            if (target == null) return;            
+            if (p.name != target && !CheckExtraPerm(p, data, 1)) return;
+            
+            LevelPermission rank = Group.GroupIn(target).Permission;
+            if (!CheckRank(p, data, target, rank, "change the " + type + " of", true)) return;
+            SetPlayerData(p, target, args.Length > 1 ? args[1] : "");
         }
 
-        protected virtual void SetBotData(Player p, PlayerBot bot, string args) { }
+        protected virtual void SetBotData(Player p, PlayerBot bot,    string args) { }      
+        protected virtual void SetOnlineData(Player p, Player who,    string args) { }       
+        protected virtual void SetPlayerData(Player p, string target, string args) { }
         
-        protected virtual void SetPlayerData(Player p, Player who, string args) { }
+        /// <remarks> λACTOR is replaced with nick of player performing the action </remarks>
+        /// <remarks> λTARGET is replaced with either "their" or "[target nick]'s", depending 
+        /// on whether the actor is the same player as the target or not </remarks>
+        protected void MessageAction(Player actor, string target, Player who, string message) {
+            // TODO: this needs to be compoletely rethought
+            bool global = who == null || actor.IsSuper 
+                            || (!actor.level.SeesServerWideChat && actor.level != who.level);
+            
+            if (actor == who) {
+                message = message.Replace("λACTOR",  "λNICK")
+                                 .Replace("λTARGET", "their");
+                Chat.MessageFrom(who, message);
+            } else if (!global) {
+                message = message.Replace("λACTOR",  actor.ColoredName)
+                                 .Replace("λTARGET", "λNICK&S's");
+                Chat.MessageFrom(who, message);
+            } else {
+                message = message.Replace("λACTOR",  actor.ColoredName)
+                                 .Replace("λTARGET", Player.Console.FormatNick(target) + "&S's");
+                Chat.MessageAll(message);
+            }
+        }
     }
 }

@@ -16,6 +16,7 @@
     permissions and limitations under the Licenses.
  */
 using System;
+using System.Collections.Generic;
 using System.Data;
 using MCGalaxy.DB;
 using MCGalaxy.SQL;
@@ -23,87 +24,84 @@ using MCGalaxy.SQL;
 namespace MCGalaxy.Eco {
     public static partial class Economy {
         
-        static ColumnDesc[] createEconomy = new ColumnDesc[] {
+        static ColumnDesc[] ecoTable = new ColumnDesc[] {
             new ColumnDesc("player", ColumnType.VarChar, 20, priKey: true),
             new ColumnDesc("money", ColumnType.Int32),
-            new ColumnDesc("total", ColumnType.Integer, notNull: true, def: "0"),
-            new ColumnDesc("purchase", ColumnType.VarChar, 255, notNull: true, def: "'%cNone'"),
-            new ColumnDesc("payment", ColumnType.VarChar, 255, notNull: true, def: "'%cNone'"),
-            new ColumnDesc("salary", ColumnType.VarChar, 255, notNull: true, def: "'%cNone'"),
-            new ColumnDesc("fine", ColumnType.VarChar, 255, notNull: true, def: "'%cNone'"),
+            new ColumnDesc("total", ColumnType.Int32),
+            new ColumnDesc("purchase", ColumnType.VarChar, 255),
+            new ColumnDesc("payment", ColumnType.VarChar, 255),
+            new ColumnDesc("salary", ColumnType.VarChar, 255),
+            new ColumnDesc("fine", ColumnType.VarChar, 255),
         };
-
+        
+        static object ListOld(IDataRecord record, object arg) {
+            EcoStats stats = ParseStats(record);
+            stats.__unused = record.GetInt("money");            
+            ((List<EcoStats>)arg).Add(stats);
+            return arg;
+        }
+        
         public static void LoadDatabase() {
-            Database.Backend.CreateTable("Economy", createEconomy);
-            using (DataTable eco = Database.Backend.GetRows("Economy", "*"))
-                foreach (DataRow row in eco.Rows)
-            {
-                int money = PlayerData.ParseInt(row["money"].ToString());
-                if (money == 0) continue;
-                
-                EcoStats stats;
-                stats.Player = row["player"].ToString();
-                stats.Payment = row["payment"].ToString();
-                stats.Purchase = row["purchase"].ToString();
-                stats.Salary = row["salary"].ToString();
-                stats.Fine = row["fine"].ToString();
-                stats.TotalSpent = PlayerData.ParseInt(row["total"].ToString());
-                
-                UpdateMoney(stats.Player, money);
+            Database.CreateTable("Economy", ecoTable);
+            
+            // money used to be in the Economy table, move it back to the Players table
+            List<EcoStats> outdated = new List<EcoStats>();
+            Database.ReadRows("Economy", "*", outdated, ListOld, "WHERE money > 0");
+            
+            if (outdated.Count == 0) return;            
+            Logger.Log(LogType.SystemActivity, "Upgrading economy stats..");   
+            
+            foreach (EcoStats stats in outdated) {
+                UpdateMoney(stats.Player, stats.__unused);
                 UpdateStats(stats);
             }
         }
-
-
-        public struct EcoStats {
-            public string Player, Purchase, Payment, Salary, Fine;
-            public int TotalSpent;
-            
-            public EcoStats(int tot, string player, string pur,
-                            string pay, string sal, string fin) {
-                TotalSpent = tot;
-                Player = player;
-                Purchase = pur;
-                Payment = pay;
-                Salary = sal;
-                Fine = fin;
-            }
-        }
-        
-        public static void UpdateStats(EcoStats stats) {
-            Database.Backend.AddOrReplaceRow("Economy", "player, money, total, purchase, payment, salary, fine",
-                                             stats.Player, 0, stats.TotalSpent, stats.Purchase,
-                                             stats.Payment, stats.Salary, stats.Fine);
-        }
-
-        public static EcoStats RetrieveStats(string name) {
-            EcoStats stats = default(EcoStats);
-            stats.Player = name;
-            
-            using (DataTable eco = Database.Backend.GetRows("Economy", "*", "WHERE player=@0", name)) {
-                if (eco.Rows.Count > 0) {
-                    stats.TotalSpent = int.Parse(eco.Rows[0]["total"].ToString());
-                    stats.Purchase = eco.Rows[0]["purchase"].ToString();
-                    stats.Payment = eco.Rows[0]["payment"].ToString();
-                    stats.Salary = eco.Rows[0]["salary"].ToString();
-                    stats.Fine = eco.Rows[0]["fine"].ToString();
-                } else {
-                    stats.Purchase = "%cNone";
-                    stats.Payment = "%cNone";
-                    stats.Salary = "%cNone";
-                    stats.Fine = "%cNone";
-                }
-            }
-            return stats;
-        }
-        
         
         public static string FindMatches(Player p, string name, out int money) {
-            return PlayerInfo.FindOfflineMoneyMatches(p, name, out money);
+            string[] match = PlayerDB.MatchValues(p, name, "Name,Money");
+            money = match == null ? 0    : int.Parse(match[1]);
+            return  match == null ? null : match[0];
         }
         
         public static void UpdateMoney(string name, int money) {
-            Database.Backend.UpdateRows("Players", "Money = @1", "WHERE Name = @0", name, money);
+            PlayerDB.Update(name, PlayerData.ColumnMoney, money.ToString());
+        }
+        
+
+        public struct EcoStats {
+            public string Player, Purchase, Payment, Salary, Fine; public int TotalSpent, __unused;
+        }
+        
+        public static void UpdateStats(EcoStats stats) {
+            Database.AddOrReplaceRow("Economy", "player, money, total, purchase, payment, salary, fine",
+			                         stats.Player, 0, stats.TotalSpent, stats.Purchase,
+			                         stats.Payment, stats.Salary, stats.Fine);
+        }
+        
+        static EcoStats ParseStats(IDataRecord record) {
+            EcoStats stats;
+            stats.Player = record.GetText("player");
+            stats.Payment  = Parse(record.GetText("payment"));
+            stats.Purchase = Parse(record.GetText("purchase"));
+            stats.Salary   = Parse(record.GetText("salary"));
+            stats.Fine     = Parse(record.GetText("fine"));
+            
+            stats.TotalSpent = record.GetInt("total");
+            stats.__unused   = 0;
+            return stats;
+        }
+        
+        static string Parse(string raw) {
+            if (raw == null || raw.Length == 0 || raw.CaselessEq("NULL")) return null;           
+            return raw.CaselessEq("%cNone") ? null : raw;
+        }
+        
+        static object ReadStats(IDataRecord record, object arg) { return ParseStats(record); }
+        public static EcoStats RetrieveStats(string name) {
+            EcoStats stats = default(EcoStats);
+            stats.Player   = name;
+            return (EcoStats)Database.ReadRows("Economy", "*", stats, ReadStats,
+                                               "WHERE player=@0", name);
         }
     }
 }

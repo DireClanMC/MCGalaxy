@@ -18,10 +18,11 @@
 using System;
 
 namespace MCGalaxy {
-    
+
+    /// <summary> Extension methods relating to strings. </summary>
     public static class StringExts {
 
-        /// <summary> Sets the first character of the input string touppercase. </summary>
+        /// <summary> Sets the first character of the input string to uppercase. </summary>
         public static string Capitalize(this string str) {
             if (String.IsNullOrEmpty(str)) return str;
             
@@ -36,6 +37,11 @@ namespace MCGalaxy {
             
             if (str[str.Length - 1] != '+') return str;
             return str.Substring(0, str.Length - 1);
+        }
+
+        /// <summary> Returns whether line is empty or starts with a #. </summary>
+        public static bool IsCommentLine(this string line) {
+            return line.Length == 0 || line[0] == '#';
         }
         
         
@@ -58,25 +64,6 @@ namespace MCGalaxy {
             for (int i = 0; i < str.Length; i++)
                 c[i] = UnicodeToCp437(str[i]);
             return new String(c);
-        }
-
-        /// <summary> Modifies the characters of a string consisting of code page 437 indices into unicode. </summary>
-        public unsafe static void Cp437ToUnicodeInPlace(this string str) {
-            fixed (char* ptr = str) {
-                for (int i = 0; i < str.Length; i++) {
-                    ptr[i] = Cp437ToUnicode(ptr[i]);
-                }
-            }
-        }
-
-        /// <summary> Modifies the characters of a unicode string into code page 437 indices. </summary>
-        /// <remarks> Unicode characters not in code page 437 are replaced with '?'. </remarks>              
-        public static unsafe void UnicodeToCp437InPlace(this string str) {
-            fixed (char* ptr = str) {
-                for (int i = 0; i < str.Length; i++) {
-                    ptr[i] = UnicodeToCp437(ptr[i]);
-                }
-            }
         }
         
         

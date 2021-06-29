@@ -28,7 +28,17 @@ namespace MCGalaxy.Events.EconomyEvents {
             if (handlers.Count == 0) return;
             CallCommon(pl => pl(p));
         }
+    }
+    
+    public sealed class EcoTransaction {
+        public Player Source;
+        public string TargetName, TargetFormatted;
+        
+        public string ItemDescription, Reason;
+        public int Amount;
+        public EcoTransactionType Type;
     }    
+    public enum EcoTransactionType { Give, Payment, Take, Purchase }
     
     public delegate void OnEcoTransaction(EcoTransaction transaction);   
     /// <summary> Raised whenever an economic transaction occurs. </summary>

@@ -26,16 +26,17 @@ namespace MCGalaxy.SQL {
     /// <summary> Simple abstraction for a database management system. </summary>
     public abstract class IDatabaseBackend {
         
-        /// <summary> Describes the arguments for a database connection
-        /// (such as database name or file location) </summary>
-        public abstract string ConnectionString { get; }
-        
         /// <summary> Whether this backend enforces the character length in VARCHAR columns. </summary>
-        public abstract bool EnforcesTextLength { get; }
+        public abstract bool EnforcesTextLength { get; }        
+        /// <summary> Whether this backend supports multiple database schemas. </summary>
+        public abstract bool MultipleSchema { get; }
+        
+        internal abstract IDbConnection CreateConnection();
+        internal abstract IDbCommand CreateCommand(string sql, IDbConnection conn);
+        internal abstract IDbDataParameter CreateParameter();
         
         /// <summary> Suffix required after a WHERE clause for caseless string comparison. </summary>
         public string CaselessWhereSuffix { get; protected set; }
-
         /// <summary> Suffix required after a LIKE clause for caseless string comparison. </summary>        
         public string CaselessLikeSuffix { get; protected set; }
 
@@ -43,21 +44,15 @@ namespace MCGalaxy.SQL {
         /// <summary> Creates the schema for this database (if required). </summary>
         public abstract void CreateDatabase();
         
-        /// <summary> Returns a new BulkTransaction instance, which can be used to execute
-        /// many sql statements as one single transaction. </summary>
-        public abstract BulkTransaction CreateBulk();
-        
-        /// <summary> Returns a new ParameterisedQuery instance, which executes sql statements
-        /// and manages binding of parameters for sql queries. </summary>
-        public abstract ParameterisedQuery CreateParameterised();
-        
-        /// <summary> Returns the shared static ParamterisedQuery instance, that is only used
-        /// for sql queries with no parameters. </summary>
-        protected internal abstract ParameterisedQuery GetStaticParameterised();
-        
-        public abstract string FastGetDateTime(IDataReader reader, int col);
+        public abstract string RawGetDateTime(IDataRecord record, int col);
         
         protected internal virtual void ParseCreate(ref string cmd) { }
+        
+        protected static List<string> GetStrings(string sql, params object[] args) {
+            List<string> values = new List<string>();
+            Database.Iterate(sql, values, Database.ReadList, args);
+            return values;
+        }
         
         
         // == Higher level table management functions ==
@@ -71,118 +66,83 @@ namespace MCGalaxy.SQL {
         /// <summary> Returns a list of the column names in the given table. </summary>
         public abstract List<string> ColumnNames(string table);
         
-        /// <summary> Renames the source table to the given name. </summary>
-        public abstract void RenameTable(string srcTable, string dstTable);
+        /// <summary> Returns SQL for renaming the source table to the given name. </summary>
+        public abstract string RenameTableSql(string srcTable, string dstTable);
         
-        /// <summary> Removes all entries from the given table. </summary>
-        public abstract void ClearTable(string table);
-        
-        /// <summary> Creates a new table in the database (unless it already exists). </summary>
-        public virtual void CreateTable(string table, ColumnDesc[] columns) {
-            ValidateTable(table);
+        /// <summary> Returns SQL for creating a new table (unless it already exists). </summary>
+        public virtual string CreateTableSql(string table, ColumnDesc[] columns) {
             StringBuilder sql = new StringBuilder();
             sql.AppendLine("CREATE TABLE if not exists `" + table + "` (");
             CreateTableColumns(sql, columns);
             sql.AppendLine(");");
-            Database.Execute(sql.ToString());
+            return sql.ToString();
         }
         
         protected abstract void CreateTableColumns(StringBuilder sql, ColumnDesc[] columns);
         
-        /// <summary> Completely removes the given table. </summary>
-        public virtual void DeleteTable(string table) {
-            ValidateTable(table);
-            string syntax = "DROP TABLE `" + table + "`";
-            Database.Execute(syntax);
+        /// <summary> Returns SQL for completely removing the given table. </summary>
+        public virtual string DeleteTableSql(string table) {
+            return "DROP TABLE `" + table + "`";
         }
         
         /// <summary> Prints/dumps the table schema of the given table. </summary>
         public abstract void PrintSchema(string table, TextWriter w);
         
-        
-        // == Higher level column functions ==
-        
-        /// <summary> Adds a new coloumn to the given table. </summary>
+        /// <summary> Returns SQL for adding a new column to the given table. </summary>
         /// <remarks> Note colAfter is only a hint - some database backends ignore this. </remarks>
-        public abstract void AddColumn(string table, ColumnDesc col, string colAfter);
+        public abstract string AddColumnSql(string table, ColumnDesc col, string colAfter);
 
         
         // == Higher level functions ==
 
-        /// <summary> Inserts/Copies all the rows from the source table into the destination table. </summary>
-        /// <remarks> Note: This may work incorrectly if the tables have different schema. </remarks>
-        public virtual void CopyAllRows(string srcTable, string dstTable) {
-            ValidateTable(srcTable);
-            ValidateTable(dstTable);
-            string syntax = "INSERT INTO `" + dstTable + "` SELECT * FROM `" + srcTable + "`";
-            Database.Execute(syntax);
+        /// <summary> Returns SQL for copying all the rows from the source table into the destination table. </summary>
+        public virtual string CopyAllRowsSql(string srcTable, string dstTable) {
+            return "INSERT INTO `" + dstTable + "` SELECT * FROM `" + srcTable + "`";
         }
         
-        /// <summary> Retrieves rows for the given table. </summary>
-        /// <remarks> modifier is optional SQL which can be used to retrieve only certain rows,
-        /// return rows in a certain order, etc.</remarks>
-        public virtual DataTable GetRows(string table, string columns,
-                                         string modifier = "", params object[] args) {
-            ValidateTable(table);
-            string syntax = "SELECT " + columns + " FROM `" + table + "`";
-            if (modifier.Length > 0) syntax += " " + modifier;
-            return Database.Fill(syntax, args);
+        /// <summary> Returns SQL for reading rows from the given table. </summary>
+        public virtual string ReadRowsSql(string table, string columns, string modifier) {
+            string sql = "SELECT " + columns + " FROM `" + table + "`";
+            if (modifier.Length > 0) sql += " " + modifier;
+            return sql;
         }
         
-        /// <summary> Updates rows for the given table. </summary>
-        /// <remarks> modifier is optional SQL which can be used to update only certain rows.</remarks>
-        public virtual void UpdateRows(string table, string columns,
-                                       string modifier = "", params object[] args) {
-            ValidateTable(table);
-            string syntax = "UPDATE `" + table + "` SET " + columns;
-            if (modifier.Length > 0) syntax += " " + modifier;
-            Database.Execute(syntax, args);
+        /// <summary> Returns SQL for updating rows for the given table. </summary>
+        public virtual string UpdateRowsSql(string table, string columns, string modifier) {
+            string sql = "UPDATE `" + table + "` SET " + columns;
+            if (modifier.Length > 0) sql += " " + modifier;
+            return sql;
         }
         
-        /// <summary> Deletes rows for the given table. </summary>
-        /// <remarks> modifier is optional SQL which can be used to delete only certain rows.</remarks>
-        public virtual void DeleteRows(string table, string modifier = "", params object[] args) {
-            ValidateTable(table);
-            string syntax = "DELETE FROM `" + table + "`";
-            if (modifier.Length > 0) syntax += " " + modifier;
-            Database.Execute(syntax, args);
+        /// <summary> Returns SQL for deleting rows for the given table. </summary>
+        public virtual string DeleteRowsSql(string table, string modifier) {
+            string sql = "DELETE FROM `" + table + "`";
+            if (modifier.Length > 0) sql += " " + modifier;
+            return sql;
         }
 
-        /// <summary> Adds a row to the given table. </summary>
-        public virtual void AddRow(string table, string columns, params object[] args) {
-            ValidateTable(table);
-            DoInsert("INSERT INTO", table, columns, args);
+        /// <summary> Returns SQL for adding a row to the given table. </summary>
+        public virtual string AddRowSql(string table, string columns, object[] args) {
+            return InsertSql("INSERT INTO", table, columns, args);
         }
         
-        /// <summary> Adds or replaces a row (same primary key) in the given table. </summary>
-        public abstract void AddOrReplaceRow(string table, string columns, params object[] args);
+        /// <summary> Returns SQL for adding or replacing a row (same primary key) in the given table. </summary>
+        public abstract string AddOrReplaceRowSql(string table, string columns, object[] args);
       
         
-        protected void DoInsert(string command, string table,
-                                string columns, params object[] args) {
-            StringBuilder sql = new StringBuilder(command);
+        protected string InsertSql(string cmd, string table, string columns, object[] args) {
+            StringBuilder sql = new StringBuilder(cmd);
             sql.Append(" `").Append(table).Append("` ");
             sql.Append('(').Append(columns).Append(')');
             
-            string[] names = Database.GetParamNames(args.Length);
+            string[] names = SqlQuery.GetNames(args.Length);
             sql.Append(" VALUES (");
             for (int i = 0; i < args.Length; i++) {
                 sql.Append(names[i]);
                 if (i < args.Length - 1) sql.Append(", ");
                 else sql.Append(")");
             }
-            Database.Execute(sql.ToString(), args);
-        }
-        
-        protected static void ValidateTable(string name) {
-            foreach (char c in name) {
-                if (c >= '0' && c <= '9') continue;
-                if (c >= 'a' && c <= 'z') continue;
-                if (c >= 'A' && c <= 'Z') continue;
-                if (c == '+' || c == '_' || c == '@' || c == '-' || c == '.') continue;
-                
-                throw new ArgumentException("Invalid character in table name: " + c);
-            }
+            return sql.ToString();
         }
     }
 }

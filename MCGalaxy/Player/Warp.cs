@@ -35,7 +35,6 @@ namespace MCGalaxy {
         public List<Warp> Items = new List<Warp>();
         public string Filename;
         
-        /// <summary> Finds the warp whose name caselessly equals the given name. </summary>
         public Warp Find(string name) {
             foreach (Warp wp in Items) {
                 if (wp.Name.CaselessEq(name)) return wp;
@@ -43,38 +42,31 @@ namespace MCGalaxy {
             return null;
         }
 
-        /// <summary> Returns whether a warp with the given name exists. </summary>
         public bool Exists(string name) { return Find(name) != null; }
 
-        /// <summary> Creates a new warp with the given name, located at the 
-        /// player's current position, orientation, and level. </summary>
         public void Create(string name, Player p) {
             Warp warp = new Warp();
-            InitWarp(warp, name, p);
+            Make(warp, name, p);
             Items.Add(warp);
             Save();
         }
         
-        void InitWarp(Warp warp, string name, Player p) {
+        void Make(Warp warp, string name, Player p) {
             warp.Pos = p.Pos; warp.Name = name;
             warp.Yaw = p.Rot.RotY; warp.Pitch = p.Rot.HeadX;            
             warp.Level = p.level.name;
         }
 
-        /// <summary> Moves the given warp to the target 
-        /// player's position, orientation, and map. </summary>
         public void Update(Warp warp, Player p) {
-            InitWarp(warp, warp.Name, p);
+            Make(warp, warp.Name, p);
             Save();
         }
 
-        /// <summary> Removes the given warp. </summary>
         public void Remove(Warp warp, Player p) {
             Items.Remove(warp);
             Save();
         }
         
-        /// <summary> Attempts to move the given player to the given warp. </summary>
         public void Goto(Warp warp, Player p) {
             if (!p.level.name.CaselessEq(warp.Level)) {
                 PlayerActions.ChangeMap(p, warp.Level);
@@ -82,16 +74,17 @@ namespace MCGalaxy {
             
             if (p.level.name.CaselessEq(warp.Level)) {
                 p.SendPos(Entities.SelfID, warp.Pos, new Orientation(warp.Yaw, warp.Pitch));
-                Player.Message(p, "Sent you to waypoint/warp");
+                p.Message("Sent you to waypoint/warp");
             } else {
-                Player.Message(p, "Unable to send you to the warp as the map it is on is not loaded.");
+                p.Message("Unable to send you to the warp as the map it is on is not loaded.");
             }
         }
         
 
-        /// <summary> Loads the list of warps from the file located at Filename. </summary>
         public void Load() {
-            if (!File.Exists(Filename)) return;          
+            if (!File.Exists(Filename)) return;
+            List<Warp> warps = new List<Warp>();
+            
             using (StreamReader r = new StreamReader(Filename)) {
                 string line;
                 while ((line = r.ReadLine()) != null) {
@@ -101,22 +94,23 @@ namespace MCGalaxy {
                     string[] parts = line.Split(':');
                     Warp warp = new Warp();
                     try {
-                        warp.Name = parts[0];
+                        warp.Name  = parts[0];
                         warp.Level = parts[1];
                         warp.Pos.X = int.Parse(parts[2]);
                         warp.Pos.Y = int.Parse(parts[3]);
                         warp.Pos.Z = int.Parse(parts[4]);
-                        warp.Yaw = byte.Parse(parts[5]);
+                        warp.Yaw   = byte.Parse(parts[5]);
                         warp.Pitch = byte.Parse(parts[6]);
-                        Items.Add(warp);
-                    } catch {
-                        Logger.Log(LogType.Warning, "Failed loading a warp from " + Filename);
+                        warps.Add(warp);
+                    } catch (Exception ex) { 
+                        Logger.LogError("Error loading warp from " + Filename, ex); 
                     }
                 }
             }
+            // don't change live list while still loading warps
+            Items = warps;
         }
 
-        /// <summary> Saves this list of warps to Filename. </summary>
         public void Save() {
             using (StreamWriter w = new StreamWriter(Filename)) {
                 foreach (Warp warp in Items) {

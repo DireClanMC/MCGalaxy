@@ -20,14 +20,14 @@ using System.IO;
 using System.Text;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdRestore : Command {        
+    public sealed class CmdRestore : Command2 {        
         public override string name { get { return "Restore"; } }
         public override string type { get { return CommandTypes.World; } }
         public override bool museumUsable { get { return false; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Operator; } }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0) { OutputBackups(p); return; }
             
             Level lvl;
@@ -36,24 +36,21 @@ namespace MCGalaxy.Commands.World {
                 lvl = Matcher.FindLevels(p, args[1]);
                 if (lvl == null) return;
             } else {
-                if (p != null && p.level != null) {
-                    lvl = p.level;
-                } else {
-                    Player.Message(p, "You must provide a level name when using /restore from console.");
-                    return;
+                if (p.IsSuper) {
+                    SuperRequiresArgs(p, "level name"); return;
                 }
+                lvl = p.level;
             }
 
-            if (!LevelInfo.ValidateAction(p, lvl.name, "restore a backup of this level")) return;
+            if (!LevelInfo.Check(p, data.Rank, lvl, "restore a backup of this level")) return;
             if (File.Exists(LevelInfo.BackupFilePath(lvl.name, args[0]))) {
                 try {
                     DoRestore(lvl, args[0]);
-                } catch (Exception ex) {
-                    Logger.LogError(ex);
-                    Logger.Log(LogType.Warning, "Restore failed");
+                } catch (Exception ex) { 
+                    Logger.LogError("Error restoring map", ex); 
                 }
             } else { 
-                Player.Message(p, "Backup " + args[0] + " does not exist."); 
+                p.Message("Backup " + args[0] + " does not exist."); 
             }
         }
         
@@ -75,11 +72,11 @@ namespace MCGalaxy.Commands.World {
         static void OutputBackups(Player p) {
             string backupPath = LevelInfo.BackupBasePath(p.level.name);
             if (!Directory.Exists(backupPath)) {
-                Player.Message(p, p.level.ColoredName + " %Shas no backups yet."); return;
+                p.Message(p.level.ColoredName + " &Shas no backups yet."); return;
             }
             
             string[] dirs = Directory.GetDirectories(backupPath);
-            Player.Message(p, p.level.ColoredName + " %Shas &b" + dirs.Length + " %Sbackups.");
+            p.Message(p.level.ColoredName + " &Shas &b" + dirs.Length + " &Sbackups.");
             int count = 0;
             StringBuilder custom = new StringBuilder();
             
@@ -93,15 +90,15 @@ namespace MCGalaxy.Commands.World {
             }
 
             if (count == 0) return;
-            Player.Message(p, "&b" + count + " %Sof these are custom-named restores:");
-            Player.Message(p, custom.ToString(2, custom.Length - 2));
+            p.Message("&b" + count + " &Sof these are custom-named restores:");
+            p.Message(custom.ToString(2, custom.Length - 2));
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/Restore %H- lists all backups for the current map");
-            Player.Message(p, "%T/Restore [number] [name]");
-            Player.Message(p, "%HRestores a previous backup for the given map.");
-            Player.Message(p, "%H  If [name] is not given, your current map is used.");
+            p.Message("&T/Restore &H- lists all backups for the current level");
+            p.Message("&T/Restore [number] <level>");
+            p.Message("&HRestores a previous backup for the given level.");
+            p.Message("&H  If <level> is not given, the current level is used.");
         }
     }
 }

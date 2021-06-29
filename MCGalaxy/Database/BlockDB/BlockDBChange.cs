@@ -17,6 +17,7 @@
  */
 using System;
 using System.Data;
+using MCGalaxy.Blocks.Extended;
 using MCGalaxy.SQL;
 using BlockID = System.UInt16;
 
@@ -26,18 +27,18 @@ namespace MCGalaxy.DB {
     public static class BlockDBChange {
         
         public static void Output(Player p, string name, BlockDBEntry e) {
-            BlockID oldBlock = e.OldBlock, newBlock = e.NewBlock;            
+            BlockID oldBlock = e.OldBlock, newBlock = e.NewBlock;
             DateTime time = BlockDB.Epoch.AddSeconds(e.TimeDelta);
             TimeSpan delta = DateTime.UtcNow.Subtract(time);
-            name = PlayerInfo.GetColoredName(p, name);
+            name = p.FormatNick(name);
             
             if (newBlock == Block.Air) {
-                Player.Message(p, "{0} ago {1} &4deleted %S{2}{3}",
+                p.Message("{0} ago {1} &4deleted &S{2}{3}",
                                delta.Shorten(true, false), name,
                                Block.GetName(p, oldBlock),
                                FormatReason(e.Flags));
             } else {
-                Player.Message(p, "{0} ago {1} &3placed %S{2}{3}",
+                p.Message("{0} ago {1} &3placed &S{2}{3}",
                                delta.Shorten(true, false), name,
                                Block.GetName(p, newBlock),
                                FormatReason(e.Flags));
@@ -45,43 +46,23 @@ namespace MCGalaxy.DB {
         }
         
         public static void OutputMessageBlock(Player p, BlockID block, ushort x, ushort y, ushort z) {
-            if (!p.level.Props[block].IsMessageBlock) return;
-
-            try {
-                if (!Database.Backend.TableExists("Messages" + p.level.name)) return;
-                DataTable messages = Database.Backend.GetRows("Messages" + p.level.name, "*",
-                                                              "WHERE X=@0 AND Y=@1 AND Z=@2", x, y, z);
-                int last = messages.Rows.Count - 1;
-                if (last == -1) { messages.Dispose(); return; }
-                
-                string message = messages.Rows[last]["Message"].ToString().Trim();
-                message = message.Replace("\\'", "\'");
-                Player.Message(p, "Message Block contents: {0}", message);
-            } catch {
-            }
+            if (!p.level.Props[block].IsMessageBlock)      return;
+            if (!MessageBlock.ExistsInDB(p.level.MapName)) return;
+            string message = MessageBlock.Get(p.level.MapName, x, y, z);
+            
+            if (message == null) return;
+            p.Message("Message Block contents: {0}", message);
         }
         
         public static void OutputPortal(Player p, BlockID block, ushort x, ushort y, ushort z) {
-            if (!p.level.Props[block].IsPortal) return;
-
-            try {
-                if (!Database.Backend.TableExists("Portals" + p.level.name)) return;
-                DataTable portals = Database.Backend.GetRows("Portals" + p.level.name, "*",
-                                                             "WHERE EntryX=@0 AND EntryY=@1 AND EntryZ=@2", x, y, z);
-                int last = portals.Rows.Count - 1;
-                if (last == -1) { portals.Dispose(); return; }
-                
-                string exitMap = portals.Rows[last]["ExitMap"].ToString().Trim();
-                ushort exitX = U16(portals.Rows[last]["ExitX"]);
-                ushort exitY = U16(portals.Rows[last]["ExitY"]);
-                ushort exitZ = U16(portals.Rows[last]["ExitZ"]);
-                Player.Message(p, "Portal destination: ({0}, {1}, {2}) in {3}",
-                               exitX, exitY, exitZ, exitMap);
-            } catch {
-            }
+            if (!p.level.Props[block].IsPortal)      return;
+            if (!Portal.ExistsInDB(p.level.MapName)) return;
+            PortalExit exit = Portal.Get(p.level.MapName, x, y, z);
+            
+            if (exit == null) return;
+            p.Message("Portal destination: ({0}, {1}, {2}) in {3}",
+                           exit.X, exit.Y, exit.Z, exit.Map);
         }
-        
-        static ushort U16(object x) { return ushort.Parse(x.ToString()); }
         
         static string FormatReason(ushort flags) {
             if ((flags & BlockDBFlags.Painted) != 0)   return " (Painted)";

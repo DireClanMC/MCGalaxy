@@ -17,8 +17,8 @@
  */
 using System;
 
-namespace MCGalaxy.Commands.World {   
-    public sealed class CmdSave : Command {
+namespace MCGalaxy.Commands.World {
+    public sealed class CmdSave : Command2 {
         
         public override string name { get { return "Save"; } }
         public override string type { get { return CommandTypes.World; } }
@@ -28,10 +28,10 @@ namespace MCGalaxy.Commands.World {
             get { return new[] { new CommandAlias("MapSave"), new CommandAlias("WSave"), new CommandAlias("WorldSave") }; }
         }
 
-        public override void Use(Player p, string message) {
-            if (message.CaselessEq("all")) { SaveAll(); return; }
+        public override void Use(Player p, string message, CommandData data) {
+            if (message.CaselessEq("all")) { SaveAll(p); return; }
             if (message.Length == 0) {
-                if (Player.IsSuper(p)) { SaveAll(); } 
+                if (p.IsSuper) { SaveAll(p); }
                 else { Save(p, p.level, ""); }
                 return;
             }
@@ -48,42 +48,48 @@ namespace MCGalaxy.Commands.World {
             }
         }
         
-        static void SaveAll() {
+        static void SaveAll(Player p) {
             Level[] loaded = LevelInfo.Loaded.Items;
             foreach (Level lvl in loaded) {
-                try {
-                    if (lvl.ShouldSaveChanges()) {
-                        lvl.Save();
-                    } else { 
-                        Logger.Log(LogType.SystemActivity, "Level \"{0}\" is running a game, skipping save.", lvl.name);
-                    }
-                } catch (Exception ex) {
-                    Logger.LogError(ex);
-                }
+                TrySave(p, lvl, false);
             }
             Chat.MessageGlobal("All levels have been saved.");
         }
         
+        static bool TrySave(Player p, Level lvl, bool force) {
+            if (!force && !lvl.Changed) return false;
+            
+            if (!lvl.SaveChanges) {
+                p.Message("Level {0} &Sis running a game, skipping save", lvl.ColoredName);
+                return false;
+            }
+            
+            bool saved = lvl.Save(force);
+            if (!saved) p.Message("Saving of level {0} &Swas cancelled", lvl.ColoredName);
+            return saved;
+        }
+        
         static void Save(Player p, Level lvl, string restoreName) {
-            lvl.Save(true);
-            Player.Message(p, "Level {0} %Ssaved.", lvl.ColoredName);
-            int num = lvl.Backup(true, restoreName);
-            if (num == -1) return;
+            if (!TrySave(p, lvl, true)) return;
+            p.Message("Level {0} &Ssaved", lvl.ColoredName);
+            
+            string backup = lvl.Backup(true, restoreName);
+            if (backup == null) return;
             
             if (restoreName.Length == 0) {
-                Logger.Log(LogType.SystemActivity, "Backup {1} saved for {0}", lvl.name, num);
-                lvl.ChatLevel("Backup " + num + " saved for " + lvl.ColoredName);
+                Logger.Log(LogType.SystemActivity, "Backup {1} saved for {0}", lvl.name, backup);
+                lvl.Message("Backup " + backup + " saved for " + lvl.ColoredName);
             } else {
-                Logger.Log(LogType.SystemActivity, "{0} had a backup created named &b{1}", lvl.name, restoreName);
-                lvl.ChatLevel(lvl.ColoredName + " %Shad a backup created named &b" + restoreName);
+                Logger.Log(LogType.SystemActivity, "{0} had a backup created named &b{1}", lvl.name, backup);
+                lvl.Message(lvl.ColoredName + " &Shad a backup created named &b" + backup);
             }
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/Save %H- Saves the level you are currently in");
-            Player.Message(p, "%T/Save all %H- Saves all loaded levels.");
-            Player.Message(p, "%T/Save [map] %H- Saves the specified map.");
-            Player.Message(p, "%T/Save [map] [name] %H- Backups the map with a given restore name");
+            p.Message("&T/Save &H- Saves the level you are currently in");
+            p.Message("&T/Save all &H- Saves all loaded levels.");
+            p.Message("&T/Save [level] &H- Saves the specified level.");
+            p.Message("&T/Save [level] [name] &H- Backups the level with a given restore name");
         }
     }
 }

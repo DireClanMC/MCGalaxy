@@ -25,26 +25,26 @@ namespace MCGalaxy.Commands.CPE {
         public override string type { get { return CommandTypes.Other; } }
         public override LevelPermission defaultRank { get { return LevelPermission.AdvBuilder; } }
         public override CommandPerm[] ExtraPerms {
-            get { return new[] { new CommandPerm(LevelPermission.Operator, "+ can change the rotation of others"),
-                    new CommandPerm(LevelPermission.Operator, "+ can change the rotation of bots") }; }
+            get { return new[] { new CommandPerm(LevelPermission.Operator, "can change the rotation of others"),
+                    new CommandPerm(LevelPermission.Operator, "can change the rotation of bots") }; }
         }
 
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.IndexOf(' ') == -1) {
                 message = "-own " + message;
                 message = message.TrimEnd();
             }
-            UseBotOrPlayer(p, message, "rotation");
+            UseBotOrOnline(p, data, message, "rotation");
         }
         
         protected override void SetBotData(Player p, PlayerBot bot, string args) {
             if (!ParseArgs(p, args, bot)) return;
-            BotsFile.Save(bot.level);
+            BotsFile.Save(p.level);
         }
         
-        protected override void SetPlayerData(Player p, Player who, string args) {
+        protected override void SetOnlineData(Player p, Player who, string args) {
             if (!ParseArgs(p, args, who)) return;
-            Server.rotations.AddOrReplace(who.name, who.Rot.RotX + " " + who.Rot.RotZ);
+            Server.rotations.Update(who.name, who.Rot.RotX + " " + who.Rot.RotZ);
             Server.rotations.Save();
         }
         
@@ -57,7 +57,7 @@ namespace MCGalaxy.Commands.CPE {
             
             string[] bits = args.SplitSpaces();
             if (bits.Length != 2) {
-                Player.Message(p, "You need to provide an axis name and angle."); return false;
+                p.Message("You need to provide an axis name and angle."); return false;
             }
             int angle = 0;
             if (!CommandParser.GetInt(p, bits[1], "Angle", ref angle, -360, 360)) return false;
@@ -67,16 +67,16 @@ namespace MCGalaxy.Commands.CPE {
             } else if (bits[0].CaselessEq("z")) {
                 Entities.UpdateEntityProp(entity, EntityProp.RotZ, angle);
             } else {
-                Player.Message(p, "Axis name must be X or Z."); return false;
+                p.Message("Axis name must be X or Z."); return false;
             }
             return true;
         }
 
         public override void Help(Player p) {
-            Player.Message(p, "%T/EntityRot [name] x/z [angle].");
-            Player.Message(p, "%HSets X or Z axis rotation (in degrees) of that player.");
-            Player.Message(p, "%T/EntityRot bot [name] x/z [angle]");
-            Player.Message(p, "%HSets the X or Z axis rotation (in degrees) of that bot.");
+            p.Message("&T/EntityRot [name] x/z [angle].");
+            p.Message("&HSets X or Z axis rotation (in degrees) of that player.");
+            p.Message("&T/EntityRot bot [name] x/z [angle]");
+            p.Message("&HSets the X or Z axis rotation (in degrees) of that bot.");
         }
     }
 }

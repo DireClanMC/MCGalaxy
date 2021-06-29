@@ -16,11 +16,9 @@
     permissions and limitations under the Licenses.
  */
 using System;
-using System.IO;
-using MCGalaxy.SQL;
 
 namespace MCGalaxy.Commands.World {
-    public sealed class CmdDeleteLvl : Command {
+    public sealed class CmdDeleteLvl : Command2 {
         public override string name { get { return "DeleteLvl"; } }
         public override string type { get { return CommandTypes.World; } }
         public override LevelPermission defaultRank { get { return LevelPermission.Admin; } }
@@ -29,24 +27,22 @@ namespace MCGalaxy.Commands.World {
         }
         public override bool MessageBlockRestricted { get { return true; } }
         
-        public override void Use(Player p, string message) {
+        public override void Use(Player p, string message, CommandData data) {
             if (message.Length == 0 || message.SplitSpaces().Length > 1) { Help(p); return; }
-            if (!Formatter.ValidName(p, message, "level")) return;
             string map = Matcher.FindMaps(p, message);
-            if (map == null) return;
-
-            if (map.CaselessEq(ServerConfig.MainLevel)) { Player.Message(p, "Cannot delete the main level."); return; }
-            if (!LevelInfo.ValidateAction(p, map, "delete this level")) return;
+            LevelConfig cfg;
             
-            Player.Message(p, "Created backup.");
-            if (LevelActions.Delete(map)) return;
-            Player.Message(p, LevelActions.DeleteFailedMessage);
+            if (map == null) return;            
+            if (!LevelInfo.Check(p, data.Rank, map, "delete this map",out cfg)) return;
+
+            if (!LevelActions.Delete(p, map)) return;
+            Chat.MessageGlobal("Level {0} &Swas deleted", cfg.Color + map);
         }
         
         public override void Help(Player p) {
-            Player.Message(p, "%T/DeleteLvl [map]");
-            Player.Message(p, "%HCompletely deletes [map] (portals, MBs, everything");
-            Player.Message(p, "%HA backup of the map will be placed in the levels/deleted folder");
+            p.Message("&T/DeleteLvl [level]");
+            p.Message("&HCompletely deletes [level] (portals, MBs, everything)");
+            p.Message("&HA backup of the level is made in the levels/deleted folder");
         }
     }
 }
