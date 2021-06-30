@@ -290,6 +290,9 @@
     <Compile Include="Commands\Moderation\CmdJoker.cs" />
     <Compile Include="Commands\Moderation\CmdKick.cs" />
     <Compile Include="Commands\Moderation\CmdLocation.cs" />
+    <Compile Include="Commands\Moderation\CmdLocation2.cs" />
+    <Compile Include="Commands\Moderation\CmdLocation3.cs" />
+    <Compile Include="Commands\Moderation\CmdLocation4.cs" />
     <Compile Include="Commands\Moderation\CmdModerate.cs" />
     <Compile Include="Commands\Moderation\CmdMoveAll.cs" />
     <Compile Include="Commands\Moderation\CmdMute.cs" />
@@ -719,27 +722,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Commands\Maintenance" />
-    <Folder Include="Config\Permissions" />
-    <Folder Include="Database\Stats" />
-    <Folder Include="Games\Weapons" />
-    <Folder Include="Games\RoundsGame" />
-    <Folder Include="Generator\LibNoise" />
-    <Folder Include="Generator\Classic" />
-    <Folder Include="Generator\Realistic" />
-    <Folder Include="Modules\Relay\Discord" />
-    <Folder Include="Modules\Relay" />
-    <Folder Include="Network\Heartbeat" />
-    <Folder Include="Modules\Relay\IRC" />
-    <Folder Include="Network\Utils" />
-    <Folder Include="Network\Packets" />
-    <Folder Include="Entity" />
-    <Folder Include="Modules" />
-    <Folder Include="Server\Maintenance" />
-    <Folder Include="util\Formatting" />
-    <Folder Include="util\Threading" />
-  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

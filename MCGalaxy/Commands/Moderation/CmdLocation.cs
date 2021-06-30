@@ -1,5 +1,5 @@
 /*
-    Copyright 2015 MCGalaxy
+    Copyright 2015 MCGalaxy team
 
     Dual-licensed under the    Educational Community License, Version 2.0 and
     the GNU General Public License, Version 3 (the "Licenses"); you may
@@ -40,35 +40,38 @@ namespace MCGalaxy.Commands.Moderation {
             if (ip == null) return;
             
             if (IPUtil.IsPrivate(IPAddress.Parse(ip))) {
-                p.Message("&WPlayer has an internal IP, cannot trace"); return;
+                p.Message("%WPlayer has an internal IP, cannot trace"); return;
             }
 
             string json;
-            try {
-                WebRequest req  = HttpUtil.CreateRequest("http://ipinfo.io/" + ip + "/geo");
+            try
+            {
+                WebRequest req = HttpUtil.CreateRequest("http://ipinfo.io/" + ip + "/geo");
                 WebResponse res = req.GetResponse();
                 json = HttpUtil.GetResponseText(res);
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 HttpUtil.DisposeErrorResponse(ex);
                 throw;
             }
-            
+
             JsonReader reader = new JsonReader(json);
-            JsonObject obj    = (JsonObject)reader.Parse();
+            JsonObject obj = (JsonObject)reader.Parse();
             if (obj == null) { p.Message("&WError parsing GeoIP info"); return; }
-            
+
             object region = null, country = null;
-            obj.TryGetValue("region",   out region);
+            obj.TryGetValue("region", out region);
             obj.TryGetValue("country", out country);
-            
+
             string suffix = HasExtraPerm(p, data.Rank, 1) ? "&b{1}&S/&b{2}" : "&b{2}";
-            string nick   = name == null ? ip : "of " + p.FormatNick(name);
-            p.Message("The IP {0} &Straces to: " + suffix, nick, region, country);
+            string nick = name == null ? ip : "of " + p.FormatNick(name);
+            p.Message("The IP {0} %Straces to: " + suffix, nick, region, country);
         }
         
         public override void Help(Player p) {
-            p.Message("&T/Location [name/IP]");
-            p.Message("&HTracks down location of the given IP, or IP player is on.");
+            p.Message("%T/Location [name/IP]");
+            p.Message("%HTracks down location of the given IP, or IP player is on.");
         }
     }
 }
