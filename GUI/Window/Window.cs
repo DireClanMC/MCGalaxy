@@ -144,8 +144,14 @@ Trying to mix two versions is unsupported - you may experience issues";
             if (!Server.Config.FileLogging[(int)type]) return;
             
             if (InvokeRequired) {
-                BeginInvoke(logCallback, type, message); return;
-            }           
+                try {
+                    BeginInvoke(logCallback, type, message); 
+                } catch (InvalidOperationException) {
+                    // This exception is thrown when trying to log
+                    //  messages after window has already been closed
+                }
+                return;
+            }
             if (Server.shuttingDown) return;
             string newline = Environment.NewLine;
             
@@ -313,13 +319,19 @@ Trying to mix two versions is unsupported - you may experience issues";
         void btnClose_Click(object sender, EventArgs e) { Close(); }
 
         void btnProperties_Click(object sender, EventArgs e) {
-            if (!hasPropsForm) { propsForm = new PropertyWindow(); hasPropsForm = true; }
+            if (!hasPropsForm) {
+                propsForm = new PropertyWindow();
+                // just doing propForms.Icon = Icon; here doesn't show on Mono
+                try { propsForm._icon = Icon; } catch { }
+                hasPropsForm = true; 
+            }
+            
             propsForm.Show();
             if (!propsForm.Focused) propsForm.Focus();
         }
 
-        public static bool hasPropsForm = false;
-        Form propsForm;
+        public static bool hasPropsForm;
+        PropertyWindow propsForm;
 
         void Window_Resize(object sender, EventArgs e) {
             ShowInTaskbar = WindowState != FormWindowState.Minimized;

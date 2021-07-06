@@ -47,8 +47,25 @@ namespace MCGalaxy.Network {
             try {
                 socket.SetSocketOption(SocketOptionLevel.IPv6, ipv6Only, false);
             } catch (Exception ex) {
-                Logger.LogError(ex);
-                Logger.Log(LogType.Warning, "Failed to disable IPv6 only listener setting");
+                Logger.LogError("Failed to disable IPv6 only listener setting", ex);
+            }
+        }
+        
+        void EnableAddressReuse() {
+            // This fixes when on certain environments, if the server is restarted while there are still some
+            // sockets in the TIME_WAIT state, the listener in the new server process will fail with EADDRINUSE
+            //   https://stackoverflow.com/questions/3229860/what-is-the-meaning-of-so-reuseaddr-setsockopt-option-linux
+            //   https://superuser.com/questions/173535/what-are-close-wait-and-time-wait-states
+            //   https://stackoverflow.com/questions/14388706/how-do-so-reuseaddr-and-so-reuseport-differ
+            // SO_REUSEADDR behaves differently on Windows though, so don't enable it there
+            //  (note that this code is required for WINE, therefore just check if running in mono)
+            //  (see WS_SO_REUSEADDR case handling in WS_setsockopt in WINE/dlls/ws2_32/socket.c)
+            if (!Server.RunningOnMono()) return;
+            
+            try {
+                socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
+            } catch {
+                // not really a critical issue if this fails to work
             }
         }
         
@@ -60,8 +77,9 @@ namespace MCGalaxy.Network {
             try {
                 socket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 DisableIPV6OnlyListener();
-                socket.Bind(new IPEndPoint(ip, port));
+                EnableAddressReuse();
                 
+                socket.Bind(new IPEndPoint(ip, port));
                 socket.Listen((int)SocketOptionName.MaxConnections);
                 AcceptNextAsync();
             } catch (Exception ex) {

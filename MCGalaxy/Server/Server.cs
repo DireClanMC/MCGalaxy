@@ -65,8 +65,8 @@ namespace MCGalaxy {
                 if (File.Exists(file)) {
                     Logger.Log(LogType.SystemActivity, file + " download succesful!");
                 }
-            } catch {
-                Logger.Log(LogType.Warning, "Downloading {0} failed, please try again later", file);
+            } catch (Exception ex) {
+                Logger.LogError("Downloading " + file +" failed, try again later", ex);
             }
         }
         
@@ -265,7 +265,7 @@ namespace MCGalaxy {
             
             if (restarting) {
                 // first try to use excevp to restart in CLI mode under mono 
-                // - see detailed comment in Excvp_Hack for why this is required
+                // - see detailed comment in HACK_Execvp for why this is required
                 if (HACK_TryExecvp()) HACK_Execvp();
                 Process.Start(RestartPath);
             }
@@ -277,7 +277,7 @@ namespace MCGalaxy {
         
         static bool HACK_TryExecvp() {
             return CLIMode && Environment.OSVersion.Platform == PlatformID.Unix 
-                && Type.GetType("Mono.Runtime") != null;
+                && RunningOnMono();
         }
         
         static void HACK_Execvp() {
@@ -285,9 +285,7 @@ namespace MCGalaxy {
             //  is called, all FDs (including standard input) are also closed.
             // Unfortunately, this causes the new server process to constantly error with
             //   Type: IOException
-            //   Source: mscorlib
             //   Message: Invalid handle to path "server_folder_path/[Unknown]"
-            //   Target: ReadData
             //   Trace:   at System.IO.FileStream.ReadData (System.Runtime.InteropServices.SafeHandle safeHandle, System.Byte[] buf, System.Int32 offset, System.Int32 count) [0x0002d]
             //     at System.IO.FileStream.ReadInternal (System.Byte[] dest, System.Int32 offset, System.Int32 count) [0x00026]
             //     at System.IO.FileStream.Read (System.Byte[] array, System.Int32 offset, System.Int32 count) [0x000a1] 
@@ -308,6 +306,10 @@ namespace MCGalaxy {
                 execvp("mono", new string[] { "mono", RestartPath });
             } catch {
             }
+        }
+        
+        public static bool RunningOnMono() {
+            return Type.GetType("Mono.Runtime") != null;
         }
 
         public static void UpdateUrl(string url) {
